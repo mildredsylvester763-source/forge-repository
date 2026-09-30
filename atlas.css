@@ -4,3 +4,4 @@
 
 .atlas-toast{position:fixed;right:20px;bottom:20px;z-index:20;padding:10px 13px;border:1px solid var(--copper);background:#13241f;color:var(--cream);font:9px 'DM Mono';opacity:0;transform:translateY(8px);transition:.18s}.atlas-toast.show{opacity:1;transform:translateY(0)}
 .device-view,.state-card{cursor:pointer}.device-view:focus-visible,.state-card:focus-visible{outline:1px solid var(--copper);outline-offset:3px}
+.atlas-brand{display:flex;align-items:center;gap:10px;text-decoration:none;min-width:220px}.atlas-brand .brand-glyph{display:grid;place-items:center;width:31px;height:31px;border:1px solid var(--copper);color:var(--copper);font-size:25px;transform:rotate(45deg)}.atlas-brand b,.atlas-brand small{display:block}.atlas-brand b{font:600 18px 'Space Grotesk';letter-spacing:.18em}.atlas-brand small{margin-top:2px;color:var(--muted);font:8px 'DM Mono';letter-spacing:.1em}.atlas-brand:hover b{color:var(--copper)}

@@ -21,11 +21,10 @@ function routeBody(key){
  return `<section class="panel route-hero"><div class="route-empty"><span>⌂</span><h2>Home is the starting surface</h2><p>Choose a connected route from the navigation to continue.</p></div></section>`;
 }
 function go(key){key=routeNames[key]?key:'home';document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',(x.getAttribute('href')||'')==='#'+key));if(key==='home'){main.innerHTML=homeMarkup}else{main.innerHTML=routePage(key,routeNames[key].toUpperCase(),routeNames[key],key==='command'?'A command surface that keeps your project context visible.':`A connected ${routeNames[key].toLowerCase()} surface for the Forge operating workflow.`,routeBody(key))}if(location.hash.slice(1)!==key)history.pushState(null,'','#'+key);if(innerWidth<780)sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'})}
-document.addEventListener('click',e=>{const route=e.target.closest('[data-route]');if(route){e.preventDefault();go(route.dataset.route);return}const link=e.target.closest('a[href^="#"]');if(link){const key=link.getAttribute('href').slice(1);if(routeNames[key]){e.preventDefault();go(key)}}});
+document.addEventListener('click',e=>{const feedback=e.target.closest('[data-toast]');if(feedback){notify(feedback.dataset.toast);return}const route=e.target.closest('[data-route]');if(route){e.preventDefault();go(route.dataset.route);return}const link=e.target.closest('a[href^="#"]');if(link){const key=link.getAttribute('href').slice(1);if(routeNames[key]){e.preventDefault();go(key)}}});
 window.addEventListener('popstate',()=>go(location.hash.slice(1)||'home'));
 document.getElementById('mobileMenu')?.addEventListener('click',()=>sidebar.classList.toggle('open'));
 document.getElementById('collapseNav')?.addEventListener('click',()=>{shell.classList.toggle('collapsed');notify(shell.classList.contains('collapsed')?'Collapsed navigation state':'Expanded navigation state')});
-document.querySelectorAll('[data-toast]').forEach(item=>item.addEventListener('click',()=>notify(item.dataset.toast)));
 document.getElementById('viewMode')?.addEventListener('click',()=>notify('Atlas view selected'));
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();notify('Command surface focused');go('command')}if(e.key==='Escape')sidebar.classList.remove('open')});
 const voiceButton=document.getElementById('voiceButton');
