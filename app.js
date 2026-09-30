@@ -1,41 +1,12 @@
-const shell = document.getElementById('appShell');
+const app = document.getElementById('forgeApp');
 const sidebar = document.getElementById('sidebar');
 const toast = document.getElementById('toast');
-const menuButton = document.getElementById('menuButton');
-const collapseButton = document.getElementById('collapseButton');
 let toastTimer;
-
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
-}
-
-menuButton.addEventListener('click', () => sidebar.classList.toggle('open'));
-collapseButton.addEventListener('click', () => {
-  shell.classList.toggle('collapsed');
-  sidebar.classList.toggle('collapsed');
-  showToast('Navigation density preview toggled');
-});
-
-document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((nav) => nav.classList.remove('active'));
-    item.classList.add('active');
-    showToast(`${item.dataset.label} is represented as a visual route only`);
-    if (window.innerWidth < 700) sidebar.classList.remove('open');
-  });
-});
-
-document.querySelectorAll('[data-action]').forEach((button) => {
-  button.addEventListener('click', () => {
-    const action = button.dataset.action;
-    const messages = {
-      workspace: 'Workspace setup preview — backend connection is intentionally disabled',
-      project: 'Project import preview — no project data is connected',
-      command: 'Command entry preview — execution is intentionally disabled'
-    };
-    showToast(messages[action]);
-  });
-});
+function notify(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2400)}
+document.getElementById('mobileMenu').addEventListener('click',()=>sidebar.classList.toggle('open'));
+document.getElementById('collapseNav').addEventListener('click',()=>{app.classList.toggle('collapsed');notify(app.classList.contains('collapsed')?'Collapsed navigation state':'Expanded navigation state')});
+document.querySelectorAll('.expandable').forEach(item=>item.addEventListener('click',e=>{e.preventDefault();document.getElementById('projectNested').classList.toggle('hidden');notify('Nested project navigation state toggled')}));
+document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));item.classList.add('active');if(innerWidth<780)sidebar.classList.remove('open')}));
+document.querySelectorAll('[data-toast]').forEach(item=>item.addEventListener('click',()=>notify(item.dataset.toast)));
+document.getElementById('viewMode').addEventListener('click',()=>{document.body.classList.toggle('atlas-mode');notify('Responsive atlas reference state selected')});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();notify('Command surface focused')}if(e.key==='Escape')sidebar.classList.remove('open')});

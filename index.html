@@ -1,77 +1,22 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#071014" />
-    <title>FORGE — Home Atlas</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="app-shell" id="appShell">
-      <header class="topbar">
-        <div class="brand-lockup"><div class="brand-mark">⌁</div><div><strong>FORGE</strong><span>HOME ATLAS</span></div></div>
-        <div class="top-metadata"><div><label>ENVIRONMENT</label><b>ETHER · STANDBY · LOCAL</b></div><div><label>IDENTITY</label><b>UNCONFIGURED</b></div><div><label>RESOURCE STATE</label><b class="status-good">READY · 100% NOMINAL</b></div></div>
-        <div class="pulse"><label>SYSTEM PULSE</label><div class="pulse-line"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><b>— — : — — : — —</b></div>
-        <button class="menu-button" id="menuButton" aria-label="Open navigation">☰</button>
-      </header>
-
-      <aside class="sidebar" id="sidebar">
-        <div class="side-head"><span class="eyebrow">FORGE OS</span><button id="collapseButton" aria-label="Collapse navigation">‹</button></div>
-        <nav class="main-nav" aria-label="Primary navigation">
-          <button class="nav-item active" data-label="Overview"><span class="nav-icon">⌂</span><span>Overview</span></button>
-          <button class="nav-item" data-label="Projects"><span class="nav-icon">▱</span><span>Projects</span><em>—</em></button>
-          <button class="nav-item" data-label="Command"><span class="nav-icon">⌘</span><span>Command</span></button>
-          <button class="nav-item" data-label="Work Graph"><span class="nav-icon">◌</span><span>Work Graph</span></button>
-          <button class="nav-item" data-label="Code"><span class="nav-icon">⌑</span><span>Code / Assets</span></button>
-          <button class="nav-item" data-label="Agents"><span class="nav-icon">◈</span><span>Agents</span></button>
-          <div class="nav-divider"></div>
-          <p class="nav-group">BUILD &amp; RUNTIME</p>
-          <button class="nav-item" data-label="Build"><span class="nav-icon">◇</span><span>Build</span></button>
-          <button class="nav-item" data-label="Test"><span class="nav-icon">✓</span><span>Test</span></button>
-          <button class="nav-item" data-label="Deploy"><span class="nav-icon">↗</span><span>Deploy / Runtime</span></button>
-          <button class="nav-item" data-label="Infrastructure"><span class="nav-icon">▦</span><span>Infrastructure</span><em>—</em></button>
-          <div class="nav-divider"></div>
-          <p class="nav-group">SYSTEM</p>
-          <button class="nav-item" data-label="Security"><span class="nav-icon">◇</span><span>Security / Provenance</span></button>
-          <button class="nav-item" data-label="Marketplace"><span class="nav-icon">⌂</span><span>Marketplace</span></button>
-          <button class="nav-item" data-label="Creative"><span class="nav-icon">✧</span><span>Creative Systems</span><em>—</em></button>
-          <button class="nav-item" data-label="Settings"><span class="nav-icon">⚙</span><span>Settings</span></button>
-        </nav>
-        <div class="sidebar-footer"><span class="avatar">F</span><div><b>Local operator</b><small>Workspace not configured</small></div></div>
-      </aside>
-
-      <main class="main-content">
-        <section class="content-heading"><div><span class="eyebrow copper">HOME / INITIAL STATE</span><h1>Welcome to FORGE</h1><p>Your operating environment is ready for its first instruction.</p></div><div class="heading-actions"><span class="pill green">● SYSTEM READY</span><button class="quiet-button">⌁ Keyboard map</button></div></section>
-
-        <section class="welcome-grid">
-          <article class="panel hero-panel">
-            <div class="panel-kicker">FIRST WORKSPACE ENTRY <span>01 / 04</span></div>
-            <h2>Nothing is active yet.<br /><em>That is intentional.</em></h2>
-            <p>FORGE starts with an open environment. Create a workspace, connect an existing project, or describe what you want to build. No projects, agents, builds, or system activity have been invented here.</p>
-            <div class="hero-actions"><button class="primary-action" data-action="workspace">Create workspace <span>→</span></button><button class="secondary-action" data-action="project">Open existing project</button></div>
-            <div class="hero-status"><span class="status-dot green-dot"></span><span>ENVIRONMENT READY</span><i></i><span>NO ACTIVE PROJECT</span><i></i><span>AWAITING INTENT</span></div>
-          </article>
-          <article class="panel intent-panel">
-            <div class="panel-title"><span>COMMAND ENTRY</span><span class="panel-code">CMD / 000</span></div>
-            <div class="intent-glyph">⌘</div><h3>Start with an intention</h3><p>Use natural language to give FORGE its first direction. This visual prototype does not execute commands yet.</p>
-            <button class="command-sample" data-action="command"><span>Describe a task, ask a question, or explore an idea…</span><b>→</b></button>
-            <small class="mono">ENTER TO CONTINUE · SHIFT + ENTER FOR DETAIL</small>
-          </article>
-        </section>
-
-        <section class="lower-grid">
-          <article class="panel empty-panel"><div class="panel-title"><span>WORKSPACE STATE</span><span class="panel-code">ID / —</span></div><div class="empty-graphic"><span>◎</span><i></i><i></i><i></i></div><h3>Workspace not configured</h3><p>Identity, project context, and permissions will appear here after initial setup.</p><button class="text-action" data-action="workspace">Begin setup <span>→</span></button></article>
-          <article class="panel roadmap-panel"><div class="panel-title"><span>FORGE SURFACES</span><span class="panel-code">EXTENSIBLE SHELL</span></div><div class="surface-list"><div><span class="surface-index">01</span><b>Projects</b><small>workspaces · files · requirements</small><em>READY</em></div><div><span class="surface-index">02</span><b>Agents</b><small>intent · context · controlled action</small><em>READY</em></div><div><span class="surface-index">03</span><b>Build / Runtime</b><small>test · deploy · observability</small><em>READY</em></div><div><span class="surface-index">04</span><b>Creative Systems</b><small>music · video · 3D · world</small><em>EXTENSION</em></div></div></article>
-          <article class="panel attention-panel"><div class="panel-title"><span>WHAT NEEDS ATTENTION</span><span class="panel-code">QUIET STATE</span></div><div class="quiet-state"><span>◌</span><h3>No alerts</h3><p>FORGE will surface approvals, warnings, failures, and system events here when they exist.</p></div></article>
-        </section>
-
-        <section class="status-strip"><div><span class="strip-label">SYSTEM HEALTH</span><b>READY</b></div><div><span class="strip-label">AUTHENTICATION</span><b>NOT CONFIGURED</b></div><div><span class="strip-label">PROJECTS</span><b>0 ACTIVE</b></div><div><span class="strip-label">AGENTS</span><b>0 ACTIVE</b></div><div><span class="strip-label">BUILDS</span><b>0 RUNNING</b></div></section>
-      </main>
-
-      <footer class="command-bar"><span class="command-label">COMMAND <b>→</b></span><button class="command-input" data-action="command">Describe a task, ask a question, or explore an idea…</button><span class="command-hint">Visual foundation only · Actions are not connected</span><span class="command-arrow">→</span></footer>
-      <div class="toast" id="toast" role="status"></div>
-    </div>
-    <script src="app.js"></script>
-  </body>
-</html>
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#071014"><title>FORGE — Operating Console</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="forge-app" id="forgeApp">
+<header class="topbar"><button class="mobile-menu" id="mobileMenu">☰</button><a href="#home" class="brand"><span class="brand-glyph">⌁</span><span><b>FORGE</b><small>HOME ATLAS · OPERATING SYSTEM</small></span></a><div class="top-context"><div><label>ENVIRONMENT</label><b>ETHER · PROD · US-E2</b></div><div><label>IDENTITY</label><b>M · ARCHITECT</b></div><div><label>RESOURCE STATE</label><b class="good">STABLE · 78% NOMINAL</b></div></div><div class="live-pulse"><label>LIVE SYSTEM PULSE</label><span class="pulse-graph">╱╲╱╲╱╲╱╲╱╲</span><b>23:47:12 UTC</b></div><button class="user-orb" title="Account">M</button></header>
+<aside class="sidebar" id="sidebar"><div class="sidebar-head"><span class="eyebrow">FORGE NAVIGATION</span><button id="collapseNav" title="Collapse navigation">‹</button></div><nav aria-label="Forge navigation">
+<div class="nav-group"><p>CORE</p><a class="nav-item active" href="#home"><i>⌂</i><span>Home</span></a><a class="nav-item" href="#command"><i>⌘</i><span>Command Center</span></a><a class="nav-item expandable" href="#projects"><i>▱</i><span>Projects</span><em>⌄</em></a><div class="nested" id="projectNested"><a href="#projects">Organization</a><a href="#projects">Workspace</a><a href="#projects">Files</a><a href="#projects">Code</a><a href="#projects">Architecture</a></div></div>
+<div class="nav-group"><p>BUILD &amp; RUNTIME</p><a class="nav-item" href="#workspace"><i>◇</i><span>Workspace</span><em>•</em></a><a class="nav-item" href="#code"><i>⌑</i><span>Code</span><em>•</em></a><a class="nav-item" href="#agents"><i>◈</i><span>Agents</span><em>•</em></a><a class="nav-item" href="#build"><i>△</i><span>Build</span><em>•</em></a><a class="nav-item" href="#test"><i>✓</i><span>Test</span></a><a class="nav-item" href="#deploy"><i>↗</i><span>Deploy / Runtime</span></a></div>
+<div class="nav-group"><p>INFRASTRUCTURE</p><a class="nav-item" href="#infrastructure"><i>▦</i><span>Infrastructure</span><em>•</em></a><a class="nav-item" href="#security"><i>◇</i><span>Security / Provenance</span></a><a class="nav-item" href="#marketplace"><i>⌂</i><span>Marketplace</span></a></div>
+<div class="nav-group"><p>CREATIVE SYSTEMS</p><a class="nav-item" href="#creative"><i>✧</i><span>Creative</span><em>⌄</em></a><a class="nav-item" href="#settings"><i>⚙</i><span>Settings</span></a></div></nav><div class="sidebar-foot"><span class="avatar">M</span><span><b>Architect</b><small>Forge operator</small></span></div></aside>
+<main class="main" id="home"><section class="page-head"><div><span class="eyebrow copper">FORGE / HOME ATLAS</span><h1>Operating Console</h1><p>A spatial overview of creation, execution, and system state.</p></div><div class="head-actions"><button class="outline-btn" id="viewMode">◫ ATLAS VIEW</button><button class="copper-btn" data-toast="Command surface focused">⌘ COMMAND</button></div></section>
+<section class="console-grid"><article class="panel graph-panel"><div class="panel-head"><div><span class="eyebrow">LIVE PROJECT · AERIALIS PRIME</span><h2>System graph</h2><p>Next-gen spatial computing environment · v0.3.1 · build 7.2.4</p></div><div class="badges"><span class="teal-badge">◌ GRAPH LIVE</span><span class="teal-badge">◈ 4 AGENTS ACTIVE</span><span class="amber-badge">△ 2 BUILDS RUNNING</span></div></div><div class="graph-canvas"><div class="graph-lines"></div><div class="node center"><b>AERIALIS CORE</b><small>Spatial runtime · v0.3.1</small><div class="node-bar"></div><span>87%</span></div><div class="node n1"><b>TERRAIN ENGINE</b><small>Procedural world model</small></div><div class="node n2"><b>AGENT · PLANNER</b><small>Defining traversal bounds</small></div><div class="node n3"><b>LENS SYSTEM</b><small>Optical &amp; sensor fusion</small></div><div class="node n4"><b>USER PRESENCE</b><small>Embodied interaction</small></div><div class="node n5"><b>SYNTHESIS KERNEL</b><small>Generative core</small></div><div class="node n6"><b>INTEGRITY LAYER</b><small>Validation &amp; safety</small></div><div class="node n7"><b>AGENT · SYNTHESIST</b><small>Expanding lens variants</small></div><div class="node n8"><b>AGENT · VALIDATOR</b><small>Checking structural integrity</small></div></div></article>
+<aside class="panel attention"><div class="panel-head compact"><span class="eyebrow">WHAT NEEDS MY ATTENTION</span><a href="#activity">VIEW ALL →</a></div><div class="attention-row"><i>△</i><span><b>INCIDENT</b><small>Network partition in EU-W3</small></span><em>P1</em></div><div class="attention-row"><i>△</i><span><b>FAILURE</b><small>Build 7.2.1 · Synthesis Kernel</small></span><em>P0</em></div><div class="attention-row"><i>△</i><span><b>APPROVAL</b><small>Elevated permissions for agent: Weaver</small></span><em>NOW</em></div><div class="attention-row"><i>△</i><span><b>CRITICAL CHANGE</b><small>Breaking change in Terrain API · v2.4</small></span><em>P1</em></div></aside>
+</section>
+<section class="console-grid lower"><article class="panel builds"><div class="panel-head compact"><span class="eyebrow">ONGOING BUILDS</span><a href="#build">VIEW ALL →</a></div><div class="build-row"><i>◌</i><span><b>Aerialis Prime · World Layer</b><small>Running · 3m 42s</small></span><strong>82%</strong><div class="progress"><i style="width:82%"></i></div></div><div class="build-row"><i>♧</i><span><b>Lens System · Variant B</b><small>Running · 1m 18s</small></span><strong>64%</strong><div class="progress"><i style="width:64%"></i></div></div></article><article class="panel focus"><div class="panel-head compact"><span class="eyebrow">CURRENT FOCUS</span><span class="eyebrow copper">DECISION REQUIRED</span></div><h2>Spatial Interaction Model</h2><p>Refining multi-user convergence logic and presence handoff.</p><small class="eyebrow">NEXT DECISION</small><b class="decision">→ Approve expanded state synchronization scope?</b><button class="text-btn" data-toast="Decision surface opened">→ DECIDE</button></article><article class="panel activity" id="activity"><div class="panel-head compact"><span class="eyebrow">ACTIVITY STREAM · LIVE</span><a href="#activity">VIEW ALL →</a></div><div class="activity-row"><time>23:46:41</time><span class="dot teal"></span><p><b>AGENT · PLANNER</b><small>Updated traversal bounds for Sector 88</small></p></div><div class="activity-row"><time>23:45:12</time><span class="dot copper"></span><p><b>FORGE</b><small>Applied configuration drift patch</small></p></div><div class="activity-row"><time>23:44:03</time><span class="dot teal"></span><p><b>AGENT · SYNTHESIST</b><small>Created lens variant 9</small></p></div><div class="activity-row"><time>23:42:55</time><span class="dot amber"></span><p><b>DEPLOYMENT</b><small>Aerialis Edge · v0.2.7 deployed</small></p></div><div class="activity-row"><time>23:41:18</time><span class="dot teal"></span><p><b>VALIDATOR</b><small>Integrity scan passed · 98.6%</small></p></div></article></section>
+<section class="module-grid"><article class="panel module"><div class="panel-head compact"><span class="eyebrow">ACTIVE PROJECTS</span><a href="#projects">VIEW ALL →</a></div><div class="module-row"><i>▱</i><span><b>Aerialis Prime</b><small>Spatial computing environment</small></span><strong>87%</strong></div><div class="module-row"><i class="warn">△</i><span><b>Heliograph</b><small>Procedural flight architecture</small></span><strong>62%</strong></div><div class="module-row"><i>◌</i><span><b>Mnemosyne</b><small>Memory fabric system</small></span><strong>41%</strong></div></article><article class="panel module"><div class="panel-head compact"><span class="eyebrow">ACTIVE AGENTS</span><a href="#agents">VIEW ALL →</a></div><div class="module-row"><i>◈</i><span><b>Architect · Planner</b><small>Defining phase boundaries</small></span><strong>87%</strong></div><div class="module-row"><i>◈</i><span><b>Synthesist · Lens Lab</b><small>Exploring variant space</small></span><strong>74%</strong></div><div class="module-row"><i class="warn">△</i><span><b>Validator · Integrity</b><small>Continuous verification</small></span><strong>92%</strong></div></article><article class="panel module"><div class="panel-head compact"><span class="eyebrow">INFRASTRUCTURE HEALTH</span><a href="#infrastructure">VIEW ALL →</a></div><div class="health"><div><b>CPU</b><strong>74%</strong><i></i></div><div><b>GPU</b><strong>68%</strong><i></i></div><div><b>MEMORY</b><strong>77%</strong><i></i></div><div><b>NETWORK</b><strong>81%</strong><i></i></div></div></article><article class="panel module"><div class="panel-head compact"><span class="eyebrow">MARKETPLACE SIGNALS</span><a href="#marketplace">EXPLORE →</a></div><div class="market-row"><i>✦</i><span><b>NEW MODULE</b><small>Vector Weaver · v1.3</small></span></div><div class="market-row"><i>✦</i><span><b>ASSET PACK</b><small>Aether Surfaces · Vol. 2</small></span></div><div class="market-row"><i>✦</i><span><b>AGENT TEMPLATE</b><small>Context Sculptor</small></span></div></article></section>
+<section class="responsive-atlas panel"><div class="panel-head compact"><span class="eyebrow">RESPONSIVE SURFACE ATLAS</span><span class="eyebrow">DESKTOP · TABLET · PHONE</span></div><div class="device-row"><div class="device desktop"><span>WORKSPACE / DESKTOP</span><div class="device-screen"><i></i><i></i><i></i></div></div><div class="device tablet"><span>COMMAND / TABLET</span><div class="device-screen"><i></i><i></i></div></div><div class="device phone"><span>CREATIVE / PHONE</span><div class="device-screen"><i></i></div></div><div class="device phone"><span>STATUS / PHONE</span><div class="device-screen"><i></i></div></div></div></section>
+</main><footer class="command-bar"><span class="eyebrow">COMMAND <b>→</b></span><button data-toast="Command entry focused">Describe a task, ask a question, or explore an idea…</button><span class="hint">Natural language · Structured commands · ⌘K</span><span class="arrow">→</span></footer><div class="toast" id="toast"></div></div><script src="app.js"></script>
+</body></html>
