@@ -30,3 +30,14 @@ document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLower
 const voiceButton=document.getElementById('voiceButton');
 if(voiceButton)voiceButton.addEventListener('click',()=>{voiceButton.classList.toggle('recording');notify(voiceButton.classList.contains('recording')?'Voice input ready · visual recording state':'Voice input paused · visual state')});
 if(location.hash&&routeNames[location.hash.slice(1)])go(location.hash.slice(1));
+
+/* Product-level interaction polish: every visual route announces its transition. */
+const routeLoading=document.getElementById('routeLoading');
+const originalForgeGo=go;
+function showForgeLoading(title='Opening Forge surface'){if(!routeLoading)return;const heading=routeLoading.querySelector('#loadingTitle');if(heading)heading.textContent=title;routeLoading.classList.add('show');clearTimeout(window.__forgeLoadingTimer);window.__forgeLoadingTimer=setTimeout(()=>routeLoading.classList.remove('show'),420)}
+go=function(key){showForgeLoading(`Opening ${routeNames[key]||'Forge'} surface`);originalForgeGo(key)};
+const commandMode=document.getElementById('commandMode');
+if(commandMode){const modes=['BUILD⌄','CHAT⌄','PLAN⌄'];let modeIndex=0;commandMode.addEventListener('click',e=>{e.stopPropagation();modeIndex=(modeIndex+1)%modes.length;commandMode.textContent=modes[modeIndex];notify(`${modes[modeIndex].replace('⌄','')} mode selected`)})}
+const commandContext=document.getElementById('commandContext');
+if(commandContext)commandContext.addEventListener('click',e=>{e.stopPropagation();notify('Context actions opened · files · skills · providers')});
+setTimeout(()=>showForgeLoading('Preparing your workspace'),80);
