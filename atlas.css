@@ -7,3 +7,5 @@
 .atlas-brand{display:flex;align-items:center;gap:10px;text-decoration:none;min-width:220px}.atlas-brand .brand-glyph{display:grid;place-items:center;width:31px;height:31px;border:1px solid var(--copper);color:var(--copper);font-size:25px;transform:rotate(45deg)}.atlas-brand b,.atlas-brand small{display:block}.atlas-brand b{font:600 18px 'Space Grotesk';letter-spacing:.18em}.atlas-brand small{margin-top:2px;color:var(--muted);font:8px 'DM Mono';letter-spacing:.1em}.atlas-brand:hover b{color:var(--copper)}
 /* Same mineral palette on the reference atlas plates. */
 :root{--bg:#081112;--panel:#0d1817;--panel2:#14201c;--line:#33423b;--soft:#202e29;--cream:#d7d2c3;--muted:#7e8d84;--teal:#86a894;--copper:#aa7049;--amber:#b39560;--red:#a96557}
+/* Atlas shell follows the same black-neutral principle. */
+:root{--bg:#070809;--panel:#0d0e10;--panel2:#131416;--line:#292b2e;--soft:#1b1d1f;--cream:#e5e2da;--muted:#8b8a84;--teal:#78b5a7;--copper:#c97a4e;--amber:#d1a25f;--red:#a65d53}.atlas{background:#070809}.atlas-brand .brand-glyph{transform:none;font:600 15px 'Space Grotesk';letter-spacing:0}.atlas-brand b{color:var(--cream)}
