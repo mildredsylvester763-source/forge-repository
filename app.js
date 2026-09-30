@@ -10,3 +10,6 @@ document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('clic
 document.querySelectorAll('[data-toast]').forEach(item=>item.addEventListener('click',()=>notify(item.dataset.toast)));
 document.getElementById('viewMode').addEventListener('click',()=>{document.body.classList.toggle('atlas-mode');notify('Responsive atlas reference state selected')});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();notify('Command surface focused')}if(e.key==='Escape')sidebar.classList.remove('open')});
+
+const voiceButton=document.getElementById('voiceButton');
+if(voiceButton){voiceButton.addEventListener('click',()=>{voiceButton.classList.toggle('recording');notify(voiceButton.classList.contains('recording')?'Voice input ready · visual recording state':'Voice input paused · visual state');});}
