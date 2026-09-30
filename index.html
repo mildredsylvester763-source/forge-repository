@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071014" />
+    <title>FORGE — Home Atlas</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="appShell">
+      <header class="topbar">
+        <div class="brand-lockup"><div class="brand-mark">⌁</div><div><strong>FORGE</strong><span>HOME ATLAS</span></div></div>
+        <div class="top-metadata"><div><label>ENVIRONMENT</label><b>ETHER · STANDBY · LOCAL</b></div><div><label>IDENTITY</label><b>UNCONFIGURED</b></div><div><label>RESOURCE STATE</label><b class="status-good">READY · 100% NOMINAL</b></div></div>
+        <div class="pulse"><label>SYSTEM PULSE</label><div class="pulse-line"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><b>— — : — — : — —</b></div>
+        <button class="menu-button" id="menuButton" aria-label="Open navigation">☰</button>
+      </header>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="side-head"><span class="eyebrow">FORGE OS</span><button id="collapseButton" aria-label="Collapse navigation">‹</button></div>
+        <nav class="main-nav" aria-label="Primary navigation">
+          <button class="nav-item active" data-label="Overview"><span class="nav-icon">⌂</span><span>Overview</span></button>
+          <button class="nav-item" data-label="Projects"><span class="nav-icon">▱</span><span>Projects</span><em>—</em></button>
+          <button class="nav-item" data-label="Command"><span class="nav-icon">⌘</span><span>Command</span></button>
+          <button class="nav-item" data-label="Work Graph"><span class="nav-icon">◌</span><span>Work Graph</span></button>
+          <button class="nav-item" data-label="Code"><span class="nav-icon">⌑</span><span>Code / Assets</span></button>
+          <button class="nav-item" data-label="Agents"><span class="nav-icon">◈</span><span>Agents</span></button>
+          <div class="nav-divider"></div>
+          <p class="nav-group">BUILD &amp; RUNTIME</p>
+          <button class="nav-item" data-label="Build"><span class="nav-icon">◇</span><span>Build</span></button>
+          <button class="nav-item" data-label="Test"><span class="nav-icon">✓</span><span>Test</span></button>
+          <button class="nav-item" data-label="Deploy"><span class="nav-icon">↗</span><span>Deploy / Runtime</span></button>
+          <button class="nav-item" data-label="Infrastructure"><span class="nav-icon">▦</span><span>Infrastructure</span><em>—</em></button>
+          <div class="nav-divider"></div>
+          <p class="nav-group">SYSTEM</p>
+          <button class="nav-item" data-label="Security"><span class="nav-icon">◇</span><span>Security / Provenance</span></button>
+          <button class="nav-item" data-label="Marketplace"><span class="nav-icon">⌂</span><span>Marketplace</span></button>
+          <button class="nav-item" data-label="Creative"><span class="nav-icon">✧</span><span>Creative Systems</span><em>—</em></button>
+          <button class="nav-item" data-label="Settings"><span class="nav-icon">⚙</span><span>Settings</span></button>
+        </nav>
+        <div class="sidebar-footer"><span class="avatar">F</span><div><b>Local operator</b><small>Workspace not configured</small></div></div>
+      </aside>
+
+      <main class="main-content">
+        <section class="content-heading"><div><span class="eyebrow copper">HOME / INITIAL STATE</span><h1>Welcome to FORGE</h1><p>Your operating environment is ready for its first instruction.</p></div><div class="heading-actions"><span class="pill green">● SYSTEM READY</span><button class="quiet-button">⌁ Keyboard map</button></div></section>
+
+        <section class="welcome-grid">
+          <article class="panel hero-panel">
+            <div class="panel-kicker">FIRST WORKSPACE ENTRY <span>01 / 04</span></div>
+            <h2>Nothing is active yet.<br /><em>That is intentional.</em></h2>
+            <p>FORGE starts with an open environment. Create a workspace, connect an existing project, or describe what you want to build. No projects, agents, builds, or system activity have been invented here.</p>
+            <div class="hero-actions"><button class="primary-action" data-action="workspace">Create workspace <span>→</span></button><button class="secondary-action" data-action="project">Open existing project</button></div>
+            <div class="hero-status"><span class="status-dot green-dot"></span><span>ENVIRONMENT READY</span><i></i><span>NO ACTIVE PROJECT</span><i></i><span>AWAITING INTENT</span></div>
+          </article>
+          <article class="panel intent-panel">
+            <div class="panel-title"><span>COMMAND ENTRY</span><span class="panel-code">CMD / 000</span></div>
+            <div class="intent-glyph">⌘</div><h3>Start with an intention</h3><p>Use natural language to give FORGE its first direction. This visual prototype does not execute commands yet.</p>
+            <button class="command-sample" data-action="command"><span>Describe a task, ask a question, or explore an idea…</span><b>→</b></button>
+            <small class="mono">ENTER TO CONTINUE · SHIFT + ENTER FOR DETAIL</small>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="panel empty-panel"><div class="panel-title"><span>WORKSPACE STATE</span><span class="panel-code">ID / —</span></div><div class="empty-graphic"><span>◎</span><i></i><i></i><i></i></div><h3>Workspace not configured</h3><p>Identity, project context, and permissions will appear here after initial setup.</p><button class="text-action" data-action="workspace">Begin setup <span>→</span></button></article>
+          <article class="panel roadmap-panel"><div class="panel-title"><span>FORGE SURFACES</span><span class="panel-code">EXTENSIBLE SHELL</span></div><div class="surface-list"><div><span class="surface-index">01</span><b>Projects</b><small>workspaces · files · requirements</small><em>READY</em></div><div><span class="surface-index">02</span><b>Agents</b><small>intent · context · controlled action</small><em>READY</em></div><div><span class="surface-index">03</span><b>Build / Runtime</b><small>test · deploy · observability</small><em>READY</em></div><div><span class="surface-index">04</span><b>Creative Systems</b><small>music · video · 3D · world</small><em>EXTENSION</em></div></div></article>
+          <article class="panel attention-panel"><div class="panel-title"><span>WHAT NEEDS ATTENTION</span><span class="panel-code">QUIET STATE</span></div><div class="quiet-state"><span>◌</span><h3>No alerts</h3><p>FORGE will surface approvals, warnings, failures, and system events here when they exist.</p></div></article>
+        </section>
+
+        <section class="status-strip"><div><span class="strip-label">SYSTEM HEALTH</span><b>READY</b></div><div><span class="strip-label">AUTHENTICATION</span><b>NOT CONFIGURED</b></div><div><span class="strip-label">PROJECTS</span><b>0 ACTIVE</b></div><div><span class="strip-label">AGENTS</span><b>0 ACTIVE</b></div><div><span class="strip-label">BUILDS</span><b>0 RUNNING</b></div></section>
+      </main>
+
+      <footer class="command-bar"><span class="command-label">COMMAND <b>→</b></span><button class="command-input" data-action="command">Describe a task, ask a question, or explore an idea…</button><span class="command-hint">Visual foundation only · Actions are not connected</span><span class="command-arrow">→</span></footer>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
