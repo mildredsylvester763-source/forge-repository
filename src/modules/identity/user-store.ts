@@ -73,6 +73,14 @@ export class InMemoryUserStore implements UserStore {
     return record;
   }
 
+  /** Used only to roll back a registration whose audit event failed. */
+  remove(id: string): void {
+    const current = this.byId.get(id);
+    if (!current) return;
+    this.byId.delete(id);
+    this.byEmail.delete(current.email);
+  }
+
   async update(id: string, patch: UserPatch, now: number): Promise<UserRecord> {
     const current = this.byId.get(id);
     if (!current) throw new Error('user not found');
