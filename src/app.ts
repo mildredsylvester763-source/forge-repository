@@ -4,20 +4,31 @@ import { systemClock, type Clock } from './kernel/clock.ts';
 import { InMemoryEventStore, type EventStore } from './kernel/events.ts';
 import { createHttpHandler, type RouteTable } from './kernel/http.ts';
 import { createLogger, type Logger } from './kernel/logger.ts';
+import { kernelMigrations } from './kernel/migrations.ts';
+import { migrate, openDatabase, type Database } from './kernel/sqlite.ts';
+import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
   CompositeBreachChecker,
   DEFAULT_THROTTLE,
   HibpBreachChecker,
   IdentityService,
+  InMemoryIdentityUnitOfWork,
   InMemorySessionStore,
   InMemoryUserStore,
   LocalBlocklistChecker,
   LoginThrottle,
   PasswordHasher,
   SessionService,
+  SqliteIdentityUnitOfWork,
+  SqliteSessionStore,
+  SqliteUserStore,
+  identityMigrations,
   identityRoutes,
   type BreachChecker,
+  type IdentityUnitOfWork,
+  type SessionStore,
   type ThrottleConfig,
+  type UserStore,
 } from './modules/identity/index.ts';
 
 export interface AppOverrides {
@@ -33,6 +44,34 @@ export interface ForgeApp {
   events: EventStore;
   identity: IdentityService;
   logger: Logger;
+  /** Null when running on in-memory storage. */
+  db: Database | null;
+  close(): void;
+}
+
+interface Storage {
+  db: Database | null;
+  events: EventStore;
+  users: UserStore;
+  sessionStore: SessionStore;
+  uow: IdentityUnitOfWork;
+}
+
+function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, eventsOverride: EventStore | undefined): Storage {
+  const path = config.storage.databasePath;
+  if (path !== null && eventsOverride === undefined) {
+    const db = openDatabase(path);
+    migrate(db, 'kernel', kernelMigrations);
+    migrate(db, 'identity', identityMigrations);
+    const events = new SqliteEventStore({ db, clock, logger });
+    const users = new SqliteUserStore(db);
+    const sessionStore = new SqliteSessionStore(db);
+    return { db, events, users, sessionStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+  }
+  const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
+  const users = new InMemoryUserStore();
+  const sessionStore = new InMemorySessionStore();
+  return { db: null, events, users, sessionStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -42,7 +81,8 @@ export interface ForgeApp {
 export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): ForgeApp {
   const clock = overrides.clock ?? systemClock;
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
-  const events = overrides.events ?? new InMemoryEventStore({ clock, logger });
+  const storage = buildStorage(config, clock, logger, overrides.events);
+  const { events } = storage;
 
   const hasher = new PasswordHasher({
     params: config.password.params,
@@ -60,11 +100,12 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ]);
 
   const identity = new IdentityService({
-    users: new InMemoryUserStore(),
-    sessions: new SessionService({ store: new InMemorySessionStore(), clock, config: config.session }),
+    users: storage.users,
+    sessions: new SessionService({ store: storage.sessionStore, clock, config: config.session }),
     hasher,
     breach,
     events,
+    uow: storage.uow,
     throttle: new LoginThrottle({ config: { ...DEFAULT_THROTTLE, ...overrides.throttle }, clock }),
     clock,
     logger,
@@ -77,7 +118,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
       GET: async () => {
-        const head = await events.head();
+        const head = await events.head(); // also proves the database answers
         return { status: 200, body: { status: 'ready', auditSeq: head.seq } };
       },
     },
@@ -92,5 +133,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     hsts: config.env === 'production',
   });
 
-  return { handler, events, identity, logger };
+  return { handler, events, identity, logger, db: storage.db, close: () => storage.db?.close() };
 }
