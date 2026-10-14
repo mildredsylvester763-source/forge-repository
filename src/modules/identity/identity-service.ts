@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import type { Clock } from '../../kernel/clock.ts';
 import { AppError, retryAfterHeader } from '../../kernel/errors.ts';
-import type { EventStore, Actor, Subject } from '../../kernel/events.ts';
+import type { EventDraft, EventStore, Actor, Subject } from '../../kernel/events.ts';
 import type { Logger } from '../../kernel/logger.ts';
 import type { BreachChecker } from './breach-check.ts';
 import { normalizeEmail } from './email.ts';
@@ -10,6 +10,7 @@ import { evaluatePassword, normalizePassword } from './password-policy.ts';
 import type { PasswordHasher } from './password-hasher.ts';
 import type { SessionService } from './sessions.ts';
 import type { LoginThrottle } from './throttle.ts';
+import type { IdentityUnitOfWork } from './unit-of-work.ts';
 import { EmailTakenError, type UserRecord, type UserStore } from './user-store.ts';
 
 export interface RequestMeta {
@@ -31,6 +32,7 @@ export interface IdentityDeps {
   hasher: PasswordHasher;
   breach: BreachChecker;
   events: EventStore;
+  uow: IdentityUnitOfWork;
   throttle: LoginThrottle;
   clock: Clock;
   logger: Logger;
@@ -78,21 +80,12 @@ export class IdentityService {
     return createHmac('sha256', this.d.auditKey).update(value, 'utf8').digest('hex').slice(0, 32);
   }
 
-  private async emit(
-    type: IdentityEventType,
-    actor: Actor,
-    subject: Subject,
-    payload: Record<string, unknown>,
-    meta: RequestMeta,
-  ): Promise<void> {
-    await this.d.events.append({
-      type,
-      version: IDENTITY_EVENT_VERSION,
-      actor,
-      subject,
-      payload,
-      correlationId: meta.requestId,
-    });
+  private draft(type: IdentityEventType, actor: Actor, subject: Subject, payload: Record<string, unknown>, meta: RequestMeta): EventDraft {
+    return { type, version: IDENTITY_EVENT_VERSION, actor, subject, payload, correlationId: meta.requestId };
+  }
+
+  private async emit(type: IdentityEventType, actor: Actor, subject: Subject, payload: Record<string, unknown>, meta: RequestMeta): Promise<void> {
+    await this.d.events.append(this.draft(type, actor, subject, payload, meta));
   }
 
   /** For events describing a refusal: a logging failure must not hide the refusal from the client. */
@@ -141,7 +134,10 @@ export class IdentityService {
     const passwordHash = await this.d.hasher.hash(password);
     let user: UserRecord;
     try {
-      user = await this.d.users.create({ email, displayName, passwordHash, now: this.d.clock() });
+      // Account and "registered" event are saved in one transaction: both exist, or neither does.
+      user = await this.d.uow.registerUser({ email, displayName, passwordHash, now: this.d.clock() }, (created) =>
+        this.draft(IdentityEvents.UserRegistered, { kind: 'user', id: created.id }, { type: 'user', id: created.id }, { emailFingerprint: fingerprint }, meta),
+      );
     } catch (err) {
       if (err instanceof EmailTakenError) {
         await this.emitBestEffort(IdentityEvents.RegistrationRejected, anon, subject, { reason: 'duplicate_email' }, meta);
@@ -149,7 +145,6 @@ export class IdentityService {
       }
       throw err;
     }
-    await this.emit(IdentityEvents.UserRegistered, { kind: 'user', id: user.id }, { type: 'user', id: user.id }, { emailFingerprint: fingerprint }, meta);
     return toPublicUser(user);
   }
 
@@ -206,20 +201,19 @@ export class IdentityService {
       }
     }
 
-    const { token, session } = await this.d.sessions.issue(current.id, { ip: meta.ip, userAgent: meta.userAgent });
-    try {
-      // Audit-before-effect: no session survives unless its creation was recorded.
-      await this.emit(
+    // Session and "signed in" event are saved in one transaction: no session ever exists without its audit record.
+    const { token, session, revokeIdHashes } = await this.d.sessions.prepare(current.id, { ip: meta.ip, userAgent: meta.userAgent });
+    await this.d.uow.startSession({
+      session,
+      revokeIdHashes,
+      event: this.draft(
         IdentityEvents.SignInSucceeded,
         { kind: 'user', id: current.id },
         { type: 'user', id: current.id },
         { sessionRef: session.idHash.slice(0, 12), rehashed, passwordChangeRequired: compromised },
         meta,
-      );
-    } catch (err) {
-      await this.d.sessions.revoke(token, 'audit_failure');
-      throw err;
-    }
+      ),
+    });
 
     return { user: toPublicUser(current), sessionToken: token, sessionExpiresAt: session.expiresAt, passwordChangeRequired: compromised };
   }
