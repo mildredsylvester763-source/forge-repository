@@ -34,6 +34,14 @@ export class InMemorySessionStore implements SessionStore {
     this.byUser.set(record.userId, set);
   }
 
+  /** Used only to roll back a sign-in whose audit event failed. */
+  remove(idHash: string): void {
+    const record = this.records.get(idHash);
+    if (!record) return;
+    this.records.delete(idHash);
+    this.byUser.get(record.userId)?.delete(idHash);
+  }
+
   async findByHash(idHash: string): Promise<SessionRecord | null> {
     return this.records.get(idHash) ?? null;
   }
@@ -108,12 +116,20 @@ export class SessionService {
     this.config = options.config;
   }
 
-  async issue(userId: string, meta: { ip: string; userAgent: string }): Promise<{ token: string; session: SessionRecord }> {
+  /**
+   * Builds a new session and says which older ones must be retired to respect the per-user cap.
+   * Nothing is saved here: the identity unit of work saves the session together with its audit event.
+   */
+  async prepare(
+    userId: string,
+    meta: { ip: string; userAgent: string },
+  ): Promise<{ token: string; session: SessionRecord; revokeIdHashes: string[] }> {
     const now = this.clock();
     const active = await this.store.listActiveByUser(userId, now);
+    const revokeIdHashes: string[] = [];
     if (active.length >= this.config.maxPerUser) {
       const surplus = [...active].sort((a, b) => a.lastSeenAt - b.lastSeenAt).slice(0, active.length - this.config.maxPerUser + 1);
-      for (const s of surplus) await this.store.revoke(s.idHash, 'session_limit', now);
+      revokeIdHashes.push(...surplus.map((x) => x.idHash));
     }
     // A fresh token on every sign-in: session fixation is impossible by construction.
     const token = randomBytes(32).toString('base64url');
@@ -128,8 +144,7 @@ export class SessionService {
       revokedAt: null,
       revokedReason: null,
     };
-    await this.store.insert(session);
-    return { token, session };
+    return { token, session, revokeIdHashes };
   }
 
   async validate(token: string | undefined): Promise<SessionRecord | null> {
