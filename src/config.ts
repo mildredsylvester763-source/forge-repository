@@ -21,6 +21,7 @@ export interface ForgeConfig {
     hashQueue: number;
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
+  storage: { databasePath: string | null; backupDir: string | null; backupIntervalHours: number; backupKeep: number };
   auditKey: Buffer;
   /** Non-fatal notices (for example, ephemeral development secrets). */
   warnings: string[];
@@ -111,6 +112,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   const breachMode = env.FORGE_BREACH_MODE ?? 'fail-closed';
   if (breachMode !== 'fail-closed' && breachMode !== 'fail-open') throw new ConfigError('FORGE_BREACH_MODE must be fail-closed or fail-open');
 
+  const databasePath = env.FORGE_DATABASE_PATH ? env.FORGE_DATABASE_PATH : null;
+  if (production && (databasePath === null || databasePath === ':memory:')) {
+    throw new ConfigError('FORGE_DATABASE_PATH must be a file path in production (in-memory storage loses everything on restart)');
+  }
+  if (databasePath === null) warnings.push('FORGE_DATABASE_PATH not set: using in-memory storage. All data is lost on restart.');
+  const backupDir = env.FORGE_BACKUP_DIR ? env.FORGE_BACKUP_DIR : null;
+  if (backupDir !== null && (databasePath === null || databasePath === ':memory:')) {
+    throw new ConfigError('FORGE_BACKUP_DIR needs FORGE_DATABASE_PATH to be a file path');
+  }
+  if (production && backupDir === null) warnings.push('FORGE_BACKUP_DIR not set: no automatic backups will be made.');
+
   const currentPepperVersion = Math.max(...peppers.keys());
 
   return {
@@ -138,6 +150,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       baseUrl: env.FORGE_BREACH_URL ?? 'https://api.pwnedpasswords.com',
       timeoutMs: int(env, 'FORGE_BREACH_TIMEOUT_MS', 3000, 100, 30_000),
       checkOnSignIn: env.FORGE_BREACH_ON_SIGN_IN !== 'false',
+    },
+    storage: {
+      databasePath,
+      backupDir,
+      backupIntervalHours: int(env, 'FORGE_BACKUP_INTERVAL_HOURS', 6, 1, 168),
+      backupKeep: int(env, 'FORGE_BACKUP_KEEP', 28, 1, 1000),
     },
     auditKey,
     warnings,
