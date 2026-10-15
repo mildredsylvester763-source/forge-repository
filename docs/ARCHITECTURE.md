@@ -21,7 +21,7 @@ Identity already publishes: `identity.user.registered`, `identity.registration.r
 
 | Module | Catalog range | Status |
 | --- | --- | --- |
-| `kernel` (events, audit chain, HTTP, limits) | CO-063, 064, 076, 093 (partial) | started |
+| `kernel` (events, audit chain, database, backups, HTTP, limits) | CO-063, 064, 065, 076, 093, 096 (partial) | started |
 | `identity` | CO-001 to CO-014 | CO-001 done |
 | `tenancy` | CO-015 to CO-028 | planned |
 | `policy` | CO-029 to CO-044 | planned |
@@ -34,4 +34,6 @@ Identity already publishes: `identity.user.registered`, `identity.registration.r
 
 ## Storage
 
-Every store is an interface (`UserStore`, `SessionStore`, `EventStore`) with an in-memory implementation. The PostgreSQL adapters replace them with no change to the services. The event adapter will write the change and its event in one transaction (CO-065, transactional outbox).
+Every store is an interface (`UserStore`, `SessionStore`, `EventStore`) with two implementations: in-memory (quick experiments) and SQLite (durable, tests and single server). A PostgreSQL implementation, the production target, will plug into the same interfaces. The test suite runs against both existing ones so they cannot drift apart, and will run against Postgres too.
+
+Changes that must not be half-done go through a unit of work (`IdentityUnitOfWork`): the data change and its audit event commit in one transaction (CO-065, transactional outbox). See `docs/DATABASE.md`.
