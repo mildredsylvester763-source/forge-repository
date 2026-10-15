@@ -9,6 +9,7 @@ const prod = (extra: Record<string, string> = {}) => ({
   FORGE_PASSWORD_PEPPERS: `1:${key()}`,
   FORGE_AUDIT_KEY: key(),
   FORGE_ALLOWED_ORIGINS: 'https://app.example.com',
+  FORGE_DATABASE_PATH: '/var/lib/forge/forge.db',
   ...extra,
 });
 
@@ -31,6 +32,15 @@ describe('configuration safety', () => {
     assert.equal(ok.cookie.name, '__Host-forge_session');
     assert.equal(ok.breach.mode, 'fail-closed');
     assert.equal(ok.password.params.logN, 17);
+  });
+  it('requires a real database file in production and a database for backups', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_PATH: '' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_PATH: ':memory:' })), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'development', FORGE_BACKUP_DIR: '/tmp/b' }), ConfigError);
+    const ok = loadConfig(prod({ FORGE_BACKUP_DIR: '/var/backups/forge', FORGE_BACKUP_KEEP: '10' }));
+    assert.equal(ok.storage.databasePath, '/var/lib/forge/forge.db');
+    assert.equal(ok.storage.backupKeep, 10);
+    assert.ok(loadConfig(prod()).warnings.some((w) => w.includes('FORGE_BACKUP_DIR')));
   });
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
