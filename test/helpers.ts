@@ -37,6 +37,8 @@ export async function startHarness(
     FORGE_ENV: 'test',
     FORGE_SCRYPT_LOG_N: '10',
     FORGE_ALLOWED_ORIGINS: ORIGIN,
+    // Set FORGE_TEST_STORAGE=sqlite to run any test file against the real database layer.
+    ...(process.env.FORGE_TEST_STORAGE === 'sqlite' ? { FORGE_DATABASE_PATH: ':memory:' } : {}),
     ...envOverrides,
   });
   const breach = new FakeBreachChecker();
@@ -52,7 +54,13 @@ export async function startHarness(
     breach,
     baseUrl,
     clock,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) =>
+        server.close(() => {
+          app.close();
+          resolve();
+        }),
+      ),
     post: (path, body, init = {}) => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', ...init.headers };
       if (init.origin !== null) headers.Origin = init.origin ?? ORIGIN;
