@@ -16,14 +16,17 @@
 | Oversized or malformed input | 16 KB body cap, strict JSON object schema, unknown fields rejected, length caps on every field. | `kernel/http.ts`, `kernel/validate.ts` |
 | Memory exhaustion through hashing | Concurrency cap plus a bounded queue. Overload returns 503 instead of crashing. | `kernel/semaphore.ts` |
 | Log tampering or secret leakage | Audit events are hash-chained and verifiable. Payloads hold keyed fingerprints, never emails, passwords, hashes or tokens. Logs redact credential-shaped keys. | `kernel/events.ts`, `kernel/logger.ts` |
-| Silent audit failure | A sign-in whose audit record cannot be written is revoked, so there is no unaudited session. | `identity-service.ts` |
+| Tampering with stored history | The database refuses UPDATE and DELETE on audit events (triggers), every event is hash-chained, and every backup is verified (checksum, integrity check, chain check) before it counts as a backup. | `kernel/migrations.ts`, `kernel/backup.ts` |
+| SQL injection | Every query is parameterised; a test throws injection strings at every input. | `modules/identity/sqlite-stores.ts` |
+| Half-finished writes | An account or session and its audit event are saved in one transaction: both exist, or neither. | `modules/identity/unit-of-work.ts` |
 | Misconfiguration | Production refuses to boot without a pepper and audit key, requires https origins, and enforces a minimum scrypt cost. | `config.ts` |
 
-## Not covered yet (planned, tracked in the catalog)
+## Not covered yet (planned, tracked in docs/PROGRESS.md)
 
 - Email verification and password reset (CO-008). Registration currently reveals "email unavailable" for duplicates, which allows enumeration. That endpoint is rate limited, and email verification is the real fix.
 - Multi-factor auth (CO-005), passkeys (CO-002), session management UI (CO-006).
-- Durable storage. Everything is in memory until the PostgreSQL adapter lands.
+- Encryption at rest. The database file and backups are owner-only (mode 600) but not encrypted; per-workspace keys (CO-018) come later. Treat backup files as secrets.
+- Off-site backups and PostgreSQL for production and multi-server deployments.
 - Account lockout can be used to annoy a known victim. Exponential backoff limits the damage. Risk-based challenges (CO-012) are the long-term answer.
 
 ## Reporting a vulnerability
