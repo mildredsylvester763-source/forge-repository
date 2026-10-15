@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { buildApp } from './app.ts';
 import { ConfigError, loadConfig } from './config.ts';
+import { startBackupSchedule } from './kernel/backup.ts';
 import { createLogger } from './kernel/logger.ts';
 
 function main(): void {
@@ -19,6 +20,16 @@ function main(): void {
   for (const warning of config.warnings) logger.warn(warning);
 
   const app = buildApp(config, { logger });
+  let stopBackups = (): void => {};
+  if (app.db && config.storage.backupDir) {
+    stopBackups = startBackupSchedule({
+      db: app.db,
+      dir: config.storage.backupDir,
+      intervalHours: config.storage.backupIntervalHours,
+      keep: config.storage.backupKeep,
+      logger,
+    });
+  }
   const server = createServer({ maxHeaderSize: 16 * 1024 }, (req, res) => {
     void app.handler(req, res);
   });
@@ -31,7 +42,11 @@ function main(): void {
 
   const shutdown = (signal: string): void => {
     logger.info('shutting down', { signal });
-    server.close(() => process.exit(0));
+    stopBackups();
+    server.close(() => {
+      app.close();
+      process.exit(0);
+    });
     setTimeout(() => process.exit(1), 10_000).unref();
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
