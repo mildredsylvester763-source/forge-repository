@@ -2,9 +2,11 @@
   "name": "forge-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "FORGE backend. First feature: CO-001 email and password sign-in with breached-password checks.",
+  "description": "FORGE backend. Sign-in (CO-001), durable storage on PostgreSQL or SQLite, tamper-proof audit log.",
   "type": "module",
-  "engines": { "node": ">=22.18.0" },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test \"test/**/*.test.ts\"",
@@ -13,6 +15,9 @@
     "dev": "node src/main.ts",
     "backup": "node dist/cli.js backup",
     "backup:verify": "node dist/cli.js verify"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
