@@ -3,8 +3,13 @@ import { buildApp } from './app.ts';
 import { ConfigError, loadConfig } from './config.ts';
 import { startBackupSchedule } from './kernel/backup.ts';
 import { createLogger } from './kernel/logger.ts';
+import { pgKernelMigrations } from './kernel/postgres-migrations.ts';
+import { migratePostgres } from './kernel/postgres-migrate.ts';
+import { createPostgresPool } from './kernel/postgres.ts';
+import type { SqlPool } from './kernel/sql.ts';
+import { pgIdentityMigrations } from './modules/identity/index.ts';
 
-function main(): void {
+async function main(): Promise<void> {
   let config;
   try {
     config = loadConfig();
@@ -19,7 +24,21 @@ function main(): void {
   const logger = createLogger({ level: config.logLevel, base: { service: 'forge-backend' } });
   for (const warning of config.warnings) logger.warn(warning);
 
-  const app = buildApp(config, { logger });
+  // PostgreSQL: connect and bring the schema up to date before serving any request.
+  let pool: SqlPool | undefined;
+  if (config.storage.databaseUrl) {
+    pool = await createPostgresPool({
+      url: config.storage.databaseUrl,
+      ssl: config.storage.databaseSsl,
+      max: config.storage.databasePoolMax,
+      logger,
+    });
+    await migratePostgres(pool, 'kernel', pgKernelMigrations);
+    await migratePostgres(pool, 'identity', pgIdentityMigrations);
+    logger.info('database ready', { kind: 'postgresql' });
+  }
+
+  const app = buildApp(config, { logger, ...(pool ? { postgres: pool } : {}) });
   let stopBackups = (): void => {};
   if (app.db && config.storage.backupDir) {
     stopBackups = startBackupSchedule({
@@ -44,8 +63,7 @@ function main(): void {
     logger.info('shutting down', { signal });
     stopBackups();
     server.close(() => {
-      app.close();
-      process.exit(0);
+      void app.close().finally(() => process.exit(0));
     });
     setTimeout(() => process.exit(1), 10_000).unref();
   };
@@ -57,4 +75,7 @@ function main(): void {
   });
 }
 
-main();
+main().catch((err: unknown) => {
+  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+});
