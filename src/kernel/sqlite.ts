@@ -1,7 +1,10 @@
-import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { MigrationError, assertContiguous, checkApplied, migrationChecksum, type Migration } from './migration-types.ts';
+
+export { MigrationError };
+export type { Migration };
 
 export type Database = DatabaseSync;
 
@@ -53,21 +56,6 @@ export function transaction<T>(db: Database, fn: () => T): T {
   }
 }
 
-export interface Migration {
-  readonly version: number;
-  readonly name: string;
-  readonly sql: string;
-}
-
-export class MigrationError extends Error {
-  constructor(message: string) {
-    super(`Migration error: ${message}`);
-    this.name = 'MigrationError';
-  }
-}
-
-const checksum = (sql: string): string => createHash('sha256').update(sql, 'utf8').digest('hex');
-
 /**
  * Versioned, checksummed, forward-only schema changes, one list per module.
  *  - an applied migration that was edited afterwards is refused (history must not be rewritten)
@@ -84,24 +72,13 @@ export function migrate(db: Database, module: string, migrations: readonly Migra
     PRIMARY KEY (module, version)
   ) STRICT`);
 
-  migrations.forEach((m, i) => {
-    if (m.version !== i + 1) throw new MigrationError(`${module}: versions must be 1,2,3... (found ${m.version} at position ${i + 1})`);
-  });
+  assertContiguous(module, migrations);
 
   const applied = db
     .prepare('SELECT version, name, checksum FROM schema_migrations WHERE module = ? ORDER BY version')
     .all(module) as unknown as Array<{ version: number; name: string; checksum: string }>;
 
-  if (applied.length > migrations.length) {
-    throw new MigrationError(`${module}: database is at version ${applied.length} but this code only knows ${migrations.length}`);
-  }
-  applied.forEach((row, i) => {
-    const known = migrations[i];
-    if (!known || known.version !== row.version) throw new MigrationError(`${module}: unexpected applied version ${row.version}`);
-    if (known.name !== row.name || checksum(known.sql) !== row.checksum) {
-      throw new MigrationError(`${module}: migration ${row.version} (${row.name}) was changed after it was applied`);
-    }
-  });
+  checkApplied(module, applied, migrations);
 
   const done: number[] = [];
   for (const m of migrations.slice(applied.length)) {
@@ -111,7 +88,7 @@ export function migrate(db: Database, module: string, migrations: readonly Migra
         module,
         m.version,
         m.name,
-        checksum(m.sql),
+        migrationChecksum(m.sql),
         new Date().toISOString(),
       );
     });
