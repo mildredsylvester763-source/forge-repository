@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildApp, type ForgeApp } from '../src/app.ts';
 import { loadConfig, type ForgeConfig } from '../src/config.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
+import { makeTestPool, type TestPool } from './pg-helpers.ts';
 import type { BreachChecker, BreachResult, ThrottleConfig } from '../src/modules/identity/index.ts';
 
 export const ORIGIN = 'https://app.forge.test';
@@ -42,8 +43,10 @@ export async function startHarness(
     ...envOverrides,
   });
   const breach = new FakeBreachChecker();
+  // FORGE_TEST_STORAGE=postgres runs against PostgreSQL (real if FORGE_TEST_POSTGRES_URL is set, else the stand-in).
+  const testPool: TestPool | undefined = process.env.FORGE_TEST_STORAGE === 'postgres' ? await makeTestPool() : undefined;
   const clock = { now: 1_800_000_000_000 };
-  const app = buildApp(config, { breach, logger: silentLogger, clock: () => clock.now, throttle });
+  const app = buildApp(config, { breach, logger: silentLogger, clock: () => clock.now, throttle, ...(testPool ? { postgres: testPool.pool } : {}) });
   const server: Server = createServer((req, res) => void app.handler(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -54,13 +57,11 @@ export async function startHarness(
     breach,
     baseUrl,
     clock,
-    close: () =>
-      new Promise<void>((resolve) =>
-        server.close(() => {
-          app.close();
-          resolve();
-        }),
-      ),
+    close: async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await app.close();
+      await testPool?.cleanup();
+    },
     post: (path, body, init = {}) => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', ...init.headers };
       if (init.origin !== null) headers.Origin = init.origin ?? ORIGIN;
