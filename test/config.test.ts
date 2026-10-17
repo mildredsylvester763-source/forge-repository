@@ -9,7 +9,7 @@ const prod = (extra: Record<string, string> = {}) => ({
   FORGE_PASSWORD_PEPPERS: `1:${key()}`,
   FORGE_AUDIT_KEY: key(),
   FORGE_ALLOWED_ORIGINS: 'https://app.example.com',
-  FORGE_DATABASE_PATH: '/var/lib/forge/forge.db',
+  FORGE_DATABASE_URL: 'postgresql://forge:secret@db.example.com:5432/forge',
   ...extra,
 });
 
@@ -33,14 +33,29 @@ describe('configuration safety', () => {
     assert.equal(ok.breach.mode, 'fail-closed');
     assert.equal(ok.password.params.logN, 17);
   });
-  it('requires a real database file in production and a database for backups', () => {
-    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_PATH: '' })), ConfigError);
-    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_PATH: ':memory:' })), ConfigError);
+  it('requires PostgreSQL in production and refuses SQLite there', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_URL: '' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_URL: '', FORGE_DATABASE_PATH: '/var/lib/forge/forge.db' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_PATH: '/var/lib/forge/forge.db' })), ConfigError, 'URL and path together');
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_URL: 'mysql://x' })), ConfigError);
+    const ok = loadConfig(prod());
+    assert.equal(ok.storage.databaseUrl, 'postgresql://forge:secret@db.example.com:5432/forge');
+    assert.equal(ok.storage.databaseSsl, 'verify');
+    assert.equal(ok.storage.databasePath, null);
+  });
+  it('requires an encrypted, verified database connection in production', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_SSL: 'off' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_DATABASE_SSL: 'sometimes' })), ConfigError);
+    const weak = loadConfig(prod({ FORGE_DATABASE_SSL: 'no-verify' }));
+    assert.ok(weak.warnings.some((w) => w.includes('no-verify')));
+    assert.equal(loadConfig({ FORGE_ENV: 'development', FORGE_DATABASE_URL: 'postgresql://localhost/forge' }).storage.databaseSsl, 'off');
+  });
+  it('allows SQLite for development, and SQLite backups need a SQLite file', () => {
+    const dev = loadConfig({ FORGE_ENV: 'development', FORGE_DATABASE_PATH: '/tmp/forge.db', FORGE_BACKUP_DIR: '/tmp/b', FORGE_BACKUP_KEEP: '10' });
+    assert.equal(dev.storage.databasePath, '/tmp/forge.db');
+    assert.equal(dev.storage.backupKeep, 10);
     assert.throws(() => loadConfig({ FORGE_ENV: 'development', FORGE_BACKUP_DIR: '/tmp/b' }), ConfigError);
-    const ok = loadConfig(prod({ FORGE_BACKUP_DIR: '/var/backups/forge', FORGE_BACKUP_KEEP: '10' }));
-    assert.equal(ok.storage.databasePath, '/var/lib/forge/forge.db');
-    assert.equal(ok.storage.backupKeep, 10);
-    assert.ok(loadConfig(prod()).warnings.some((w) => w.includes('FORGE_BACKUP_DIR')));
+    assert.throws(() => loadConfig({ FORGE_ENV: 'development', FORGE_DATABASE_URL: 'postgresql://localhost/f', FORGE_BACKUP_DIR: '/tmp/b' }), ConfigError);
   });
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
