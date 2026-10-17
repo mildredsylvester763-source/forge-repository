@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { LogLevel } from './kernel/logger.ts';
+import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
 
 export type Environment = 'development' | 'test' | 'production';
@@ -21,7 +22,17 @@ export interface ForgeConfig {
     hashQueue: number;
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
-  storage: { databasePath: string | null; backupDir: string | null; backupIntervalHours: number; backupKeep: number };
+  storage: {
+    /** PostgreSQL connection string. This is the production database. */
+    databaseUrl: string | null;
+    databaseSsl: DatabaseSsl;
+    databasePoolMax: number;
+    /** SQLite file. Development, tests and single-server use only. */
+    databasePath: string | null;
+    backupDir: string | null;
+    backupIntervalHours: number;
+    backupKeep: number;
+  };
   auditKey: Buffer;
   /** Non-fatal notices (for example, ephemeral development secrets). */
   warnings: string[];
@@ -112,16 +123,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   const breachMode = env.FORGE_BREACH_MODE ?? 'fail-closed';
   if (breachMode !== 'fail-closed' && breachMode !== 'fail-open') throw new ConfigError('FORGE_BREACH_MODE must be fail-closed or fail-open');
 
+  const databaseUrl = env.FORGE_DATABASE_URL ? env.FORGE_DATABASE_URL : null;
   const databasePath = env.FORGE_DATABASE_PATH ? env.FORGE_DATABASE_PATH : null;
-  if (production && (databasePath === null || databasePath === ':memory:')) {
-    throw new ConfigError('FORGE_DATABASE_PATH must be a file path in production (in-memory storage loses everything on restart)');
+  if (databaseUrl !== null && databasePath !== null) {
+    throw new ConfigError('set either FORGE_DATABASE_URL (PostgreSQL) or FORGE_DATABASE_PATH (SQLite), not both');
   }
-  if (databasePath === null) warnings.push('FORGE_DATABASE_PATH not set: using in-memory storage. All data is lost on restart.');
+  if (databaseUrl !== null && !/^postgres(ql)?:\/\//.test(databaseUrl)) {
+    throw new ConfigError('FORGE_DATABASE_URL must start with postgresql://');
+  }
+  if (production && databaseUrl === null) {
+    throw new ConfigError('FORGE_DATABASE_URL (PostgreSQL) is required in production; SQLite is for development and tests only');
+  }
+  const sslSetting = env.FORGE_DATABASE_SSL ?? (production ? 'verify' : 'off');
+  if (sslSetting !== 'verify' && sslSetting !== 'no-verify' && sslSetting !== 'off') {
+    throw new ConfigError('FORGE_DATABASE_SSL must be verify, no-verify, or off');
+  }
+  if (production && sslSetting === 'off') throw new ConfigError('production database connections must use TLS (FORGE_DATABASE_SSL=verify)');
+  if (sslSetting === 'no-verify') warnings.push('FORGE_DATABASE_SSL=no-verify: the connection is encrypted but the server is not authenticated.');
+  if (databaseUrl === null && databasePath === null) warnings.push('No database configured: using in-memory storage. All data is lost on restart.');
   const backupDir = env.FORGE_BACKUP_DIR ? env.FORGE_BACKUP_DIR : null;
   if (backupDir !== null && (databasePath === null || databasePath === ':memory:')) {
-    throw new ConfigError('FORGE_BACKUP_DIR needs FORGE_DATABASE_PATH to be a file path');
+    throw new ConfigError('FORGE_BACKUP_DIR only works with a SQLite file (FORGE_DATABASE_PATH). PostgreSQL backups are separate.');
   }
-  if (production && backupDir === null) warnings.push('FORGE_BACKUP_DIR not set: no automatic backups will be made.');
+  if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
 
   const currentPepperVersion = Math.max(...peppers.keys());
 
@@ -152,6 +176,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       checkOnSignIn: env.FORGE_BREACH_ON_SIGN_IN !== 'false',
     },
     storage: {
+      databaseUrl,
+      databaseSsl: sslSetting,
+      databasePoolMax: int(env, 'FORGE_DATABASE_POOL_MAX', 10, 1, 100),
       databasePath,
       backupDir,
       backupIntervalHours: int(env, 'FORGE_BACKUP_INTERVAL_HOURS', 6, 1, 168),
