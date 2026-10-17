@@ -6,6 +6,8 @@ import { createHttpHandler, type RouteTable } from './kernel/http.ts';
 import { createLogger, type Logger } from './kernel/logger.ts';
 import { kernelMigrations } from './kernel/migrations.ts';
 import { migrate, openDatabase, type Database } from './kernel/sqlite.ts';
+import { PostgresEventStore } from './kernel/postgres-events.ts';
+import type { SqlPool } from './kernel/sql.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
   CompositeBreachChecker,
@@ -18,6 +20,9 @@ import {
   LocalBlocklistChecker,
   LoginThrottle,
   PasswordHasher,
+  PostgresIdentityUnitOfWork,
+  PostgresSessionStore,
+  PostgresUserStore,
   SessionService,
   SqliteIdentityUnitOfWork,
   SqliteSessionStore,
@@ -37,6 +42,8 @@ export interface AppOverrides {
   breach?: BreachChecker;
   events?: EventStore;
   throttle?: Partial<ThrottleConfig>;
+  /** A connected, already-migrated PostgreSQL pool. When given, it is the storage. */
+  postgres?: SqlPool;
 }
 
 export interface ForgeApp {
@@ -44,20 +51,29 @@ export interface ForgeApp {
   events: EventStore;
   identity: IdentityService;
   logger: Logger;
-  /** Null when running on in-memory storage. */
+  /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
-  close(): void;
+  close(): Promise<void>;
 }
 
 interface Storage {
   db: Database | null;
+  pool: SqlPool | null;
   events: EventStore;
   users: UserStore;
   sessionStore: SessionStore;
   uow: IdentityUnitOfWork;
 }
 
-function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, eventsOverride: EventStore | undefined): Storage {
+function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
+  const eventsOverride = overrides.events;
+  if (overrides.postgres) {
+    const pool = overrides.postgres;
+    const events = new PostgresEventStore({ pool, clock, logger });
+    const users = new PostgresUserStore(pool);
+    const sessionStore = new PostgresSessionStore(pool);
+    return { db: null, pool, events, users, sessionStore, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+  }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
     const db = openDatabase(path);
@@ -66,12 +82,12 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, eventsO
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
-    return { db, events, users, sessionStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, pool: null, events, users, sessionStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
-  return { db: null, events, users, sessionStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, pool: null, events, users, sessionStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -81,7 +97,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, eventsO
 export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): ForgeApp {
   const clock = overrides.clock ?? systemClock;
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
-  const storage = buildStorage(config, clock, logger, overrides.events);
+  const storage = buildStorage(config, clock, logger, overrides);
   const { events } = storage;
 
   const hasher = new PasswordHasher({
@@ -133,5 +149,10 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     hsts: config.env === 'production',
   });
 
-  return { handler, events, identity, logger, db: storage.db, close: () => storage.db?.close() };
+  const close = async (): Promise<void> => {
+    storage.db?.close();
+    await storage.pool?.end();
+  };
+
+  return { handler, events, identity, logger, db: storage.db, close };
 }
