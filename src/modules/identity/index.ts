@@ -18,3 +18,5 @@ export { identityMigrations } from './migrations.ts';
 export { InMemoryIdentityUnitOfWork } from './unit-of-work.ts';
 export type { IdentityUnitOfWork } from './unit-of-work.ts';
 export { SqliteIdentityUnitOfWork, SqliteSessionStore, SqliteUserStore } from './sqlite-stores.ts';
+export { pgIdentityMigrations } from './postgres-migrations.ts';
+export { PostgresIdentityUnitOfWork, PostgresSessionStore, PostgresUserStore } from './postgres-stores.ts';
