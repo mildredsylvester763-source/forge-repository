@@ -20,13 +20,13 @@ Backend for FORGE, built from the Feature Catalog. This repository is built one 
 
 ```bash
 npm install
-npm test            # 94 tests, run against both in-memory and SQLite storage
+npm test            # 129 tests: in-memory, SQLite and PostgreSQL adapters
 npm run typecheck
 npm run dev         # development, ephemeral secrets, http://127.0.0.1:8080
 ```
 
 Production: copy `.env.example`, fill in real secrets, then `npm run build && npm start`.
-The server refuses to start in production if secrets are missing or weak.
+The server refuses to start in production if secrets are missing or weak, or if no PostgreSQL URL is given.
 
 ## Layout
 
@@ -44,10 +44,10 @@ SECURITY.md             threat model and controls
 
 ## Storage
 
-Every store sits behind an interface. Today there are two implementations: in-memory (quick experiments) and SQLite (durable, one server). SQLite is for local development, tests and single-server use. **The production database will be PostgreSQL** (Supabase used as plain Postgres), added behind the same interfaces. Details in `docs/DATABASE.md`.
+Every store sits behind an interface, with three implementations: in-memory (quick experiments), SQLite (development and tests), and **PostgreSQL, the production database**. PostgreSQL is used as plain storage through one connection string (`FORGE_DATABASE_URL`), so Supabase or any other host can be swapped without code changes. All backend logic is in this app. Details in `docs/DATABASE.md`.
 
 ## Known limits (read this)
 
-- Production PostgreSQL is not built yet. Until it is, do not run this with real users.
-- Backups stay on the same machine until the off-site copy (to object storage) is added.
+- The PostgreSQL adapter is built and tested against a stand-in. Its first run against a real PostgreSQL happens in GitHub's automatic checks. Do not run with real users until that check is green.
+- No automated PostgreSQL backups yet (a nightly dump to object storage is next).
 - No email verification or password reset yet. See `SECURITY.md`.
