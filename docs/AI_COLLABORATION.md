@@ -4,15 +4,17 @@ Two or more AI assistants may work on this repository. These rules keep their wo
 
 ## Branches
 
-- `main` is the working, tested version. **Never push directly to `main`** unless you are the assistant the owner named as the maintainer.
-- Each assistant works on its own branch (for example `mistral`). Open a pull request into `main` when a unit of work is complete and its tests pass.
-- Keep a pull request to one complete feature. Do not leave a branch half-finished: every push should leave the branch working (`npm run typecheck` and `npm test` both pass).
+- `main` is the working, tested version. **Never push directly to `main`.** The maintainer (Claude) merges into `main`, and only when the owner says they are sure.
+- Each assistant works on its own branch: `claude` and `mistral`. Push to your branch after every complete unit of work, so nothing is lost if you run out of time or usage.
+- Merging happens one pull request at a time. Before a merge, update the branch from `main` and run `npm run typecheck` and `npm test`. The second branch to merge takes the first one's changes before it merges, so neither overwrites the other.
+- Every push should leave the branch working (`npm run typecheck` and `npm test` both pass). Do not leave a feature half-finished.
+- Review and bug-fix pull requests are welcome in any area. Changes in the security-critical areas (see below) are reviewed by Claude before they merge.
 
 ## Before you start
 
 1. Read `docs/PROGRESS.md` (decisions, working rules, polish list), `docs/ARCHITECTURE.md`, `SECURITY.md` and `docs/DATABASE.md`.
 2. Read the feature's entry in the catalog the owner gave you. If two documents contradict each other, or a document contradicts a decision in `docs/PROGRESS.md`, **stop and ask the owner which one wins.** Do not guess.
-3. Before building, list the features you are about to build and wait for the owner's confirmation.
+3. Before building, list the features you are about to build and wait for the owner's confirmation. Start with the features the owner marked most important.
 
 ## Who owns what (default; the owner can change it)
 
@@ -21,7 +23,7 @@ Two or more AI assistants may work on this repository. These rules keep their wo
 | `src/kernel/`, `src/modules/identity/`, `src/app.ts`, `src/config.ts`, database migrations, the audit log, and future billing, credits and pricing code | Claude (security-critical, and being refactored) |
 | New modules in their own folder, for example a feed, notification rules or screens | The assistant the owner assigns, on its own branch |
 
-If your feature needs a change in an area you do not own, do not edit it. Describe the change you need in your pull request and the owner will route it.
+If your feature needs a change in an area you do not own, do not edit it directly. Describe the change you need in your pull request and the owner will route it.
 
 ## Architecture rules
 
