@@ -9,6 +9,7 @@ import { createPostgresPool } from './kernel/postgres.ts';
 import type { SqlPool } from './kernel/sql.ts';
 import { pgIdentityMigrations } from './modules/identity/index.ts';
 import { pgTaskRuntimeMigrations } from './modules/task-runtime/index.ts';
+import { pgOrchestratorMigrations } from './modules/orchestrator/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'kernel', pgKernelMigrations);
     await migratePostgres(pool, 'identity', pgIdentityMigrations);
     await migratePostgres(pool, 'task_runtime', pgTaskRuntimeMigrations);
+    await migratePostgres(pool, 'orchestrator', pgOrchestratorMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 

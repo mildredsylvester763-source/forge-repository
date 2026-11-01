@@ -44,6 +44,15 @@ import {
   taskRuntimeRoutes,
   type TaskRunStore,
 } from './modules/task-runtime/index.ts';
+import {
+  InMemoryOrchestratorPlanStore,
+  OrchestratorService,
+  PostgresOrchestratorPlanStore,
+  SqliteOrchestratorPlanStore,
+  orchestratorMigrations,
+  orchestratorRoutes,
+  type OrchestratorPlanStore,
+} from './modules/orchestrator/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -60,6 +69,7 @@ export interface ForgeApp {
   events: EventStore;
   identity: IdentityService;
   tasks: TaskRuntimeService;
+  orchestrator: OrchestratorService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -74,6 +84,7 @@ interface Storage {
   sessionStore: SessionStore;
   uow: IdentityUnitOfWork;
   runs: TaskRunStore;
+  plans: OrchestratorPlanStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -84,7 +95,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const users = new PostgresUserStore(pool);
     const sessionStore = new PostgresSessionStore(pool);
     const runs = new PostgresTaskRunStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const plans = new PostgresOrchestratorPlanStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -92,17 +104,20 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'kernel', kernelMigrations);
     migrate(db, 'identity', identityMigrations);
     migrate(db, 'task_runtime', taskRuntimeMigrations);
+    migrate(db, 'orchestrator', orchestratorMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
     const runs = new SqliteTaskRunStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const plans = new SqliteOrchestratorPlanStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
   const runs = new InMemoryTaskRunStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const plans = new InMemoryOrchestratorPlanStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -147,6 +162,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const tasks = new TaskRuntimeService({ runs: storage.runs, events, clock });
 
+  const orchestrator = new OrchestratorService({ plans: storage.plans, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -157,6 +174,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     },
     ...identityRoutes(identity, config.cookie, clock),
     ...taskRuntimeRoutes(tasks, identity, config.cookie),
+    ...orchestratorRoutes(orchestrator, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -172,5 +190,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, logger, db: storage.db, close };
 }
