@@ -10,6 +10,7 @@ import type { SqlPool } from './kernel/sql.ts';
 import { pgIdentityMigrations } from './modules/identity/index.ts';
 import { pgTaskRuntimeMigrations } from './modules/task-runtime/index.ts';
 import { pgOrchestratorMigrations } from './modules/orchestrator/index.ts';
+import { pgTestQualityMigrations } from './modules/test-quality/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -17,8 +18,7 @@ async function main(): Promise<void> {
     config = loadConfig();
   } catch (err) {
     if (err instanceof ConfigError) {
-      process.stderr.write(`${err.message}\
-`);
+      process.stderr.write(`${err.message}\n`);
       process.exit(78); // EX_CONFIG
     }
     throw err;
@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'identity', pgIdentityMigrations);
     await migratePostgres(pool, 'task_runtime', pgTaskRuntimeMigrations);
     await migratePostgres(pool, 'orchestrator', pgOrchestratorMigrations);
+    await migratePostgres(pool, 'test_quality', pgTestQualityMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 
@@ -81,7 +82,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\
-`);
+  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

@@ -53,6 +53,15 @@ import {
   orchestratorRoutes,
   type OrchestratorPlanStore,
 } from './modules/orchestrator/index.ts';
+import {
+  InMemoryGoldenStore,
+  PostgresGoldenStore,
+  SqliteGoldenStore,
+  TestQualityService,
+  testQualityMigrations,
+  testQualityRoutes,
+  type TestQualityGoldenStore,
+} from './modules/test-quality/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -70,6 +79,7 @@ export interface ForgeApp {
   identity: IdentityService;
   tasks: TaskRuntimeService;
   orchestrator: OrchestratorService;
+  testQuality: TestQualityService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -85,6 +95,7 @@ interface Storage {
   uow: IdentityUnitOfWork;
   runs: TaskRunStore;
   plans: OrchestratorPlanStore;
+  goldens: TestQualityGoldenStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -96,7 +107,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const sessionStore = new PostgresSessionStore(pool);
     const runs = new PostgresTaskRunStore(pool);
     const plans = new PostgresOrchestratorPlanStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const goldens = new PostgresGoldenStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -105,19 +117,22 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'identity', identityMigrations);
     migrate(db, 'task_runtime', taskRuntimeMigrations);
     migrate(db, 'orchestrator', orchestratorMigrations);
+    migrate(db, 'test_quality', testQualityMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
     const runs = new SqliteTaskRunStore(db);
     const plans = new SqliteOrchestratorPlanStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const goldens = new SqliteGoldenStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
   const runs = new InMemoryTaskRunStore();
   const plans = new InMemoryOrchestratorPlanStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const goldens = new InMemoryGoldenStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -164,6 +179,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const orchestrator = new OrchestratorService({ plans: storage.plans, events, clock });
 
+  const testQuality = new TestQualityService({ goldens: storage.goldens, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -175,6 +192,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...identityRoutes(identity, config.cookie, clock),
     ...taskRuntimeRoutes(tasks, identity, config.cookie),
     ...orchestratorRoutes(orchestrator, identity, config.cookie),
+    ...testQualityRoutes(testQuality, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -190,5 +208,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, logger, db: storage.db, close };
 }
