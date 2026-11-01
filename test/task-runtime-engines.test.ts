@@ -609,7 +609,7 @@ describe('task history engine (FORGE AI-082)', () => {
       const gates: { gateId: string; status: string }[] = [];
       let k = 0;
       while (k < target) {
-        const e = list[k];
+        const e = list[k]!;
         const t = e.type as string;
         if (t === 'task-created') state = 'running';
         else if (t === 'task-paused') state = 'paused';
@@ -624,7 +624,7 @@ describe('task history engine (FORGE AI-082)', () => {
           let f = -1;
           let q = 0;
           while (q < steps.length) {
-            if (steps[q].stepId === sid) {
+            if (steps[q]!.stepId === sid) {
               f = q;
               break;
             }
@@ -638,7 +638,7 @@ describe('task history engine (FORGE AI-082)', () => {
           let f = -1;
           let q = 0;
           while (q < gates.length) {
-            if (gates[q].gateId === gid) {
+            if (gates[q]!.gateId === gid) {
               f = q;
               break;
             }
@@ -676,7 +676,7 @@ describe('task history engine (FORGE AI-082)', () => {
           events.push({ seq: i + 1, type: 'teleported' });
           break;
         }
-        const type = TASK_EVENT_TYPES[Math.floor(rand() * 13)];
+        const type = TASK_EVENT_TYPES[Math.floor(rand() * 13)]!;
         const event: Record<string, unknown> = { seq: i + 1, type };
         if (type.startsWith('step-')) event.stepId = 's' + Math.floor(rand() * 3);
         if (type.startsWith('gate-')) event.gateId = 'g' + Math.floor(rand() * 2);
@@ -824,8 +824,8 @@ describe('parallel agents engine (FORGE AI-083)', () => {
       const out: ParallelConflict[] = [];
       for (let i = 0; i < list.length; i++) {
         for (let j = i + 1; j < list.length; j++) {
-          const A = list[i];
-          const B = list[j];
+          const A = list[i]!;
+          const B = list[j]!;
           const ww: string[] = [];
           for (const r of A.writes) {
             if (B.writes.indexOf(r) !== -1 && ww.indexOf(r) === -1) ww.push(r);
