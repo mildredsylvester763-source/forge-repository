@@ -16,7 +16,7 @@ export const pgOrchestratorMigrations: readonly Migration[] = [
         requires_approval BOOLEAN NOT NULL,
         steps             JSONB NOT NULL,
         created_at        BIGINT NOT NULL,
-        updated_at        BIGINT NOT NULL,
+        updated_at        BIGINT NOT NULL
       );
       CREATE INDEX orchestrator_plans_user_idx ON orchestrator_plans (user_id, created_at);
     `,

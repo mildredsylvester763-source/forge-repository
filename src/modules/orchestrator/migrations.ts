@@ -16,7 +16,7 @@ export const orchestratorMigrations: readonly Migration[] = [
         requires_approval INTEGER NOT NULL,
         steps             TEXT NOT NULL,
         created_at        INTEGER NOT NULL,
-        updated_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
       ) STRICT;
       CREATE INDEX orchestrator_plans_user_idx ON orchestrator_plans (user_id, created_at);
     `,
