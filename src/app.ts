@@ -35,6 +35,15 @@ import {
   type ThrottleConfig,
   type UserStore,
 } from './modules/identity/index.ts';
+import {
+  InMemoryTaskRunStore,
+  PostgresTaskRunStore,
+  SqliteTaskRunStore,
+  TaskRuntimeService,
+  taskRuntimeMigrations,
+  taskRuntimeRoutes,
+  type TaskRunStore,
+} from './modules/task-runtime/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -50,6 +59,7 @@ export interface ForgeApp {
   handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   events: EventStore;
   identity: IdentityService;
+  tasks: TaskRuntimeService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -63,6 +73,7 @@ interface Storage {
   users: UserStore;
   sessionStore: SessionStore;
   uow: IdentityUnitOfWork;
+  runs: TaskRunStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -72,22 +83,26 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const events = new PostgresEventStore({ pool, clock, logger });
     const users = new PostgresUserStore(pool);
     const sessionStore = new PostgresSessionStore(pool);
-    return { db: null, pool, events, users, sessionStore, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const runs = new PostgresTaskRunStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
     const db = openDatabase(path);
     migrate(db, 'kernel', kernelMigrations);
     migrate(db, 'identity', identityMigrations);
+    migrate(db, 'task_runtime', taskRuntimeMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
-    return { db, pool: null, events, users, sessionStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const runs = new SqliteTaskRunStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
-  return { db: null, pool: null, events, users, sessionStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const runs = new InMemoryTaskRunStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -130,6 +145,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     checkBreachOnSignIn: config.breach.checkOnSignIn,
   });
 
+  const tasks = new TaskRuntimeService({ runs: storage.runs, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -139,6 +156,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
+    ...taskRuntimeRoutes(tasks, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -154,5 +172,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, logger, db: storage.db, close };
 }

@@ -8,6 +8,7 @@ import { migratePostgres } from './kernel/postgres-migrate.ts';
 import { createPostgresPool } from './kernel/postgres.ts';
 import type { SqlPool } from './kernel/sql.ts';
 import { pgIdentityMigrations } from './modules/identity/index.ts';
+import { pgTaskRuntimeMigrations } from './modules/task-runtime/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -15,7 +16,8 @@ async function main(): Promise<void> {
     config = loadConfig();
   } catch (err) {
     if (err instanceof ConfigError) {
-      process.stderr.write(`${err.message}\n`);
+      process.stderr.write(`${err.message}\
+`);
       process.exit(78); // EX_CONFIG
     }
     throw err;
@@ -35,6 +37,7 @@ async function main(): Promise<void> {
     });
     await migratePostgres(pool, 'kernel', pgKernelMigrations);
     await migratePostgres(pool, 'identity', pgIdentityMigrations);
+    await migratePostgres(pool, 'task_runtime', pgTaskRuntimeMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 
@@ -76,6 +79,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`fatal: ${err instanceof Error ? err.message : String(err)}\
+`);
   process.exit(1);
 });
