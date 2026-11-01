@@ -4,7 +4,7 @@ import { planHandoffs, selectAgent } from '../src/modules/orchestrator/engine/ag
 import { checkToolPermission, toolsForPlan } from '../src/modules/orchestrator/engine/tool-registry.ts';
 import { runSandboxed } from '../src/modules/orchestrator/engine/execution-sandbox.ts';
 import { classifyIntent, INTENTS } from '../src/modules/orchestrator/engine/intent-classification.ts';
-import { PLAN_ACTIONS, editPlan, planTask } from '../src/modules/orchestrator/engine/task-planner.ts';
+import { PLAN_ACTIONS, editPlan, planTask, type PlanStep } from '../src/modules/orchestrator/engine/task-planner.ts';
 import { previewPlan } from '../src/modules/orchestrator/engine/plan-preview.ts';
 
 function mulberry32(seed: number): () => number {
@@ -115,7 +115,7 @@ describe('orchestrator engine: task planner (AI-074)', () => {
       const v = planTask({ goal: 'goal ' + c, steps });
       assert.ok(v.ok === true && v.goal === 'goal ' + c && v.steps !== undefined && v.steps.length === n, 'case ' + c);
       for (let i = 0; i < n; i++) {
-        const s = v.steps[i]!;
+        const s: PlanStep = v.steps[i]!;
         const expectedDetail = steps[i]!.detail ?? steps[i]!.action;
         assert.ok(s.id === 's' + (i + 1) && s.action === steps[i]!.action && s.detail === expectedDetail, 'case ' + c + ' step ' + i);
         assert.deepEqual(s.dependsOn, i === 0 ? [] : ['s' + i]);
@@ -209,7 +209,7 @@ describe('orchestrator engine: plan editing (AI-074)', () => {
       } else {
         assert.ok(v.ok === true && v.steps !== undefined && v.steps.length === modelActs.length, 'case ' + c);
         for (let i = 0; i < modelActs.length; i++) {
-          const s = v.steps[i]!;
+          const s: PlanStep = v.steps[i]!;
           assert.ok(s.id === 's' + (i + 1) && s.action === modelActs[i] && s.detail === modelDetails[i], 'case ' + c + ' step ' + i);
           assert.deepEqual(s.dependsOn, i === 0 ? [] : ['s' + i]);
         }
