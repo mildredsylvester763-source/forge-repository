@@ -80,6 +80,15 @@ import {
   liveTestingRoutes,
   type LiveTestingStore,
 } from './modules/live-testing/index.ts';
+import {
+  InMemoryWebSearchStore,
+  PostgresWebSearchStore,
+  SqliteWebSearchStore,
+  WebSearchService,
+  webSearchMigrations,
+  webSearchRoutes,
+  type WebSearchStore,
+} from './modules/web-search/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -100,6 +109,7 @@ export interface ForgeApp {
   testQuality: TestQualityService;
   testGeneration: TestGenerationService;
   liveTesting: LiveTestingService;
+  webSearch: WebSearchService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -118,6 +128,7 @@ interface Storage {
   goldens: TestQualityGoldenStore;
   suites: GeneratedSuiteStore;
   liveTesting: LiveTestingStore;
+  webSearch: WebSearchStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -132,7 +143,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const goldens = new PostgresGoldenStore(pool);
     const suites = new PostgresGeneratedSuiteStore(pool);
     const liveTesting = new PostgresLiveTestingStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const webSearch = new PostgresWebSearchStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -144,6 +156,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'test_quality', testQualityMigrations);
     migrate(db, 'test_generation', testGenerationMigrations);
     migrate(db, 'live_testing', liveTestingMigrations);
+    migrate(db, 'web_search', webSearchMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -152,7 +165,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const goldens = new SqliteGoldenStore(db);
     const suites = new SqliteGeneratedSuiteStore(db);
     const liveTesting = new SqliteLiveTestingStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const webSearch = new SqliteWebSearchStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -162,7 +176,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const goldens = new InMemoryGoldenStore();
   const suites = new InMemoryGeneratedSuiteStore();
   const liveTesting = new InMemoryLiveTestingStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const webSearch = new InMemoryWebSearchStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -215,6 +230,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const liveTesting = new LiveTestingService({ store: storage.liveTesting, events, clock });
 
+  const webSearch = new WebSearchService({ store: storage.webSearch, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -229,6 +246,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...testQualityRoutes(testQuality, identity, config.cookie),
     ...testGenerationRoutes(testGeneration, identity, config.cookie),
     ...liveTestingRoutes(liveTesting, identity, config.cookie),
+    ...webSearchRoutes(webSearch, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -244,5 +262,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, logger, db: storage.db, close };
 }
