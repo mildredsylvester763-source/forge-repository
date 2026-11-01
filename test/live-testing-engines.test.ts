@@ -383,7 +383,7 @@ describe('session-recording engine (FORGE TQ-015, TQ-016)', () => {
         markers.push({ label: 'mark ' + i, occurredAt: new Date(start + Math.floor(rand() * 200) - 20) });
       }
       const got = buildTimeline(new Date(start), steps, markers);
-      let expected: { ok: boolean; reason?: string; events?: unknown[]; durationMs?: number };
+      let expected: { ok: boolean; reason?: string; events?: unknown[]; durationMs?: number } | undefined;
       let broken = false;
       const entries: Array<{ at: number; tie: number; kind: string; label: string }> = [];
       for (let i = 0; i < steps.length; i++) {
