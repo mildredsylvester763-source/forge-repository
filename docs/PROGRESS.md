@@ -21,6 +21,7 @@ This file is the project's memory. Update it with every change. Nothing the owne
 | AI-079..083 | Task runtime: step validation, approval gates, task control, history journal and replay, parallel conflicts | Five pure engines with oracle-swept specs, stores for memory, SQLite and PostgreSQL, service, routes, functional tests. |
 | AI-073..078 | Orchestrator: intent classification, task planner and plan editing, plan preview, agent handoffs, tool permissions, execution sandbox | Six pure engines with oracle-swept specs, stores for memory, SQLite and PostgreSQL, service, routes, functional tests. |
 | TQ-036..040 | Test quality: mutation testing, contract testing, snapshot goldens, visual regression, browser matrix | Five pure engines with oracle-swept specs, golden stores for memory, SQLite and PostgreSQL, service, routes, functional tests. |
+| TQ-031..035 | Test generation: unit boundary suites, integration graph suites, e2e session replay, property-based suites, fuzz campaigns | Five pure engines with oracle-swept specs, suite stores for memory, SQLite and PostgreSQL, service, routes, functional tests. |
 
 ## Partly built (so CO-001 could work)
 
