@@ -13,6 +13,7 @@ export interface PlanStep {
   id: string;
   action: string;
   detail: string;
+  file?: string;
   dependsOn: string[];
 }
 
@@ -26,6 +27,7 @@ export interface PlanVerdict {
 interface StepLike {
   action?: unknown;
   detail?: unknown;
+  file?: unknown;
   id?: unknown;
 }
 
@@ -40,11 +42,17 @@ function detailOf(s: unknown, fallback: string): string {
   return typeof d === 'string' && d.trim().length > 0 ? d.trim() : fallback;
 }
 
-function sequence(actions: Array<{ action: string; detail: string }>): PlanStep[] {
+function fileOf(s: unknown): string | undefined {
+  const f = (s as StepLike)?.file;
+  return typeof f === 'string' && f.trim().length > 0 ? f.trim() : undefined;
+}
+
+function sequence(actions: Array<{ action: string; detail: string; file?: string }>): PlanStep[] {
   return actions.map((a, i) => ({
     id: 's' + (i + 1),
     action: a.action,
     detail: a.detail,
+    ...(a.file !== undefined ? { file: a.file } : {}),
     dependsOn: i === 0 ? [] : ['s' + i],
   }));
 }
@@ -65,7 +73,7 @@ export function planTask(input: { goal?: unknown; steps?: unknown }): PlanVerdic
   if (stepsRaw.length > PLAN_STEP_LIMIT) {
     return { ok: false, reason: 'plan-steps-limit:' + stepsRaw.length };
   }
-  const actions: Array<{ action: string; detail: string }> = [];
+  const actions: Array<{ action: string; detail: string; file?: string }> = [];
   for (const s of stepsRaw) {
     const action = actionOf(s);
     if (action.length === 0) {
@@ -74,7 +82,7 @@ export function planTask(input: { goal?: unknown; steps?: unknown }): PlanVerdic
     if (!PLAN_ACTIONS.includes(action)) {
       return { ok: false, reason: 'plan-step-action-unknown:' + action };
     }
-    actions.push({ action, detail: detailOf(s, action) });
+    actions.push({ action, detail: detailOf(s, action), file: fileOf(s) });
   }
   return { ok: true, goal, steps: sequence(actions) };
 }
@@ -110,9 +118,9 @@ export function editPlan(input: { steps?: unknown; edits?: unknown }): PlanVerdi
   if (editsRaw.length === 0) {
     return { ok: false, reason: 'plan-edits-empty' };
   }
-  const work: Array<{ action: string; detail: string }> = stepsRaw.map((s) => {
+  const work: Array<{ action: string; detail: string; file?: string }> = stepsRaw.map((s) => {
     const action = actionOf(s);
-    return { action, detail: detailOf(s, action) };
+    return { action, detail: detailOf(s, action), file: fileOf(s) };
   });
   const workIds: string[] = stepsRaw.map((s) => String((s as StepLike).id).trim());
   for (const e of editsRaw) {
@@ -143,7 +151,7 @@ export function editPlan(input: { steps?: unknown; edits?: unknown }): PlanVerdi
       if (!PLAN_ACTIONS.includes(action)) {
         return { ok: false, reason: 'plan-step-action-unknown:' + action };
       }
-      work.splice(index, 0, { action, detail: detailOf(step, action) });
+      work.splice(index, 0, { action, detail: detailOf(step, action), file: fileOf(step) });
       workIds.splice(index, 0, 'inserted');
     } else if (op === 'remove') {
       const id =
@@ -184,3 +192,4 @@ export function editPlan(input: { steps?: unknown; edits?: unknown }): PlanVerdi
   }
   return { ok: true, steps: sequence(work) };
 }
+

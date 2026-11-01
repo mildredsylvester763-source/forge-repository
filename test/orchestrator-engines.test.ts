@@ -95,6 +95,10 @@ describe('orchestrator engine: task planner (AI-074)', () => {
     assert.equal(tp1.steps[2]!.dependsOn[0], 's2');
     assert.equal(tp1.steps[1]!.detail, 'the report');
     assert.equal(tp1.steps[2]!.detail, 'run');
+    const tp2 = planTask({ goal: 'ship it', steps: [{ action: 'write', file: ' a.ts ' }, { action: 'run', file: '' }] });
+    assert.ok(tp2.ok === true && tp2.steps !== undefined && tp2.steps.length === 2);
+    assert.deepEqual(tp2.steps[0], { id: 's1', action: 'write', detail: 'write', file: 'a.ts', dependsOn: [] });
+    assert.ok(tp2.steps[1]!.file === undefined);
     assert.equal(planTask({ steps: [{ action: 'search' }] }).reason, 'plan-goal-missing');
     assert.equal(planTask({ goal: 'g'.repeat(501), steps: [{ action: 'search' }] }).reason, 'plan-goal-too-long');
     assert.equal(planTask({ goal: 'g', steps: [] }).reason, 'plan-steps-empty');
@@ -107,17 +111,21 @@ describe('orchestrator engine: task planner (AI-074)', () => {
     const rng = mulberry32(42);
     for (let c = 0; c < 500; c++) {
       const n = 1 + Math.floor(rng() * 8);
-      const steps: Array<{ action: string; detail?: string }> = [];
+      const steps: Array<{ action: string; detail?: string; file?: string }> = [];
       for (let k = 0; k < n; k++) {
         const action = PLAN_ACTIONS[Math.floor(rng() * 5)]!;
-        steps.push(rng() < 0.5 ? { action } : { action, detail: 'd' + k });
+        const st: { action: string; detail?: string; file?: string } = { action };
+        const mode = rng();
+        if (mode < 0.25) st.detail = 'd' + k;
+        else if (mode < 0.5) st.file = 'f' + k + '.md';
+        steps.push(st);
       }
       const v = planTask({ goal: 'goal ' + c, steps });
       assert.ok(v.ok === true && v.goal === 'goal ' + c && v.steps !== undefined && v.steps.length === n, 'case ' + c);
       for (let i = 0; i < n; i++) {
         const s: PlanStep = v.steps[i]!;
         const expectedDetail = steps[i]!.detail ?? steps[i]!.action;
-        assert.ok(s.id === 's' + (i + 1) && s.action === steps[i]!.action && s.detail === expectedDetail, 'case ' + c + ' step ' + i);
+        assert.ok(s.id === 's' + (i + 1) && s.action === steps[i]!.action && s.detail === expectedDetail && s.file === steps[i]!.file, 'case ' + c + ' step ' + i);
         assert.deepEqual(s.dependsOn, i === 0 ? [] : ['s' + i]);
       }
     }
@@ -140,6 +148,11 @@ describe('orchestrator engine: plan editing (AI-074)', () => {
     const ep2 = editPlan({ steps: base, edits: [{ op: 'insert', index: 1, step: { action: 'verify' } }, { op: 'move', id: 's1', toIndex: 2 }] });
     assert.ok(ep2.ok === true && ep2.steps !== undefined);
     assert.equal(ep2.steps.map((s) => s.action).join(','), 'verify,write,search,run');
+    const ep3 = editPlan({ steps: [{ id: 's1', action: 'search' }, { id: 's2', action: 'write', file: 'a.ts' }], edits: [{ op: 'move', id: 's2', toIndex: 0 }, { op: 'insert', index: 1, step: { action: 'verify', file: 'v.md' } }] });
+    assert.ok(ep3.ok === true && ep3.steps !== undefined && ep3.steps.length === 3);
+    assert.deepEqual(ep3.steps[0], { id: 's1', action: 'write', detail: 'write', file: 'a.ts', dependsOn: [] });
+    assert.deepEqual(ep3.steps[1], { id: 's2', action: 'verify', detail: 'verify', file: 'v.md', dependsOn: ['s1'] });
+    assert.ok(ep3.steps[2]!.file === undefined);
     assert.equal(editPlan({ steps: base, edits: [{ op: 'remove', id: 's9' }] }).reason, 'plan-edit-id-unknown:s9');
     assert.equal(editPlan({ steps: base, edits: [{ op: 'copy', id: 's1' }] }).reason, 'plan-edit-op-unknown:copy');
     assert.equal(editPlan({ steps: [{ id: 's1', action: 'search' }], edits: [{ op: 'remove', id: 's1' }] }).reason, 'plan-edit-result-empty');
@@ -484,3 +497,4 @@ describe('orchestrator engine: execution sandbox (AI-078)', () => {
     }
   });
 });
+
