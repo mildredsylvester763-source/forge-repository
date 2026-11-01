@@ -139,6 +139,7 @@ export function orchestratorRoutes(service: OrchestratorService, identity: Ident
         const body = (await ctx.json()) as Record<string, unknown>;
         rejectUnknownFields(body, ['planId', 'edits']);
         if (typeof body.planId !== 'string' || body.planId.length === 0 || body.planId.length > 64) throw invalidField('planId', 'invalid');
+        if (body.edits !== undefined && !Array.isArray(body.edits)) throw invalidField('edits', 'invalid');
         const result = await service.editPlan(user.id, { planId: body.planId, edits: body.edits });
         return { status: 200, body: { plan: toPlanView(result.plan, result.filesTouched) } };
       },

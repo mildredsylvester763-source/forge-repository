@@ -15,4 +15,15 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
-      - run: npm test
+      - name: Run tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee forge-test.log
+      - name: Surface failing tests as annotations
+        if: failure()
+        run: |
+          if [ -f forge-test.log ]; then
+            grep -E '✖|AssertionError|SyntaxError|ReferenceError|TypeError|ERR_|ℹ fail' forge-test.log | head -n 8 | while IFS= read -r line; do
+              echo "::error::${line:0:240}"
+            done
+          fi
