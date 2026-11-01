@@ -26,6 +26,14 @@ import { buildTimeline } from '../src/modules/live-testing/engine/session-record
 import { evaluateStep, resolveSafeMode } from '../src/modules/live-testing/engine/safe-mode.ts';
 import { narrate, parseGoal } from '../src/modules/live-testing/engine/step-narration.ts';
 import { convertSession } from '../src/modules/live-testing/engine/test-conversion.ts';
+import { DEVICES, deviceCatalog, NETWORKS, networkCatalog, normalizeDeviceProfile } from '../src/modules/live-testing/engine/device-profile.ts';
+import { checkHandoff } from '../src/modules/live-testing/engine/cross-device-handoff.ts';
+import { checkInterruption, interruptionCatalog } from '../src/modules/live-testing/engine/interruption-scenario.ts';
+import { checkPermissionPlan, nextPermissionState, permissionCatalog } from '../src/modules/live-testing/engine/permission-matrix.ts';
+import { checkGesture, gestureCatalog } from '../src/modules/live-testing/engine/gesture-mechanics.ts';
+import { applyCreativeOperation, creativeEditorCatalog, INITIAL_CREATIVE_STATE } from '../src/modules/live-testing/engine/creative-tool-operation.ts';
+import { avCatalog, avStateTransition, checkPlayback, checkSync } from '../src/modules/live-testing/engine/av-output.ts';
+import { checkCleanup, deriveTestAccounts, FIXTURE_DOMAIN } from '../src/modules/live-testing/engine/test-data-lifecycle.ts';
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -668,6 +676,851 @@ describe('session-collaboration engine (FORGE TQ-024)', () => {
         expected = { ok: false, allowed: false, reason: 'collaboration-capability-denied:' + role + ':' + capability };
       } else expected = { ok: true, allowed: true };
       assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('device-profile engine (FORGE TQ-019..TQ-021)', () => {
+  it('lists the twelve named devices and six pinned networks', () => {
+    assert.equal(deviceCatalog().length, 12);
+    assert.equal(networkCatalog().length, 6);
+    assert.deepEqual(DEVICES.filter((d) => d.lowEnd).map((d) => d.device), ['low-end-android', 'low-end-iphone']);
+    assert.deepEqual(DEVICES.filter((d) => d.lowEnd).map((d) => d.cpuThrottle), [4, 4]);
+    assert.deepEqual(NETWORKS.find((n) => n.network === 'offline'), { network: 'offline', offline: true, downlinkKbps: 0, latencyMs: 0 });
+    assert.deepEqual(NETWORKS.find((n) => n.network === 'wifi'), { network: 'wifi', offline: false, downlinkKbps: 30000, latencyMs: 40 });
+  });
+
+  it('normalizes one profile verdict out of a device and a network', () => {
+    const v = normalizeDeviceProfile({ device: '  Pixel-5  ', network: ' slow-3g ' });
+    assert.deepEqual(v.profile, {
+      device: 'pixel-5',
+      network: 'slow-3g',
+      platform: 'android',
+      lowEnd: false,
+      cpuThrottle: 1,
+      offline: false,
+      downlinkKbps: 400,
+      latencyMs: 2000,
+    });
+    const lowEnd = normalizeDeviceProfile({ device: 'low-end-android', network: 'offline' });
+    assert.deepEqual(lowEnd.profile, {
+      device: 'low-end-android',
+      network: 'offline',
+      platform: 'android',
+      lowEnd: true,
+      cpuThrottle: 4,
+      offline: true,
+      downlinkKbps: 0,
+      latencyMs: 0,
+    });
+  });
+
+  it('refuses broken profiles by name', () => {
+    assert.deepEqual(normalizeDeviceProfile(null), { ok: false, reason: 'deviceprofile-not-object' });
+    assert.deepEqual(normalizeDeviceProfile('pixel-5'), { ok: false, reason: 'deviceprofile-not-object' });
+    assert.deepEqual(normalizeDeviceProfile([]), { ok: false, reason: 'deviceprofile-not-object' });
+    assert.deepEqual(normalizeDeviceProfile({}), { ok: false, reason: 'device-missing' });
+    assert.deepEqual(normalizeDeviceProfile({ device: 'pixel-99' }), { ok: false, reason: 'device-unknown:pixel-99' });
+    assert.deepEqual(normalizeDeviceProfile({ device: 'pixel-5' }), { ok: false, reason: 'network-missing' });
+    assert.deepEqual(normalizeDeviceProfile({ device: 'pixel-5', network: '9g' }), { ok: false, reason: 'network-unknown:9g' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) profile inputs', () => {
+    const rand = mulberry32(42);
+    const deviceNames = [...DEVICES.map((d) => d.device), 'pixel-99', 'watch'];
+    const networkNames = [...NETWORKS.map((n) => n.network), '9g', ''];
+    for (let c = 0; c < 500; c++) {
+      const input: unknown = c % 11 === 0 ? [c] : c % 13 === 0 ? null : { device: deviceNames[Math.floor(rand() * deviceNames.length)]!, network: networkNames[Math.floor(rand() * networkNames.length)]! };
+      const got = normalizeDeviceProfile(input);
+      let expected: { ok: boolean; reason?: string; profile?: Record<string, unknown> } | undefined;
+      if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+        expected = { ok: false, reason: 'deviceprofile-not-object' };
+      } else {
+        const obj = input as Record<string, unknown>;
+        const dn = typeof obj.device === 'string' ? obj.device.trim().toLowerCase() : '';
+        const device = DEVICES.find((d) => d.device === dn);
+        const nn = typeof obj.network === 'string' ? obj.network.trim().toLowerCase() : '';
+        const network = NETWORKS.find((n) => n.network === nn);
+        if (dn.length === 0) expected = { ok: false, reason: 'device-missing' };
+        else if (!device) expected = { ok: false, reason: 'device-unknown:' + dn };
+        else if (nn.length === 0) expected = { ok: false, reason: 'network-missing' };
+        else if (!network) expected = { ok: false, reason: 'network-unknown:' + nn };
+        else {
+          expected = {
+            ok: true,
+            profile: {
+              device: device.device,
+              network: network.network,
+              platform: device.platform,
+              lowEnd: device.lowEnd,
+              cpuThrottle: device.cpuThrottle,
+              offline: network.offline,
+              downlinkKbps: network.downlinkKbps,
+              latencyMs: network.latencyMs,
+            },
+          };
+        }
+      }
+      assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('cross-device-handoff engine (FORGE TQ-025)', () => {
+  it('hands an acting session to another named device from the catalog', () => {
+    const v = checkHandoff({ status: 'running', toDevice: 'iphone-13', fromDevice: 'pixel-5' });
+    assert.deepEqual(v.handoff, {
+      fromDevice: 'pixel-5',
+      toDevice: 'iphone-13',
+      toPlatform: 'ios',
+      initial: false,
+      platformChanged: true,
+      resume: 'manual',
+      goalPreserved: true,
+    });
+    const samePlatform = checkHandoff({ status: 'paused', toDevice: 'ipad-9', fromDevice: 'iphone-13' });
+    assert.equal(samePlatform.handoff?.platformChanged, false);
+    assert.equal(samePlatform.handoff?.resume, 'automatic');
+  });
+
+  it('stages the first device automatically even across platforms', () => {
+    const v = checkHandoff({ status: 'running', toDevice: 'iphone-13', platform: 'android' });
+    assert.deepEqual(v.handoff, {
+      fromDevice: null,
+      toDevice: 'iphone-13',
+      toPlatform: 'ios',
+      initial: true,
+      platformChanged: true,
+      resume: 'automatic',
+      goalPreserved: true,
+    });
+  });
+
+  it('refuses broken handoffs by name', () => {
+    assert.deepEqual(checkHandoff({}), { ok: false, reason: 'handoff-status-missing' });
+    assert.deepEqual(checkHandoff({ status: 'completed', toDevice: 'ipad-9' }), { ok: false, reason: 'handoff-state-invalid:completed' });
+    assert.deepEqual(checkHandoff({ status: 'running' }), { ok: false, reason: 'handoff-to-missing' });
+    assert.deepEqual(checkHandoff({ status: 'running', toDevice: 'pixel-99' }), { ok: false, reason: 'handoff-device-unknown:pixel-99' });
+    assert.deepEqual(checkHandoff({ status: 'running', toDevice: 'ipad-9', fromDevice: 'pixel-99' }), { ok: false, reason: 'handoff-device-unknown:pixel-99' });
+    assert.deepEqual(checkHandoff({ status: 'running', toDevice: 'ipad-9' }), { ok: false, reason: 'handoff-platform-missing' });
+    assert.deepEqual(checkHandoff({ status: 'running', toDevice: 'pixel-5', fromDevice: 'pixel-5' }), { ok: false, reason: 'handoff-same-device' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) handoff intents', () => {
+    const DEVICE_NAMES = DEVICES.map((d) => d.device);
+    const STATUSES = ['running', 'paused', 'completed', 'manual', ''];
+    const toList = [...DEVICE_NAMES, ''];
+    const fromList = [...DEVICE_NAMES, 'pixel-99'];
+    const platforms = ['web', 'android', 'ios', 'desktop', ''];
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const status = STATUSES[Math.floor(rand() * STATUSES.length)]!;
+      const to = toList[Math.floor(rand() * toList.length)]!;
+      const useFrom = rand() < 0.45;
+      const input = {
+        status,
+        toDevice: to,
+        fromDevice: useFrom ? fromList[Math.floor(rand() * fromList.length)]! : undefined,
+        platform: useFrom ? undefined : platforms[Math.floor(rand() * platforms.length)]!,
+      };
+      const got = checkHandoff(input);
+      let expected: { ok: boolean; reason?: string; handoff?: Record<string, unknown> } | undefined;
+      if (status.length === 0) expected = { ok: false, reason: 'handoff-status-missing' };
+      else if (status !== 'running' && status !== 'paused') expected = { ok: false, reason: 'handoff-state-invalid:' + status };
+      else if (to.length === 0) expected = { ok: false, reason: 'handoff-to-missing' };
+      else if (!DEVICES.some((d) => d.device === to)) expected = { ok: false, reason: 'handoff-device-unknown:' + to };
+      else {
+        const toSpec = DEVICES.find((d) => d.device === to)!;
+        const hasFrom = useFrom && typeof input.fromDevice === 'string' && input.fromDevice.length > 0;
+        if (hasFrom) {
+          const fn = (input.fromDevice as string).trim().toLowerCase();
+          const fromSpec = DEVICES.find((d) => d.device === fn);
+          if (!fromSpec) expected = { ok: false, reason: 'handoff-device-unknown:' + fn };
+          else if (fromSpec.device === toSpec.device) expected = { ok: false, reason: 'handoff-same-device' };
+          else {
+            const changed = fromSpec.platform !== toSpec.platform;
+            expected = {
+              ok: true,
+              handoff: {
+                fromDevice: fromSpec.device,
+                toDevice: toSpec.device,
+                toPlatform: toSpec.platform,
+                initial: false,
+                platformChanged: changed,
+                resume: changed ? 'manual' : 'automatic',
+                goalPreserved: true,
+              },
+            };
+          }
+        } else {
+          const platform = typeof input.platform === 'string' ? input.platform : '';
+          if (platform.length === 0) expected = { ok: false, reason: 'handoff-platform-missing' };
+          else {
+            const changed = platform !== toSpec.platform;
+            expected = {
+              ok: true,
+              handoff: {
+                fromDevice: null,
+                toDevice: toSpec.device,
+                toPlatform: toSpec.platform,
+                initial: true,
+                platformChanged: changed,
+                resume: 'automatic',
+                goalPreserved: true,
+              },
+            };
+          }
+        }
+      }
+      assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('interruption-scenario engine (FORGE TQ-022)', () => {
+  it('catalogs the seven interruption scenarios per platform', () => {
+    assert.equal(interruptionCatalog().length, 7);
+    assert.deepEqual(interruptionCatalog('web').map((s) => s.scenario), ['push-notification', 'network-drop']);
+    assert.deepEqual(interruptionCatalog('desktop').map((s) => s.scenario), ['push-notification', 'low-battery', 'network-drop', 'system-update']);
+    assert.deepEqual(interruptionCatalog('watch'), []);
+  });
+
+  it('rules on live interruptions with a named verdict', () => {
+    assert.deepEqual(checkInterruption({ platform: 'android', scenario: 'incoming-call', status: 'running' }), {
+      ok: true,
+      scenario: 'incoming-call',
+      name: 'Incoming call',
+      resume: 'manual',
+      dataLossRisk: true,
+      expectation: 'The app pauses mid-flow and restores full state when the call ends',
+    });
+    assert.deepEqual(checkInterruption({ platform: 'web', scenario: 'incoming-sms', status: 'running' }), {
+      ok: false,
+      reason: 'interruption-platform-unsupported:incoming-sms:web',
+    });
+  });
+
+  it('refuses broken interruptions by name', () => {
+    assert.deepEqual(checkInterruption({}), { ok: false, reason: 'interruption-platform-missing' });
+    assert.deepEqual(checkInterruption({ platform: 'watch' }), { ok: false, reason: 'interruption-platform-unknown:watch' });
+    assert.deepEqual(checkInterruption({ platform: 'web' }), { ok: false, reason: 'interruption-scenario-missing' });
+    assert.deepEqual(checkInterruption({ platform: 'web', scenario: 'ghost' }), { ok: false, reason: 'interruption-unknown:ghost' });
+    assert.deepEqual(checkInterruption({ platform: 'android', scenario: 'incoming-call' }), { ok: false, reason: 'interruption-status-missing' });
+    assert.deepEqual(checkInterruption({ platform: 'android', scenario: 'incoming-call', status: 'paused' }), { ok: false, reason: 'interruption-session-not-running:paused' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) interruption intents', () => {
+    const SCENARIOS = interruptionCatalog();
+    const scenarioNames = [...SCENARIOS.map((s) => s.scenario), 'ghost', ''];
+    const platforms = ['web', 'android', 'ios', 'desktop', 'watch'];
+    const statuses = ['running', 'paused', 'manual', 'completed', ''];
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const platform = platforms[Math.floor(rand() * platforms.length)]!;
+      const scenario = scenarioNames[Math.floor(rand() * scenarioNames.length)]!;
+      const status = statuses[Math.floor(rand() * statuses.length)]!;
+      const got = checkInterruption({ platform, scenario, status });
+      const spec = SCENARIOS.find((s) => s.scenario === scenario);
+      let expected: { ok: boolean; reason?: string; scenario?: string; name?: string; resume?: string; dataLossRisk?: boolean; expectation?: string } | undefined;
+      if (!['web', 'android', 'ios', 'desktop'].includes(platform)) expected = { ok: false, reason: 'interruption-platform-unknown:' + platform };
+      else if (scenario.length === 0) expected = { ok: false, reason: 'interruption-scenario-missing' };
+      else if (!spec) expected = { ok: false, reason: 'interruption-unknown:' + scenario };
+      else if (!spec.platforms.includes(platform)) expected = { ok: false, reason: 'interruption-platform-unsupported:' + scenario + ':' + platform };
+      else if (status.length === 0) expected = { ok: false, reason: 'interruption-status-missing' };
+      else if (status !== 'running') expected = { ok: false, reason: 'interruption-session-not-running:' + status };
+      else expected = { ok: true, scenario: spec.scenario, name: spec.name, resume: spec.resume, dataLossRisk: spec.dataLossRisk, expectation: spec.expectation };
+      assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('permission-matrix engine (FORGE TQ-023)', () => {
+  it('catalogs the per platform permission vocabulary', () => {
+    assert.equal(permissionCatalog().length, 4);
+    assert.deepEqual(permissionCatalog('web'), [
+      { platform: 'web', permissions: ['camera', 'clipboard-read', 'location', 'microphone', 'notifications'] },
+    ]);
+    assert.equal(permissionCatalog('android')[0]!.permissions.length, 7);
+    assert.equal(permissionCatalog('ios')[0]!.permissions.length, 7);
+    assert.deepEqual(permissionCatalog('watch'), []);
+  });
+
+  it('stages permission plans with counts and named refusals', () => {
+    const v = checkPermissionPlan({
+      platform: 'web',
+      grants: [
+        { permission: 'camera', state: 'granted' },
+        { permission: 'location', state: 'ask' },
+        { permission: 'microphone', state: 'denied' },
+      ],
+    });
+    assert.equal(v.ok, true);
+    assert.deepEqual(v.plan, [
+      { permission: 'camera', state: 'granted' },
+      { permission: 'location', state: 'ask' },
+      { permission: 'microphone', state: 'denied' },
+    ]);
+    assert.deepEqual([v.granted, v.denied, v.ask], [1, 1, 1]);
+
+    assert.deepEqual(checkPermissionPlan({}), { ok: false, reason: 'permission-platform-missing' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'watch' }), { ok: false, reason: 'permission-platform-unknown:watch' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web' }), { ok: false, reason: 'permission-plan-not-array' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [] }), { ok: false, reason: 'permission-plan-empty' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [null] }), { ok: false, reason: 'permission-grant-not-object' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ state: 'granted' }] }), { ok: false, reason: 'permission-name-missing' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ permission: 'photos', state: 'granted' }] }), { ok: false, reason: 'permission-unknown:photos:web' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ permission: 'camera' }] }), { ok: false, reason: 'permission-state-missing' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ permission: 'camera', state: 'maybe' }] }), { ok: false, reason: 'permission-state-invalid:maybe' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ permission: 'camera', state: 'blocked' }] }), { ok: false, reason: 'permission-state-not-planable:blocked' });
+    assert.deepEqual(checkPermissionPlan({ platform: 'web', grants: [{ permission: 'camera', state: 'granted' }, { permission: 'camera', state: 'ask' }] }), { ok: false, reason: 'permission-duplicate:camera' });
+  });
+
+  it('walks the ask, grant, deny and block runtime flow', () => {
+    assert.deepEqual(nextPermissionState({ current: 'ask', choice: 'grant' }), { ok: true, state: 'granted', askable: false });
+    assert.deepEqual(nextPermissionState({ current: 'ask', choice: 'deny' }), { ok: true, state: 'denied', askable: true });
+    assert.deepEqual(nextPermissionState({ current: 'denied', choice: 'grant' }), { ok: true, state: 'granted', askable: false });
+    assert.deepEqual(nextPermissionState({ current: 'denied', choice: 'deny' }), { ok: true, state: 'blocked', askable: false });
+    assert.deepEqual(nextPermissionState({ current: 'granted', choice: 'deny' }), { ok: true, state: 'denied', askable: true });
+    assert.deepEqual(nextPermissionState({ current: 'granted', choice: 'grant' }), { ok: true, state: 'granted', askable: false });
+    assert.deepEqual(nextPermissionState({ current: 'blocked', choice: 'grant' }), { ok: false, reason: 'permission-blocked-no-prompt' });
+    assert.deepEqual(nextPermissionState({ current: 'junk' }), { ok: false, reason: 'permission-state-unknown:junk' });
+    assert.deepEqual(nextPermissionState({ current: 'ask', choice: 'maybe' }), { ok: false, reason: 'permission-choice-invalid:maybe' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) runtime choices', () => {
+    const states = ['ask', 'granted', 'denied', 'blocked', 'junk', ''];
+    const choices = ['grant', 'deny', 'maybe', ''];
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const current = states[Math.floor(rand() * states.length)]!;
+      const choice = choices[Math.floor(rand() * choices.length)]!;
+      const got = nextPermissionState({ current, choice });
+      let expected: { ok: boolean; reason?: string; state?: string; askable?: boolean } | undefined;
+      if (!['ask', 'granted', 'denied', 'blocked'].includes(current)) {
+        expected = { ok: false, reason: 'permission-state-unknown:' + current };
+      } else if (current === 'blocked') {
+        expected = { ok: false, reason: 'permission-blocked-no-prompt' };
+      } else if (choice !== 'grant' && choice !== 'deny') {
+        expected = { ok: false, reason: 'permission-choice-invalid:' + choice };
+      } else if (current === 'ask') {
+        expected = choice === 'grant' ? { ok: true, state: 'granted', askable: false } : { ok: true, state: 'denied', askable: true };
+      } else if (current === 'denied') {
+        expected = choice === 'grant' ? { ok: true, state: 'granted', askable: false } : { ok: true, state: 'blocked', askable: false };
+      } else {
+        expected = choice === 'deny' ? { ok: true, state: 'denied', askable: true } : { ok: true, state: 'granted', askable: false };
+      }
+      assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('gesture-mechanics engine (FORGE TQ-026)', () => {
+  it('catalogs gesture physics per platform', () => {
+    assert.equal(gestureCatalog().length, 7);
+    assert.equal(gestureCatalog('ios').length, 7);
+    assert.equal(gestureCatalog('android').length, 6);
+    assert.deepEqual(gestureCatalog('web'), []);
+    assert.deepEqual(gestureCatalog('watch'), []);
+  });
+
+  it('checks gesture physics with pinned verdicts', () => {
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'swipe', direction: 'up' }), {
+      ok: true,
+      gesture: 'swipe',
+      platform: 'android',
+      contacts: 1,
+      direction: 'up',
+      pressure: null,
+      durationMs: null,
+      text: 'Swiping up with 1 finger',
+    });
+    assert.deepEqual(checkGesture({ platform: 'ios', gesture: 'long-press' }), {
+      ok: true,
+      gesture: 'long-press',
+      platform: 'ios',
+      contacts: 1,
+      direction: null,
+      pressure: null,
+      durationMs: 500,
+      text: 'Long pressing for 500ms',
+    });
+    assert.deepEqual(checkGesture({ platform: 'ios', gesture: 'stylus-pressure', pressure: 0.5 }), {
+      ok: true,
+      gesture: 'stylus-pressure',
+      platform: 'ios',
+      contacts: 1,
+      direction: null,
+      pressure: 0.5,
+      durationMs: null,
+      text: 'Drawing with stylus at 0.5 pressure',
+    });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'multi-touch', contacts: 3 }), {
+      ok: true,
+      gesture: 'multi-touch',
+      platform: 'android',
+      contacts: 3,
+      direction: null,
+      pressure: null,
+      durationMs: null,
+      text: 'Touching with 3 fingers',
+    });
+  });
+
+  it('refuses physically impossible gestures by name', () => {
+    assert.deepEqual(checkGesture({}), { ok: false, reason: 'gesture-platform-missing' });
+    assert.deepEqual(checkGesture({ platform: 'watch' }), { ok: false, reason: 'gesture-platform-unknown:watch' });
+    assert.deepEqual(checkGesture({ platform: 'android' }), { ok: false, reason: 'gesture-missing' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'churn' }), { ok: false, reason: 'gesture-unknown:churn' });
+    assert.deepEqual(checkGesture({ platform: 'web', gesture: 'tap' }), { ok: false, reason: 'gesture-platform-unsupported:tap:web' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'swipe' }), { ok: false, reason: 'gesture-direction-missing' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'swipe', direction: 'sideways' }), { ok: false, reason: 'gesture-direction-invalid:sideways' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'tap', direction: 'up' }), { ok: false, reason: 'gesture-direction-unexpected' });
+    assert.deepEqual(checkGesture({ platform: 'ios', gesture: 'stylus-pressure' }), { ok: false, reason: 'gesture-pressure-missing' });
+    assert.deepEqual(checkGesture({ platform: 'ios', gesture: 'stylus-pressure', pressure: 2 }), { ok: false, reason: 'gesture-pressure-invalid:2' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'tap', pressure: 0.5 }), { ok: false, reason: 'gesture-pressure-unexpected' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'long-press', durationMs: 50 }), { ok: false, reason: 'gesture-duration-invalid:50' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'long-press', durationMs: 20000 }), { ok: false, reason: 'gesture-duration-invalid:20000' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'tap', durationMs: 300 }), { ok: false, reason: 'gesture-duration-unexpected' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'pinch', contacts: 1 }), { ok: false, reason: 'gesture-contacts-invalid:1' });
+    assert.deepEqual(checkGesture({ platform: 'android', gesture: 'multi-touch', contacts: 6 }), { ok: false, reason: 'gesture-contacts-invalid:6' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) gesture intents', () => {
+    const SPECS = gestureCatalog();
+    const platforms = ['web', 'android', 'ios', 'desktop', 'watch', ''];
+    const gestures = [...SPECS.map((s) => s.gesture), 'churn', ''];
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const platform = platforms[Math.floor(rand() * platforms.length)]!;
+      const gesture = gestures[Math.floor(rand() * gestures.length)]!;
+      const spec = SPECS.find((s) => s.gesture === gesture);
+      const intent = {
+        platform,
+        gesture,
+        contacts: rand() < 0.5 ? (spec ? spec.minContacts + Math.floor(rand() * (spec.maxContacts - spec.minContacts + 2)) : 2) : undefined,
+        direction: rand() < 0.5 ? ['up', 'down', 'left', 'right', 'sideways'][Math.floor(rand() * 5)]! : undefined,
+        pressure: rand() < 0.4 ? [0.25, 0.5, 1, 2, 0][Math.floor(rand() * 5)]! : undefined,
+        durationMs: rand() < 0.4 ? [100, 500, 250, 10000, 50, 20000][Math.floor(rand() * 6)]! : undefined,
+      };
+      const got = checkGesture(intent);
+      let expected: { ok: boolean; reason?: string; gesture?: string; platform?: string; contacts?: number; direction?: string | null; pressure?: number | null; durationMs?: number | null; text?: string } | undefined;
+      if (platform.length === 0) expected = { ok: false, reason: 'gesture-platform-missing' };
+      else if (!['web', 'android', 'ios', 'desktop'].includes(platform)) expected = { ok: false, reason: 'gesture-platform-unknown:' + platform };
+      else if (gesture.length === 0) expected = { ok: false, reason: 'gesture-missing' };
+      else if (!spec) expected = { ok: false, reason: 'gesture-unknown:' + gesture };
+      else if (!spec.platforms.includes(platform)) expected = { ok: false, reason: 'gesture-platform-unsupported:' + gesture + ':' + platform };
+      else {
+        let contacts = spec.minContacts;
+        let bad = false;
+        if (intent.contacts !== undefined) {
+          const cc = Number(intent.contacts);
+          if (!Number.isInteger(cc) || cc < spec.minContacts || cc > spec.maxContacts) {
+            expected = { ok: false, reason: 'gesture-contacts-invalid:' + String(intent.contacts) };
+            bad = true;
+          } else {
+            contacts = cc;
+          }
+        }
+        let direction: string | null = null;
+        if (!bad) {
+          if (spec.requiresDirection) {
+            const d = typeof intent.direction === 'string' ? intent.direction.trim().toLowerCase() : '';
+            if (d.length === 0) {
+              expected = { ok: false, reason: 'gesture-direction-missing' };
+              bad = true;
+            } else if (!['up', 'down', 'left', 'right'].includes(d)) {
+              expected = { ok: false, reason: 'gesture-direction-invalid:' + d };
+              bad = true;
+            } else {
+              direction = d;
+            }
+          } else if (typeof intent.direction === 'string' && intent.direction.trim().length > 0) {
+            expected = { ok: false, reason: 'gesture-direction-unexpected' };
+            bad = true;
+          }
+        }
+        let pressure: number | null = null;
+        if (!bad) {
+          if (spec.requiresPressure) {
+            if (intent.pressure === undefined) {
+              expected = { ok: false, reason: 'gesture-pressure-missing' };
+              bad = true;
+            } else {
+              const pr = Number(intent.pressure);
+              if (!Number.isFinite(pr) || pr <= 0 || pr > 1) {
+                expected = { ok: false, reason: 'gesture-pressure-invalid:' + String(intent.pressure) };
+                bad = true;
+              } else {
+                pressure = pr;
+              }
+            }
+          } else if (intent.pressure !== undefined) {
+            expected = { ok: false, reason: 'gesture-pressure-unexpected' };
+            bad = true;
+          }
+        }
+        let durationMs: number | null = null;
+        if (!bad) {
+          if (spec.allowsDuration) {
+            if (intent.durationMs !== undefined) {
+              const d = Number(intent.durationMs);
+              if (!Number.isInteger(d) || d < 100 || d > 10000) {
+                expected = { ok: false, reason: 'gesture-duration-invalid:' + String(intent.durationMs) };
+                bad = true;
+              } else {
+                durationMs = d;
+              }
+            } else {
+              durationMs = 500;
+            }
+          } else if (intent.durationMs !== undefined) {
+            expected = { ok: false, reason: 'gesture-duration-unexpected' };
+            bad = true;
+          }
+        }
+        if (!bad) {
+          const fingers = contacts === 1 ? ' finger' : ' fingers';
+          const text =
+            gesture === 'tap'
+              ? 'Tapping with 1 finger'
+              : gesture === 'swipe'
+                ? 'Swiping ' + direction + ' with 1 finger'
+                : gesture === 'long-press'
+                  ? 'Long pressing for ' + durationMs + 'ms'
+                  : gesture === 'pinch'
+                    ? 'Pinching with 2 fingers'
+                    : gesture === 'rotate'
+                      ? 'Rotating with 2 fingers'
+                      : gesture === 'multi-touch'
+                        ? 'Touching with ' + contacts + fingers
+                        : 'Drawing with stylus at ' + pressure + ' pressure';
+          expected = { ok: true, gesture, platform, contacts, direction, pressure, durationMs, text };
+        }
+      }
+      assert.deepEqual(got, expected);
+    }
+  });
+});
+
+describe('creative-tool-operation engine (FORGE TQ-027)', () => {
+  it('catalogs the per editor operation vocabulary', () => {
+    assert.deepEqual(creativeEditorCatalog(), {
+      manhwa: ['draw', 'paint', 'layer-add', 'layer-merge', 'layer-hide', 'undo', 'redo'],
+      'three-d': ['object-add', 'object-move', 'object-rotate', 'camera-orbit', 'undo', 'redo'],
+      music: ['note-place', 'note-drag', 'clip-trim', 'instrument-select', 'undo', 'redo'],
+    });
+  });
+
+  it('applies edits under limits and keeps undo and redo stacks honest', () => {
+    const draw = applyCreativeOperation(null, { editor: 'manhwa', operation: 'draw' });
+    assert.deepEqual(draw.state, { layers: 1, objects: 0, notes: 0, undoDepth: 1, redoDepth: 0 });
+    const layered = applyCreativeOperation(draw.state, { editor: 'manhwa', operation: 'layer-add' });
+    assert.deepEqual(layered.state, { layers: 2, objects: 0, notes: 0, undoDepth: 2, redoDepth: 0 });
+    const undone = applyCreativeOperation(layered.state, { editor: 'manhwa', operation: 'undo' });
+    assert.deepEqual(undone.state, { layers: 2, objects: 0, notes: 0, undoDepth: 1, redoDepth: 1 });
+    const redone = applyCreativeOperation(undone.state, { editor: 'manhwa', operation: 'redo' });
+    assert.deepEqual(redone.state, { layers: 2, objects: 0, notes: 0, undoDepth: 2, redoDepth: 0 });
+    const cleared = applyCreativeOperation(undone.state, { editor: 'manhwa', operation: 'paint' });
+    assert.deepEqual(cleared.state, { layers: 2, objects: 0, notes: 0, undoDepth: 2, redoDepth: 0 });
+  });
+
+  it('refuses broken creative operations by name', () => {
+    assert.deepEqual(applyCreativeOperation(null, {}), { ok: false, reason: 'creative-editor-missing' });
+    assert.deepEqual(applyCreativeOperation(null, { editor: 'photoshop' }), { ok: false, reason: 'creative-editor-unknown:photoshop' });
+    assert.deepEqual(applyCreativeOperation(null, { editor: 'manhwa' }), { ok: false, reason: 'creative-operation-missing' });
+    assert.deepEqual(applyCreativeOperation(null, { editor: 'manhwa', operation: 'note-place' }), { ok: false, reason: 'creative-operation-unknown:note-place:manhwa' });
+    assert.deepEqual(applyCreativeOperation(null, { editor: 'manhwa', operation: 'undo' }), { ok: false, reason: 'creative-undo-empty' });
+    assert.deepEqual(applyCreativeOperation(null, { editor: 'manhwa', operation: 'redo' }), { ok: false, reason: 'creative-redo-empty' });
+    assert.deepEqual(applyCreativeOperation({ layers: 50, objects: 0, notes: 0, undoDepth: 5, redoDepth: 0 }, { editor: 'manhwa', operation: 'layer-add' }), { ok: false, reason: 'creative-layer-limit:50' });
+    assert.deepEqual(applyCreativeOperation(INITIAL_CREATIVE_STATE, { editor: 'manhwa', operation: 'layer-merge' }), { ok: false, reason: 'creative-layer-floor:1' });
+    assert.deepEqual(applyCreativeOperation({ layers: 1, objects: 200, notes: 0, undoDepth: 5, redoDepth: 0 }, { editor: 'three-d', operation: 'object-add' }), { ok: false, reason: 'creative-object-limit:200' });
+    assert.deepEqual(applyCreativeOperation({ layers: 1, objects: 0, notes: 500, undoDepth: 5, redoDepth: 0 }, { editor: 'music', operation: 'note-place' }), { ok: false, reason: 'creative-note-limit:500' });
+    const garbage = applyCreativeOperation('junk', { editor: 'music', operation: 'note-place' });
+    assert.deepEqual(garbage.state, { layers: 1, objects: 0, notes: 1, undoDepth: 1, redoDepth: 0 });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) operation sequences', () => {
+    const rand = mulberry32(42);
+    const catalog = creativeEditorCatalog();
+    for (let c = 0; c < 500; c++) {
+      const editor = ['manhwa', 'three-d', 'music'][Math.floor(rand() * 3)]!;
+      const ops = catalog[editor]!;
+      let state: unknown = null;
+      let oracle = { layers: 1, objects: 0, notes: 0, undoDepth: 0, redoDepth: 0 };
+      const n = 1 + Math.floor(rand() * 5);
+      for (let i = 0; i < n; i++) {
+        const operation = ops[Math.floor(rand() * ops.length)]!;
+        const got = applyCreativeOperation(state, { editor, operation });
+        let next: { layers: number; objects: number; notes: number; undoDepth: number; redoDepth: number };
+        if (operation === 'undo') {
+          if (oracle.undoDepth === 0) {
+            assert.deepEqual(got, { ok: false, reason: 'creative-undo-empty' });
+            continue;
+          }
+          next = { ...oracle, undoDepth: oracle.undoDepth - 1, redoDepth: oracle.redoDepth + 1 };
+        } else if (operation === 'redo') {
+          if (oracle.redoDepth === 0) {
+            assert.deepEqual(got, { ok: false, reason: 'creative-redo-empty' });
+            continue;
+          }
+          next = { ...oracle, redoDepth: oracle.redoDepth - 1, undoDepth: oracle.undoDepth + 1 };
+        } else {
+          next = { ...oracle, undoDepth: oracle.undoDepth + 1, redoDepth: 0 };
+          if (operation === 'layer-add') {
+            if (oracle.layers >= 50) {
+              assert.deepEqual(got, { ok: false, reason: 'creative-layer-limit:50' });
+              continue;
+            }
+            next.layers = oracle.layers + 1;
+          } else if (operation === 'layer-merge') {
+            if (oracle.layers <= 1) {
+              assert.deepEqual(got, { ok: false, reason: 'creative-layer-floor:1' });
+              continue;
+            }
+            next.layers = oracle.layers - 1;
+          } else if (operation === 'object-add') {
+            if (oracle.objects >= 200) {
+              assert.deepEqual(got, { ok: false, reason: 'creative-object-limit:200' });
+              continue;
+            }
+            next.objects = oracle.objects + 1;
+          } else if (operation === 'note-place') {
+            if (oracle.notes >= 500) {
+              assert.deepEqual(got, { ok: false, reason: 'creative-note-limit:500' });
+              continue;
+            }
+            next.notes = oracle.notes + 1;
+          }
+        }
+        assert.equal(got.ok, true);
+        assert.deepEqual(got.state, next);
+        oracle = next;
+        state = got.state;
+      }
+    }
+  });
+});
+
+describe('av-output engine (FORGE TQ-028)', () => {
+  it('catalogs codec support per platform', () => {
+    assert.deepEqual(avCatalog(), { platform: null, video: ['h264', 'vp9', 'av1', 'hevc'], audio: ['aac', 'opus', 'mp3', 'amr', 'flac'] });
+    assert.deepEqual(avCatalog('web'), { platform: 'web', video: ['h264', 'vp9', 'av1'], audio: ['aac', 'opus', 'mp3'] });
+    assert.deepEqual(avCatalog('desktop'), { platform: 'desktop', video: ['h264', 'vp9', 'av1', 'hevc'], audio: ['aac', 'opus', 'mp3', 'flac'] });
+    assert.deepEqual(avCatalog('watch'), { platform: null, video: [], audio: [] });
+  });
+
+  it('checks playback with pinned verdicts and named refusals', () => {
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'video', codec: 'h264' }), {
+      ok: true,
+      platform: 'web',
+      kind: 'video',
+      codec: 'h264',
+      plays: true,
+      text: 'Checking h264 video playback on web',
+    });
+    assert.deepEqual(checkPlayback({}), { ok: false, reason: 'av-platform-missing' });
+    assert.deepEqual(checkPlayback({ platform: 'watch', kind: 'video', codec: 'h264' }), { ok: false, reason: 'av-platform-unknown:watch' });
+    assert.deepEqual(checkPlayback({ platform: 'web' }), { ok: false, reason: 'av-kind-missing' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'film' }), { ok: false, reason: 'av-kind-unknown:film' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'video' }), { ok: false, reason: 'av-codec-missing' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'video', codec: 'zz' }), { ok: false, reason: 'av-codec-unknown:zz' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'video', codec: 'opus' }), { ok: false, reason: 'av-codec-wrong-kind:opus' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'audio', codec: 'h264' }), { ok: false, reason: 'av-codec-wrong-kind:h264' });
+    assert.deepEqual(checkPlayback({ platform: 'web', kind: 'audio', codec: 'flac' }), { ok: false, reason: 'av-codec-unsupported:flac:web' });
+  });
+
+  it('bands sync drift and walks the media state machine', () => {
+    assert.deepEqual(checkSync(50), {
+      ok: true,
+      driftMs: 50,
+      sync: 'drifting',
+      detectable: true,
+      acceptable: true,
+      text: 'Measuring audio and video drift of 50ms',
+    });
+    assert.deepEqual(checkSync(-200), {
+      ok: true,
+      driftMs: -200,
+      sync: 'out-of-sync',
+      detectable: true,
+      acceptable: false,
+      text: 'Measuring audio and video drift of -200ms',
+    });
+    assert.deepEqual(checkSync(30), {
+      ok: true,
+      driftMs: 30,
+      sync: 'in-sync',
+      detectable: false,
+      acceptable: true,
+      text: 'Measuring audio and video drift of 30ms',
+    });
+    assert.deepEqual(checkSync(undefined), { ok: false, reason: 'av-drift-missing' });
+    assert.deepEqual(checkSync('x'), { ok: false, reason: 'av-drift-not-a-number:x' });
+    assert.deepEqual(avStateTransition('idle', 'playing'), { ok: true, from: 'idle', to: 'playing', text: 'Media moves from idle to playing' });
+    assert.deepEqual(avStateTransition('idle', 'paused'), { ok: false, reason: 'av-state-refused:idle:paused' });
+    assert.deepEqual(avStateTransition('ended', 'playing'), { ok: false, reason: 'av-state-refused:ended:playing' });
+    assert.deepEqual(avStateTransition('', 'playing'), { ok: false, reason: 'av-state-missing' });
+    assert.deepEqual(avStateTransition('junk', 'playing'), { ok: false, reason: 'av-state-unknown:junk' });
+    assert.deepEqual(avStateTransition('idle', 'junk'), { ok: false, reason: 'av-state-unknown:junk' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) playback intents', () => {
+    const TABLE: Record<string, { video: string[]; audio: string[] }> = {
+      web: { video: ['h264', 'vp9', 'av1'], audio: ['aac', 'opus', 'mp3'] },
+      android: { video: ['h264', 'hevc'], audio: ['aac', 'opus', 'amr'] },
+      ios: { video: ['h264', 'hevc'], audio: ['aac', 'opus'] },
+      desktop: { video: ['h264', 'vp9', 'av1', 'hevc'], audio: ['aac', 'opus', 'mp3', 'flac'] },
+    };
+    const ALL_VIDEO = ['h264', 'vp9', 'av1', 'hevc'];
+    const ALL_AUDIO = ['aac', 'opus', 'mp3', 'amr', 'flac'];
+    const platforms = ['web', 'android', 'ios', 'desktop', 'watch', ''];
+    const kinds = ['video', 'audio', 'film', ''];
+    const codecs = [...ALL_VIDEO, ...ALL_AUDIO, 'zz', ''];
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const platform = platforms[Math.floor(rand() * platforms.length)]!;
+      const kind = kinds[Math.floor(rand() * kinds.length)]!;
+      const codec = codecs[Math.floor(rand() * codecs.length)]!;
+      const got = checkPlayback({ platform, kind, codec });
+      let expected: { ok: boolean; reason?: string; platform?: string; kind?: string; codec?: string; plays?: boolean; text?: string } | undefined;
+      if (platform.length === 0) expected = { ok: false, reason: 'av-platform-missing' };
+      else if (!(platform in TABLE)) expected = { ok: false, reason: 'av-platform-unknown:' + platform };
+      else if (kind.length === 0) expected = { ok: false, reason: 'av-kind-missing' };
+      else if (kind !== 'video' && kind !== 'audio') expected = { ok: false, reason: 'av-kind-unknown:' + kind };
+      else if (codec.length === 0) expected = { ok: false, reason: 'av-codec-missing' };
+      else if (!ALL_VIDEO.includes(codec) && !ALL_AUDIO.includes(codec)) expected = { ok: false, reason: 'av-codec-unknown:' + codec };
+      else if (kind === 'video' && !ALL_VIDEO.includes(codec)) expected = { ok: false, reason: 'av-codec-wrong-kind:' + codec };
+      else if (kind === 'audio' && !ALL_AUDIO.includes(codec)) expected = { ok: false, reason: 'av-codec-wrong-kind:' + codec };
+      else if (!(TABLE[platform] as Record<string, string[]>)[kind]!.includes(codec)) {
+        expected = { ok: false, reason: 'av-codec-unsupported:' + codec + ':' + platform };
+      } else {
+        expected = { ok: true, platform, kind, codec, plays: true, text: 'Checking ' + codec + ' ' + kind + ' playback on ' + platform };
+      }
+      assert.deepEqual(got, expected);
+    }
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) sync and state pairs', () => {
+    const STATES = ['idle', 'playing', 'paused', 'ended', 'junk', ''];
+    const LEGAL: Record<string, string[]> = { idle: ['playing'], playing: ['paused', 'ended'], paused: ['playing'], ended: [] };
+    const rand = mulberry32(42);
+    for (let c = 0; c < 500; c++) {
+      const driftRaw: unknown = c % 23 === 0 ? 'x' : c % 29 === 0 ? null : Math.floor(rand() * 400) - 200;
+      const sync = checkSync(driftRaw);
+      if (driftRaw === undefined || driftRaw === null) {
+        assert.deepEqual(sync, { ok: false, reason: 'av-drift-missing' });
+      } else if (!Number.isFinite(Number(driftRaw))) {
+        assert.deepEqual(sync, { ok: false, reason: 'av-drift-not-a-number:' + String(driftRaw) });
+      } else {
+        const d = Number(driftRaw);
+        let band = 'in-sync';
+        if (d > 45 || d < -125) band = 'drifting';
+        if (d > 90 || d < -185) band = 'out-of-sync';
+        assert.deepEqual(sync, {
+          ok: true,
+          driftMs: d,
+          sync: band,
+          detectable: band !== 'in-sync',
+          acceptable: band !== 'out-of-sync',
+          text: 'Measuring audio and video drift of ' + d + 'ms',
+        });
+      }
+      const from = STATES[Math.floor(rand() * STATES.length)]!;
+      const to = STATES[Math.floor(rand() * STATES.length)]!;
+      const st = avStateTransition(from, to);
+      let stateExpected: { ok: boolean; reason?: string; from?: string; to?: string; text?: string } | undefined;
+      if (from.length === 0) stateExpected = { ok: false, reason: 'av-state-missing' };
+      else if (!(from in LEGAL)) stateExpected = { ok: false, reason: 'av-state-unknown:' + from };
+      else if (to.length === 0) stateExpected = { ok: false, reason: 'av-state-missing' };
+      else if (!(to in LEGAL)) stateExpected = { ok: false, reason: 'av-state-unknown:' + to };
+      else if (!LEGAL[from]!.includes(to)) stateExpected = { ok: false, reason: 'av-state-refused:' + from + ':' + to };
+      else stateExpected = { ok: true, from, to, text: 'Media moves from ' + from + ' to ' + to };
+      assert.deepEqual(st, stateExpected);
+    }
+  });
+});
+
+describe('test-data-lifecycle engine (FORGE TQ-029)', () => {
+  it('derives deterministic accounts from the session seed', () => {
+    const v = deriveTestAccounts('session-abc', undefined);
+    assert.equal(v.ok, true);
+    assert.equal(v.domain, FIXTURE_DOMAIN);
+    assert.deepEqual(v.accounts?.map((a) => a.username), ['forge-sessionabc-1', 'forge-sessionabc-2', 'forge-sessionabc-3']);
+    assert.deepEqual(v.accounts?.map((a) => a.role), ['shopper', 'editor', 'viewer']);
+    const four = deriveTestAccounts('session-abc', 4);
+    assert.equal(four.accounts?.[3]?.role, 'admin');
+    const tiny = deriveTestAccounts('s', undefined);
+    assert.deepEqual(tiny.accounts?.map((a) => a.username), ['forge-s-1', 'forge-s-2', 'forge-s-3']);
+    assert.equal(deriveTestAccounts('seed', 12).accounts?.length, 12);
+    assert.deepEqual(deriveTestAccounts('seed', 0), { ok: false, reason: 'data-count-invalid:0' });
+    assert.deepEqual(deriveTestAccounts('seed', 13), { ok: false, reason: 'data-count-invalid:13' });
+    assert.deepEqual(deriveTestAccounts('seed', 2.5), { ok: false, reason: 'data-count-invalid:2.5' });
+    assert.deepEqual(deriveTestAccounts('', undefined), { ok: false, reason: 'data-seed-missing' });
+    assert.deepEqual(deriveTestAccounts('seed', 3), deriveTestAccounts('seed', 3));
+  });
+
+  it('cleans up only terminal sessions with a named plan', () => {
+    assert.deepEqual(checkCleanup({}), { ok: false, reason: 'data-status-missing' });
+    assert.deepEqual(checkCleanup({ status: 'running', pending: 3, cleaned: 0 }), {
+      ok: false,
+      reason: 'data-cleanup-status-refused:running',
+    });
+    assert.deepEqual(checkCleanup({ status: 'completed', pending: undefined }), { ok: false, reason: 'data-pending-invalid:undefined' });
+    assert.deepEqual(checkCleanup({ status: 'completed', pending: -1 }), { ok: false, reason: 'data-pending-invalid:-1' });
+    assert.deepEqual(checkCleanup({ status: 'completed', pending: 1 }), { ok: false, reason: 'data-cleaned-invalid:undefined' });
+    assert.deepEqual(checkCleanup({ status: 'completed', pending: 0, cleaned: 2 }), {
+      ok: true,
+      alreadyClean: true,
+      plan: [],
+      pending: 0,
+      cleaned: 2,
+    });
+    assert.deepEqual(checkCleanup({ status: 'failed', pending: 3, cleaned: 1 }), {
+      ok: true,
+      alreadyClean: false,
+      plan: ['disable fixtures', 'purge seeded uploads', 'restore app settings', 'remove test accounts'],
+      pending: 3,
+      cleaned: 1,
+    });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) account plans', () => {
+    const rand = mulberry32(42);
+    const LOWER = 'abcdefghjkmnpqrstuvwxyz';
+    const UPPER = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+    const DIGITS = '23456789';
+    for (let c = 0; c < 500; c++) {
+      const seed = c % 17 === 0 ? '!!' : 'lt-' + c;
+      const countRaw: unknown = c % 19 === 0 ? 2.5 : Math.floor(rand() * 15);
+      const got = deriveTestAccounts(seed, countRaw);
+      const count = Number(countRaw);
+      if (!Number.isInteger(count) || count < 1 || count > 12) {
+        assert.deepEqual(got, { ok: false, reason: 'data-count-invalid:' + String(countRaw) });
+        continue;
+      }
+      assert.equal(got.ok, true);
+      const slugRaw = seed.replace(/[^a-z0-9]/g, '');
+      const slug = slugRaw.length > 0 ? slugRaw.slice(0, 12) : 'session';
+      assert.equal(got.accounts?.length, count);
+      for (let i = 0; i < count; i++) {
+        const account = got.accounts?.[i];
+        const username = 'forge-' + slug + '-' + (i + 1);
+        assert.equal(account?.username, username);
+        assert.equal(account?.email, username + '@' + FIXTURE_DOMAIN);
+        assert.equal(account?.role, ['shopper', 'editor', 'viewer', 'admin'][i % 4]);
+        const password = account?.password ?? '';
+        assert.equal(password.length, 12);
+        let lower = 0;
+        let upper = 0;
+        let digits = 0;
+        for (const ch of password) {
+          if (LOWER.includes(ch)) lower++;
+          else if (UPPER.includes(ch)) upper++;
+          else if (DIGITS.includes(ch)) digits++;
+        }
+        assert.deepEqual([lower, upper, digits], [5, 4, 3]);
+      }
+      assert.deepEqual(got, deriveTestAccounts(seed, countRaw));
     }
   });
 });
