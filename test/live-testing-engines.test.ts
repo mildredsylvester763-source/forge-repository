@@ -34,6 +34,7 @@ import { checkGesture, gestureCatalog } from '../src/modules/live-testing/engine
 import { applyCreativeOperation, creativeEditorCatalog, INITIAL_CREATIVE_STATE } from '../src/modules/live-testing/engine/creative-tool-operation.ts';
 import { avCatalog, avStateTransition, checkPlayback, checkSync } from '../src/modules/live-testing/engine/av-output.ts';
 import { checkCleanup, deriveTestAccounts, FIXTURE_DOMAIN } from '../src/modules/live-testing/engine/test-data-lifecycle.ts';
+import { compareSessions } from '../src/modules/live-testing/engine/session-comparison.ts';
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -680,7 +681,7 @@ describe('session-collaboration engine (FORGE TQ-024)', () => {
   });
 });
 
-describe('device-profile engine (FORGE TQ-019..TQ-021)', () => {
+describe('device-profile engine (FORGE TQ-020..TQ-021)', () => {
   it('lists the twelve named devices and six pinned networks', () => {
     assert.equal(deviceCatalog().length, 12);
     assert.equal(networkCatalog().length, 6);
@@ -1522,6 +1523,130 @@ describe('test-data-lifecycle engine (FORGE TQ-029)', () => {
         assert.deepEqual([lower, upper, digits], [5, 4, 3]);
       }
       assert.deepEqual(got, deriveTestAccounts(seed, countRaw));
+    }
+  });
+});
+
+describe('session-comparison engine (FORGE TQ-019)', () => {
+  it('compares a human run with an AI run in one verdict', () => {
+    const v = compareSessions({ human: { steps: 8, durationMs: 12000, outcome: 'completed' }, ai: { steps: 5, durationMs: 9000, outcome: 'completed' } });
+    assert.deepEqual(v.comparison, {
+      humanSteps: 8,
+      aiSteps: 5,
+      stepDelta: -3,
+      humanDurationMs: 12000,
+      aiDurationMs: 9000,
+      durationDeltaMs: 3000,
+      faster: 'ai',
+      sameOutcome: true,
+      text: 'Human completed with 8 steps in 12000ms; AI completed with 5 steps in 9000ms; same outcome',
+    });
+    const diff = compareSessions({ human: { steps: 3, durationMs: 100, outcome: 'completed' }, ai: { steps: 3, durationMs: 100, outcome: 'failed' } });
+    assert.equal(diff.comparison?.faster, 'tie');
+    assert.equal(diff.comparison?.sameOutcome, false);
+    assert.equal(diff.comparison?.text, 'Human completed with 3 steps in 100ms; AI failed with 3 steps in 100ms; different outcomes');
+    const trimmed = compareSessions({ human: { steps: 2, durationMs: 10, outcome: '  COMPLETED ' }, ai: { steps: 2, durationMs: 10, outcome: 'failed' } });
+    assert.equal(trimmed.comparison?.humanSteps, 2);
+    assert.equal(trimmed.comparison?.sameOutcome, false);
+  });
+
+  it('refuses broken comparisons by name', () => {
+    assert.deepEqual(compareSessions(null), { ok: false, reason: 'comparison-not-object' });
+    assert.deepEqual(compareSessions('x'), { ok: false, reason: 'comparison-not-object' });
+    assert.deepEqual(compareSessions([]), { ok: false, reason: 'comparison-not-object' });
+    assert.deepEqual(compareSessions({}), { ok: false, reason: 'comparison-human-missing' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-ai-missing' });
+    assert.deepEqual(compareSessions({ human: 'junk', ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-human-missing' });
+    assert.deepEqual(compareSessions({ human: { steps: -1, durationMs: 10, outcome: 'completed' }, ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-steps-invalid:human:-1' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: 10, outcome: 'completed' }, ai: { steps: 2.5, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-steps-invalid:ai:2.5' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: -5, outcome: 'completed' }, ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-duration-invalid:human' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: 'x', outcome: 'completed' }, ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-duration-invalid:human' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, outcome: 'completed' }, ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-duration-invalid:human' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: 10, outcome: 'running' }, ai: { steps: 2, durationMs: 10, outcome: 'completed' } }), { ok: false, reason: 'comparison-outcome-unknown:human:running' });
+    assert.deepEqual(compareSessions({ human: { steps: 2, durationMs: 10, outcome: 'completed' }, ai: { steps: 2, durationMs: 10, outcome: 'junk' } }), { ok: false, reason: 'comparison-outcome-unknown:ai:junk' });
+  });
+
+  it('matches an independent oracle on 500 mulberry32(42) comparisons', () => {
+    const rand = mulberry32(42);
+    const GOOD_STEPS = [0, 1, 3, 8, 25];
+    const GOOD_DUR = [0, 500, 4500, 12000];
+    const BAD_STEPS = [-1, 2.5, 'x', undefined];
+    const BAD_DUR = [-1, 'x', undefined];
+    const BAD_OUT = ['running', '', undefined];
+    const SWEEP_OUTCOMES = ['completed', 'failed', 'cancelled'];
+    const readOracle = (
+      side: Record<string, unknown> | undefined,
+      label: string,
+    ): { reason?: string; steps?: number; durationMs?: number; outcome?: string } => {
+      if (side === undefined || side === null) return { reason: 'comparison-' + label + '-missing' };
+      const steps = side.steps;
+      if (!Number.isInteger(steps) || (steps as number) < 0) {
+        return { reason: 'comparison-steps-invalid:' + label + ':' + String(steps) };
+      }
+      const durRaw = side.durationMs;
+      if (durRaw === undefined || durRaw === null || !Number.isFinite(Number(durRaw)) || Number(durRaw) < 0) {
+        return { reason: 'comparison-duration-invalid:' + label };
+      }
+      const outcomeRaw = side.outcome;
+      const outcome = typeof outcomeRaw === 'string' ? outcomeRaw.trim().toLowerCase() : '';
+      if (!SWEEP_OUTCOMES.includes(outcome)) {
+        return { reason: 'comparison-outcome-unknown:' + label + ':' + String(outcomeRaw) };
+      }
+      return { steps: steps as number, durationMs: Number(durRaw), outcome };
+    };
+    for (let c = 0; c < 500; c++) {
+      if (c % 11 === 0) {
+        assert.deepEqual(compareSessions(c % 2 === 0 ? null : 'junk'), { ok: false, reason: 'comparison-not-object' });
+        continue;
+      }
+      const buildSide = (): Record<string, unknown> => {
+        const r = rand();
+        if (r < 0.12) return { steps: BAD_STEPS[Math.floor(rand() * BAD_STEPS.length)]! };
+        if (r < 0.2) {
+          return { steps: GOOD_STEPS[Math.floor(rand() * GOOD_STEPS.length)]!, durationMs: BAD_DUR[Math.floor(rand() * BAD_DUR.length)]! };
+        }
+        if (r < 0.26) {
+          return {
+            steps: GOOD_STEPS[Math.floor(rand() * GOOD_STEPS.length)]!,
+            durationMs: GOOD_DUR[Math.floor(rand() * GOOD_DUR.length)]!,
+            outcome: BAD_OUT[Math.floor(rand() * BAD_OUT.length)]!,
+          };
+        }
+        return {
+          steps: GOOD_STEPS[Math.floor(rand() * GOOD_STEPS.length)]!,
+          durationMs: GOOD_DUR[Math.floor(rand() * GOOD_DUR.length)]!,
+          outcome: SWEEP_OUTCOMES[Math.floor(rand() * SWEEP_OUTCOMES.length)]!,
+        };
+      };
+      const human = buildSide();
+      const ai = c % 13 === 0 ? undefined : buildSide();
+      const got = compareSessions({ human, ai });
+      const h = readOracle(human, 'human');
+      const a = readOracle(ai, 'ai');
+      let expected: { ok: boolean; reason?: string; comparison?: Record<string, unknown> } | undefined;
+      if (h.reason) expected = { ok: false, reason: h.reason };
+      else if (a.reason) expected = { ok: false, reason: a.reason };
+      else {
+        const durationDeltaMs = h.durationMs! - a.durationMs!;
+        expected = {
+          ok: true,
+          comparison: {
+            humanSteps: h.steps!,
+            aiSteps: a.steps!,
+            stepDelta: a.steps! - h.steps!,
+            humanDurationMs: h.durationMs!,
+            aiDurationMs: a.durationMs!,
+            durationDeltaMs,
+            faster: durationDeltaMs > 0 ? 'ai' : durationDeltaMs < 0 ? 'human' : 'tie',
+            sameOutcome: h.outcome === a.outcome,
+            text:
+              'Human ' + h.outcome + ' with ' + h.steps + ' steps in ' + h.durationMs + 'ms; ' +
+              'AI ' + a.outcome + ' with ' + a.steps + ' steps in ' + a.durationMs + 'ms; ' +
+              (h.outcome === a.outcome ? 'same outcome' : 'different outcomes'),
+          },
+        };
+      }
+      assert.deepEqual(got, expected);
     }
   });
 });

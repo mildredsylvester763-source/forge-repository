@@ -876,3 +876,51 @@ describe('live testing routes (FORGE TQ-019..030)', () => {
     }
   });
 });
+
+describe('live testing comparison route (FORGE TQ-019)', () => {
+  it('compares a finished AI session with a human run', async () => {
+    const h = await startHarness();
+    try {
+      const owner = await signedInUser(h, 'ltx-compare-owner@forge.test');
+      const created = await createSession(h, owner.cookie, { goal: 'buy milk', platform: 'web' });
+      const id = ((await created.json()) as { session: { id: string } }).session.id;
+      await start(h, owner.cookie, id);
+      await h.post('/v1/live-testing/sessions/steps', { sessionId: id, action: 'click', target: 'login' }, { cookie: owner.cookie });
+      await h.post('/v1/live-testing/sessions/steps', { sessionId: id, action: 'click', target: 'cart' }, { cookie: owner.cookie });
+
+      const open = await h.post('/v1/live-testing/sessions/compare', { sessionId: id, human: { steps: 4, durationMs: 5000, outcome: 'completed' } }, { cookie: owner.cookie });
+      assert.equal(await errorCode(open), 'comparison-session-open:running');
+
+      await h.post('/v1/live-testing/sessions/complete', { sessionId: id }, { cookie: owner.cookie });
+      const compared = await h.post('/v1/live-testing/sessions/compare', { sessionId: id, human: { steps: 4, durationMs: 5000, outcome: 'completed' } }, { cookie: owner.cookie });
+      assert.equal(compared.status, 200);
+      const body = (await compared.json()) as { sessionId: string; comparison: Record<string, unknown> };
+      assert.equal(body.sessionId, id);
+      assert.deepEqual(body.comparison, {
+        humanSteps: 4,
+        aiSteps: 2,
+        stepDelta: -2,
+        humanDurationMs: 5000,
+        aiDurationMs: 0,
+        durationDeltaMs: 5000,
+        faster: 'ai',
+        sameOutcome: true,
+        text: 'Human completed with 4 steps in 5000ms; AI completed with 2 steps in 0ms; same outcome',
+      });
+
+      const noHuman = await h.post('/v1/live-testing/sessions/compare', { sessionId: id }, { cookie: owner.cookie });
+      assert.equal(await errorCode(noHuman), 'comparison-human-missing');
+      const badSteps = await h.post('/v1/live-testing/sessions/compare', { sessionId: id, human: { steps: -1, durationMs: 10, outcome: 'completed' } }, { cookie: owner.cookie });
+      assert.equal(await errorCode(badSteps), 'comparison-steps-invalid:human:-1');
+
+      const stranger = await signedInUser(h, 'ltx-compare-stranger@forge.test');
+      const denied = await h.post('/v1/live-testing/sessions/compare', { sessionId: id, human: { steps: 1, durationMs: 10, outcome: 'completed' } }, { cookie: stranger.cookie });
+      assert.equal(await errorCode(denied), 'session-not-found:' + id);
+
+      const anonymous = await h.post('/v1/live-testing/sessions/compare', { sessionId: id });
+      assert.equal(anonymous.status, 401);
+    } finally {
+      await h.close();
+    }
+  });
+});
