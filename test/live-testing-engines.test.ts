@@ -1108,7 +1108,7 @@ describe('gesture-mechanics engine (FORGE TQ-026)', () => {
       else if (!['web', 'android', 'ios', 'desktop'].includes(platform)) expected = { ok: false, reason: 'gesture-platform-unknown:' + platform };
       else if (gesture.length === 0) expected = { ok: false, reason: 'gesture-missing' };
       else if (!spec) expected = { ok: false, reason: 'gesture-unknown:' + gesture };
-      else if (!spec.platforms.includes(platform)) expected = { ok: false, reason: 'gesture-platform-unsupported:' + gesture + ':' + platform };
+      else if (!(spec.platforms as string[]).includes(platform)) expected = { ok: false, reason: 'gesture-platform-unsupported:' + gesture + ':' + platform };
       else {
         let contacts = spec.minContacts;
         let bad = false;
