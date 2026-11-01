@@ -97,7 +97,7 @@ export class WebSearchService {
         skipped.push({ url, reason: verdict.reason ?? 'domain-refused' });
         continue;
       }
-      allowed.push(row as RankableResult);
+      allowed.push(row as unknown as RankableResult);
     }
 
     let ranked: unknown[] = [];

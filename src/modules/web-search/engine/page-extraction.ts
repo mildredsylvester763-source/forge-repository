@@ -34,7 +34,7 @@ export function extractPage(html: string): ExtractVerdict {
 
   const titleMatch = cleaned.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const title = titleMatch
-    ? titleMatch[1].replace(/\s+/g, ' ').trim().slice(0, 500) || null
+    ? titleMatch[1]!.replace(/\s+/g, ' ').trim().slice(0, 500) || null
     : null;
   cleaned = stripBlocks(cleaned, 'title');
 

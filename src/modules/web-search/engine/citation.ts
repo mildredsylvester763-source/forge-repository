@@ -26,13 +26,13 @@ export function parseSourceUrl(
   const trimmed = url.trim();
   const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\//i);
   if (!schemeMatch) return { ok: false, reason: 'citation-missing-scheme' };
-  const scheme = schemeMatch[1].toLowerCase();
+  const scheme = schemeMatch[1]!.toLowerCase();
   if (scheme !== 'https') {
     return { ok: false, reason: 'citation-insecure-scheme:' + scheme };
   }
   const afterScheme = trimmed.slice(schemeMatch[0].length);
-  const hostPart = afterScheme.split('/')[0].split('@').pop() ?? '';
-  const host = hostPart.split(':')[0].toLowerCase();
+  const hostPart = afterScheme.split('/')[0]!.split('@').pop() ?? '';
+  const host = hostPart.split(':')[0]!.toLowerCase();
   if (!host) return { ok: false, reason: 'citation-missing-host' };
   return { ok: true, source: { url: trimmed, host } };
 }
