@@ -12,6 +12,7 @@ import { pgTaskRuntimeMigrations } from './modules/task-runtime/index.ts';
 import { pgOrchestratorMigrations } from './modules/orchestrator/index.ts';
 import { pgTestQualityMigrations } from './modules/test-quality/index.ts';
 import { pgTestGenerationMigrations } from './modules/test-generation/index.ts';
+import { pgLiveTestingMigrations } from './modules/live-testing/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'orchestrator', pgOrchestratorMigrations);
     await migratePostgres(pool, 'test_quality', pgTestQualityMigrations);
     await migratePostgres(pool, 'test_generation', pgTestGenerationMigrations);
+    await migratePostgres(pool, 'live_testing', pgLiveTestingMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 

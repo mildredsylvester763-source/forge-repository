@@ -71,6 +71,15 @@ import {
   testGenerationRoutes,
   type GeneratedSuiteStore,
 } from './modules/test-generation/index.ts';
+import {
+  InMemoryLiveTestingStore,
+  LiveTestingService,
+  PostgresLiveTestingStore,
+  SqliteLiveTestingStore,
+  liveTestingMigrations,
+  liveTestingRoutes,
+  type LiveTestingStore,
+} from './modules/live-testing/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -90,6 +99,7 @@ export interface ForgeApp {
   orchestrator: OrchestratorService;
   testQuality: TestQualityService;
   testGeneration: TestGenerationService;
+  liveTesting: LiveTestingService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -107,6 +117,7 @@ interface Storage {
   plans: OrchestratorPlanStore;
   goldens: TestQualityGoldenStore;
   suites: GeneratedSuiteStore;
+  liveTesting: LiveTestingStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -120,7 +131,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const plans = new PostgresOrchestratorPlanStore(pool);
     const goldens = new PostgresGoldenStore(pool);
     const suites = new PostgresGeneratedSuiteStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const liveTesting = new PostgresLiveTestingStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -131,6 +143,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'orchestrator', orchestratorMigrations);
     migrate(db, 'test_quality', testQualityMigrations);
     migrate(db, 'test_generation', testGenerationMigrations);
+    migrate(db, 'live_testing', liveTestingMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -138,7 +151,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const plans = new SqliteOrchestratorPlanStore(db);
     const goldens = new SqliteGoldenStore(db);
     const suites = new SqliteGeneratedSuiteStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const liveTesting = new SqliteLiveTestingStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -147,7 +161,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const plans = new InMemoryOrchestratorPlanStore();
   const goldens = new InMemoryGoldenStore();
   const suites = new InMemoryGeneratedSuiteStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const liveTesting = new InMemoryLiveTestingStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -198,6 +213,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const testGeneration = new TestGenerationService({ suites: storage.suites, events, clock });
 
+  const liveTesting = new LiveTestingService({ store: storage.liveTesting, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -211,6 +228,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...orchestratorRoutes(orchestrator, identity, config.cookie),
     ...testQualityRoutes(testQuality, identity, config.cookie),
     ...testGenerationRoutes(testGeneration, identity, config.cookie),
+    ...liveTestingRoutes(liveTesting, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -226,5 +244,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, logger, db: storage.db, close };
 }
