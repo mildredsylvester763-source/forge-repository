@@ -51,10 +51,7 @@ function serializeValue(value: unknown, indent: number): string {
     if (value.length === 0) return '[]';
     const parts: string[] = [];
     for (const item of value) parts.push(pad(indent + 1) + serializeValue(item, indent + 1));
-    return '[\
-' + parts.join(',\
-') + '\
-' + pad(indent) + ']';
+    return '[\n' + parts.join(',\n') + '\n' + pad(indent) + ']';
   }
   if (kind === 'object') {
     const keys = Object.keys(value as Record<string, unknown>).sort();
@@ -65,10 +62,7 @@ function serializeValue(value: unknown, indent: number): string {
         pad(indent + 1) + JSON.stringify(key) + ': ' + serializeValue((value as Record<string, unknown>)[key], indent + 1),
       );
     }
-    return '{\
-' + parts.join(',\
-') + '\
-' + pad(indent) + '}';
+    return '{\n' + parts.join(',\n') + '\n' + pad(indent) + '}';
   }
   return 'undefined';
 }
@@ -98,8 +92,7 @@ export function manageSnapshot(input: ManageSnapshotInput): SnapshotManageResult
   const stored: unknown = input?.stored;
   const serialized = serializeSnapshot(value);
   const checksum = fnv1a(serialized);
-  const lines = serialized.split('\
-').length;
+  const lines = serialized.split('\n').length;
   if (mode === 'write') {
     if (stored !== undefined) return { ok: false, reason: 'snapshot-exists:' + name };
     return { ok: true, name, mode, status: 'written', checksum, serialized, lines };
@@ -111,10 +104,8 @@ export function manageSnapshot(input: ManageSnapshotInput): SnapshotManageResult
   if (stored === undefined) return { ok: false, reason: 'snapshot-missing:' + name };
   if (typeof stored !== 'string') return { ok: false, reason: 'snapshot-stored-invalid' };
   if (serialized === stored) return { ok: true, name, mode, status: 'match', checksum, lines };
-  const storedLines = stored.split('\
-');
-  const newLines = serialized.split('\
-');
+  const storedLines = stored.split('\n');
+  const newLines = serialized.split('\n');
   let firstDiff = -1;
   for (let i = 0; i < Math.max(storedLines.length, newLines.length); i++) {
     if (storedLines[i] !== newLines[i]) {
