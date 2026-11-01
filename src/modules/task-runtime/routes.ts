@@ -38,25 +38,46 @@ export function taskRuntimeRoutes(service: TaskRuntimeService, identity: Identit
 
   return {
     '/v1/tasks/step/checks': {
-      GET: async () => ({ status: 200, body: { checks: service.stepChecks() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { checks: service.stepChecks() } };
+      },
     },
     '/v1/tasks/approval/risks': {
-      GET: async () => ({ status: 200, body: { risks: service.approvalRiskLevels() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { risks: service.approvalRiskLevels() } };
+      },
     },
     '/v1/tasks/approval/tool-classes': {
-      GET: async () => ({ status: 200, body: { toolClasses: service.approvalToolClasses() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { toolClasses: service.approvalToolClasses() } };
+      },
     },
     '/v1/tasks/states': {
-      GET: async () => ({ status: 200, body: { states: service.taskStates() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { states: service.taskStates() } };
+      },
     },
     '/v1/tasks/commands': {
-      GET: async () => ({ status: 200, body: { commands: service.taskCommands() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { commands: service.taskCommands() } };
+      },
     },
     '/v1/tasks/events': {
-      GET: async () => ({ status: 200, body: { events: service.taskEventTypes() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { events: service.taskEventTypes() } };
+      },
     },
     '/v1/tasks/parallel/modes': {
-      GET: async () => ({ status: 200, body: { modes: service.parallelModes() } }),
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: { modes: service.parallelModes() } };
+      },
     },
     '/v1/tasks/step/validate': {
       POST: async (ctx): Promise<HttpResult> => {
