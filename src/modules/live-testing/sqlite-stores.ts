@@ -176,13 +176,13 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
   private readonly personaByUserWorkspaceName;
   private readonly personaById;
   private readonly personasByUser;
-  private readonly deletePersona;
+  private readonly deletePersonaStmt;
   private readonly insertParticipant;
   private readonly participantById;
   private readonly participantBySessionAndUser;
   private readonly participantsBySession;
   private readonly updateParticipant;
-  private readonly deleteParticipant;
+  private readonly deleteParticipantStmt;
 
   constructor(db: Database) {
     this.db = db;
@@ -200,13 +200,13 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
     this.personaByUserWorkspaceName = db.prepare('SELECT * FROM live_personas WHERE user_id = ? AND workspace = ? AND name = ?');
     this.personaById = db.prepare('SELECT * FROM live_personas WHERE id = ?');
     this.personasByUser = db.prepare('SELECT * FROM live_personas WHERE user_id = ? AND (? IS NULL OR workspace = ?) ORDER BY created_at DESC, id DESC');
-    this.deletePersona = db.prepare('DELETE FROM live_personas WHERE id = ?');
+    this.deletePersonaStmt = db.prepare('DELETE FROM live_personas WHERE id = ?');
     this.insertParticipant = db.prepare('INSERT INTO live_participants (id, session_id, user_id, role, state, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.participantById = db.prepare('SELECT * FROM live_participants WHERE id = ?');
     this.participantBySessionAndUser = db.prepare('SELECT * FROM live_participants WHERE session_id = ? AND user_id = ?');
     this.participantsBySession = db.prepare('SELECT * FROM live_participants WHERE session_id = ? ORDER BY created_at ASC, id ASC');
     this.updateParticipant = db.prepare('UPDATE live_participants SET state = ? WHERE id = ?');
-    this.deleteParticipant = db.prepare('DELETE FROM live_participants WHERE id = ?');
+    this.deleteParticipantStmt = db.prepare('DELETE FROM live_participants WHERE id = ?');
   }
 
   async createSession(session: NewLiveSession): Promise<LiveSessionRecord> {
@@ -334,7 +334,7 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
 
   async deletePersona(id: string): Promise<void> {
     transaction(this.db, () => {
-      this.deletePersona.run(id);
+      this.deletePersonaStmt.run(id);
     });
   }
 
@@ -378,7 +378,7 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
 
   async deleteParticipant(id: string): Promise<void> {
     transaction(this.db, () => {
-      this.deleteParticipant.run(id);
+      this.deleteParticipantStmt.run(id);
     });
   }
 }

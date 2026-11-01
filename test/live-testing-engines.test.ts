@@ -387,18 +387,19 @@ describe('session-recording engine (FORGE TQ-015, TQ-016)', () => {
       let broken = false;
       const entries: Array<{ at: number; tie: number; kind: string; label: string }> = [];
       for (let i = 0; i < steps.length; i++) {
-        if (steps[i]!.seq !== i + 1) {
-          expected = { ok: false, reason: 'recording-step-seq-broken:' + steps[i]!.seq };
+        const s = steps[i]!;
+        if (s.seq !== i + 1) {
+          expected = { ok: false, reason: 'recording-step-seq-broken:' + s.seq };
           broken = true;
           break;
         }
-        const off = steps[i]!.occurredAt.getTime() - start;
+        const off = s.occurredAt.getTime() - start;
         if (off < 0) {
-          expected = { ok: false, reason: 'recording-step-before-start:' + steps[i]!.seq };
+          expected = { ok: false, reason: 'recording-step-before-start:' + s.seq };
           broken = true;
           break;
         }
-        entries.push({ at: off, tie: 0, kind: 'step', label: steps[i]!.narration === null ? 'Step ' + steps[i]!.seq : steps[i]!.narration });
+        entries.push({ at: off, tie: 0, kind: 'step', label: s.narration === null ? 'Step ' + s.seq : s.narration });
       }
         if (!broken) {
           for (const mk of markers) {
