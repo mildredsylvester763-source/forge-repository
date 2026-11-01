@@ -238,6 +238,13 @@ export function liveTestingRoutes(service: LiveTestingService, identity: Identit
         return { status: 200, body: result };
       },
     },
+    '/v1/live-testing/sessions/compare': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.compareWithHuman(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
     '/v1/live-testing/sessions/steps': {
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);

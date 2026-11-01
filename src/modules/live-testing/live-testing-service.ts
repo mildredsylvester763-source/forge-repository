@@ -27,6 +27,7 @@ import {
 } from './engine/creative-tool-operation.ts';
 import { avCatalog, avStateTransition, checkPlayback, checkSync } from './engine/av-output.ts';
 import { checkCleanup, deriveTestAccounts } from './engine/test-data-lifecycle.ts';
+import { compareSessions } from './engine/session-comparison.ts';
 import { LiveTestingEvents, LIVE_TESTING_EVENT_VERSION } from './events.ts';
 import type {
   CustomPersonaRecord,
@@ -55,7 +56,7 @@ const COMMIT_RE = /^[0-9a-f]{7,40}$/;
  * platform vocabulary second (security before mechanics), and every refusal
  * is named. Sessions belong to one owner; an active participant can act
  * within their role, and anyone else meets the same session-not-found wall
- * as a stranger. TQ-019..030 add the physical world around a session:
+ * as a stranger. TQ-019 adds the human versus AI session comparison; TQ-020..030 add the physical world around a session:
  * named devices and networks, interruptions, permission plans, cross-device
  * handoffs, gesture physics, creative tool state, audio-video output and
  * the seeded test-data lifecycle.
@@ -790,5 +791,25 @@ export class LiveTestingService {
     await this.requireSessionCapability(userId, sessionId, 'steps');
     const accounts = await this.store.listTestAccountsBySession(sessionId);
     return { sessionId, accounts };
+  }
+
+  async compareWithHuman(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSession(userId, sessionId);
+    if (row.status !== 'completed' && row.status !== 'failed' && row.status !== 'cancelled') {
+      throw refusal('comparison-session-open:' + row.status);
+    }
+    const steps = await this.store.listStepsBySession(sessionId);
+    const verdict = compareSessions({
+      human: dto.human,
+      ai: {
+        steps: steps.length,
+        durationMs: row.startedAt !== null && row.endedAt !== null ? row.endedAt - row.startedAt : 0,
+        outcome: row.status,
+      },
+    });
+    if (!verdict.ok || !verdict.comparison) throw refusal(verdict.reason ?? 'comparison-refused');
+    return { sessionId, comparison: verdict.comparison };
   }
 }
