@@ -227,7 +227,7 @@ describe('test generation routes (FORGE TQ-031..035)', () => {
       };
       assert.equal(grammar.suite.target, 'api');
       assert.equal(grammar.suite.count, 3);
-      assert.equal(grammar.suite.checksum, 'ce925868');
+      assert.equal(grammar.suite.checksum, '6496a7b0');
       assert.deepEqual(grammar.suite.cases, [
         { index: 0, input: { email: 'lwrenhqw', age: 249 } },
         { index: 1, input: { email: 'thfnrpamvbp' } },
