@@ -15,6 +15,18 @@ import { narrate, parseGoal, type ParsedTask } from './engine/step-narration.ts'
 import { buildTimeline } from './engine/session-recording.ts';
 import { convertSession } from './engine/test-conversion.ts';
 import { evaluateStep, isEnvironment, resolveSafeMode } from './engine/safe-mode.ts';
+import { DEVICES, deviceCatalog, networkCatalog } from './engine/device-profile.ts';
+import { checkHandoff } from './engine/cross-device-handoff.ts';
+import { checkInterruption, interruptionCatalog } from './engine/interruption-scenario.ts';
+import { checkPermissionPlan, permissionCatalog } from './engine/permission-matrix.ts';
+import { checkGesture, gestureCatalog } from './engine/gesture-mechanics.ts';
+import {
+  applyCreativeOperation,
+  creativeEditorCatalog,
+  INITIAL_CREATIVE_STATE,
+} from './engine/creative-tool-operation.ts';
+import { avCatalog, avStateTransition, checkPlayback, checkSync } from './engine/av-output.ts';
+import { checkCleanup, deriveTestAccounts } from './engine/test-data-lifecycle.ts';
 import { LiveTestingEvents, LIVE_TESTING_EVENT_VERSION } from './events.ts';
 import type {
   CustomPersonaRecord,
@@ -23,6 +35,7 @@ import type {
   LiveStepRecord,
   LiveTestingStore,
   ParticipantRecord,
+  TestAccountRecord,
 } from './live-testing-store.ts';
 
 export interface LiveTestingDeps {
@@ -36,13 +49,16 @@ const refusal = (reason: string): AppError => new AppError(400, reason, reason);
 const COMMIT_RE = /^[0-9a-f]{7,40}$/;
 
 /**
- * FORGE TQ-001..018 (live agent testing, session core). The service is a
- * thin, auditable shell over pure engines: every state change is a legal
- * lifecycle transition, every recorded step is evaluated by safe mode
- * FIRST and the platform vocabulary second (security before mechanics),
- * and every refusal is named. Sessions belong to one owner; an active
- * participant can act within their role, and anyone else meets the same
- * session-not-found wall as a stranger.
+ * FORGE TQ-001..030 (live agent testing). The service is a thin, auditable
+ * shell over pure engines: every state change is a legal lifecycle
+ * transition, every recorded step is evaluated by safe mode FIRST and the
+ * platform vocabulary second (security before mechanics), and every refusal
+ * is named. Sessions belong to one owner; an active participant can act
+ * within their role, and anyone else meets the same session-not-found wall
+ * as a stranger. TQ-019..030 add the physical world around a session:
+ * named devices and networks, interruptions, permission plans, cross-device
+ * handoffs, gesture physics, creative tool state, audio-video output and
+ * the seeded test-data lifecycle.
  */
 export class LiveTestingService {
   private readonly store: LiveTestingStore;
@@ -95,6 +111,25 @@ export class LiveTestingService {
       subject: { type: 'live_testing_session', id: subjectId },
       payload,
     });
+  }
+
+  private async appendSessionStep(
+    sessionId: string,
+    step: { action: string; target: string | null; narration: string; payload: unknown },
+  ): Promise<LiveStepRecord> {
+    const existing = await this.store.listStepsBySession(sessionId);
+    const record = await this.store.appendStep({
+      sessionId,
+      seq: existing.length + 1,
+      actor: 'ai',
+      action: step.action,
+      target: step.target,
+      narration: step.narration,
+      payload: step.payload,
+      occurredAt: this.clock(),
+    });
+    await this.emit(LiveTestingEvents.StepRecorded, sessionId, { seq: record.seq, action: record.action });
+    return record;
   }
 
   async createSession(userId: string, body: unknown): Promise<LiveSessionRecord & { forcedSafeMode: boolean }> {
@@ -462,5 +497,298 @@ export class LiveTestingService {
     const sessionId = this.sessionIdOf(dto);
     await this.requireSession(userId, sessionId);
     return { sessionId, participants: await this.store.listParticipantsBySession(sessionId) };
+  }
+
+  deviceProfileCatalog(): { devices: ReturnType<typeof deviceCatalog>; networks: ReturnType<typeof networkCatalog> } {
+    return { devices: deviceCatalog(), networks: networkCatalog() };
+  }
+
+  private catalogPlatform(platform: unknown): unknown {
+    if (platform === undefined || platform === null || platform === '') return undefined;
+    if (!isPlatform(platform)) throw refusal('platform-unknown:' + String(platform));
+    return platform;
+  }
+
+  interruptionCatalogFor(platform?: unknown): { scenarios: ReturnType<typeof interruptionCatalog> } {
+    return { scenarios: interruptionCatalog(this.catalogPlatform(platform)) };
+  }
+
+  permissionCatalogFor(platform?: unknown): { permissions: ReturnType<typeof permissionCatalog> } {
+    return { permissions: permissionCatalog(this.catalogPlatform(platform)) };
+  }
+
+  gestureCatalogFor(platform?: unknown): { gestures: ReturnType<typeof gestureCatalog> } {
+    return { gestures: gestureCatalog(this.catalogPlatform(platform)) };
+  }
+
+  creativeCatalogFor(): { editors: ReturnType<typeof creativeEditorCatalog> } {
+    return { editors: creativeEditorCatalog() };
+  }
+
+  avCatalogFor(platform?: unknown): ReturnType<typeof avCatalog> {
+    return avCatalog(this.catalogPlatform(platform));
+  }
+
+  async simulateInterruption(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSession(userId, sessionId);
+    const verdict = checkInterruption({ platform: row.platform, scenario: dto.scenario, status: row.status });
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'interruption-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'interrupt',
+      target: verdict.scenario ?? null,
+      narration: 'Interrupting the session with ' + verdict.name,
+      payload: {
+        scenario: verdict.scenario,
+        resume: verdict.resume,
+        dataLossRisk: verdict.dataLossRisk,
+        expectation: verdict.expectation,
+      },
+    });
+    let session = row;
+    if (verdict.resume === 'manual' && transition(row.status, 'paused').ok) {
+      session = await this.store.saveSession({ ...row, status: 'paused', updatedAt: this.clock() });
+      await this.emit(LiveTestingEvents.SessionStatusChanged, sessionId, { from: row.status, to: 'paused' });
+    }
+    return {
+      step,
+      session,
+      resume: verdict.resume,
+      dataLossRisk: verdict.dataLossRisk,
+      expectation: verdict.expectation,
+    };
+  }
+
+  async applyPermissionPlan(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'control');
+    if (row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled') {
+      throw refusal('permission-session-terminal:' + row.status);
+    }
+    const verdict = checkPermissionPlan({ platform: row.platform, grants: dto.grants });
+    if (!verdict.ok || !verdict.plan) throw refusal(verdict.reason ?? 'permission-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'permissions',
+      target: null,
+      narration: 'Applying permission plan with ' + verdict.plan.length + ' entries',
+      payload: { grants: verdict.plan },
+    });
+    return { step, granted: verdict.granted, denied: verdict.denied, ask: verdict.ask };
+  }
+
+  async handoffSession(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSession(userId, sessionId);
+    const profile =
+      row.deviceProfile !== null && typeof row.deviceProfile === 'object' && !Array.isArray(row.deviceProfile)
+        ? (row.deviceProfile as Record<string, unknown>)
+        : {};
+    const fromDevice =
+      typeof profile.device === 'string' && profile.device.trim().length > 0 ? profile.device : null;
+    const verdict = checkHandoff({ status: row.status, fromDevice, toDevice: dto.device, platform: row.platform });
+    if (!verdict.ok || !verdict.handoff) throw refusal(verdict.reason ?? 'handoff-refused');
+    const info = verdict.handoff;
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'handoff',
+      target: info.toDevice,
+      narration: info.platformChanged
+        ? 'Handing off to ' + info.toDevice + ' across platforms'
+        : 'Handing off to ' + info.toDevice,
+      payload: { fromDevice: info.fromDevice, platformChanged: info.platformChanged, resume: info.resume },
+    });
+    const spec = DEVICES.find((d) => d.device === info.toDevice);
+    const session = await this.store.saveSession({
+      ...row,
+      deviceProfile: spec
+        ? { device: spec.device, platform: spec.platform, lowEnd: spec.lowEnd, cpuThrottle: spec.cpuThrottle }
+        : { platform: row.platform },
+      updatedAt: this.clock(),
+    });
+    return { session, step, handoff: info };
+  }
+
+  async runGesture(userId: string, body: unknown): Promise<LiveStepRecord> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const verdict = checkGesture({
+      platform: row.platform,
+      gesture: dto.gesture,
+      contacts: dto.contacts,
+      pressure: dto.pressure,
+      direction: dto.direction,
+      durationMs: dto.durationMs,
+    });
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'gesture-refused');
+    return this.appendSessionStep(sessionId, {
+      action: verdict.gesture ?? '',
+      target: typeof dto.target === 'string' && dto.target.length > 0 ? dto.target : null,
+      narration: verdict.text ?? '',
+      payload: {
+        contacts: verdict.contacts,
+        direction: verdict.direction,
+        pressure: verdict.pressure,
+        durationMs: verdict.durationMs,
+      },
+    });
+  }
+
+  async applyCreativeOperation(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const editor = typeof dto.editor === 'string' ? dto.editor : '';
+    const steps = await this.store.listStepsBySession(sessionId);
+    let last: unknown = INITIAL_CREATIVE_STATE;
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const s = steps[i]!;
+      if (s.action !== 'creative') continue;
+      const payload =
+        s.payload !== null && typeof s.payload === 'object' && !Array.isArray(s.payload)
+          ? (s.payload as Record<string, unknown>)
+          : {};
+      if (payload.editor === editor) {
+        last = payload.state;
+        break;
+      }
+    }
+    const verdict = applyCreativeOperation(last, { editor, operation: dto.operation });
+    if (!verdict.ok || !verdict.state) throw refusal(verdict.reason ?? 'creative-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'creative',
+      target: typeof dto.target === 'string' && dto.target.length > 0 ? dto.target : null,
+      narration: verdict.text ?? '',
+      payload: { editor, operation: dto.operation, state: verdict.state },
+    });
+    return { step, state: verdict.state };
+  }
+
+  async checkAvPlayback(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const verdict = checkPlayback({ platform: row.platform, kind: dto.kind, codec: dto.codec });
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'av-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'av-check',
+      target: typeof dto.target === 'string' && dto.target.length > 0 ? dto.target : null,
+      narration: verdict.text ?? '',
+      payload: { kind: verdict.kind, codec: verdict.codec, plays: verdict.plays },
+    });
+    return { step, plays: verdict.plays };
+  }
+
+  async checkAvSync(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const verdict = checkSync(dto.driftMs);
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'av-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'av-sync',
+      target: typeof dto.target === 'string' && dto.target.length > 0 ? dto.target : null,
+      narration: verdict.text ?? '',
+      payload: { driftMs: verdict.driftMs, sync: verdict.sync },
+    });
+    return { step, sync: verdict.sync, driftMs: verdict.driftMs };
+  }
+
+  async runAvTransition(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const verdict = avStateTransition(dto.from, dto.to);
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'av-refused');
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'av-state',
+      target: typeof dto.target === 'string' && dto.target.length > 0 ? dto.target : null,
+      narration: verdict.text ?? '',
+      payload: { from: verdict.from, to: verdict.to },
+    });
+    return { step, from: verdict.from, to: verdict.to };
+  }
+
+  async seedTestAccounts(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSessionCapability(userId, sessionId, 'steps');
+    if (!isActing(row.status)) throw refusal('session-not-acting:' + row.status);
+    const existing = await this.store.listTestAccountsBySession(sessionId);
+    if (existing.length > 0) throw refusal('data-already-seeded:' + existing.length);
+    const verdict = deriveTestAccounts(sessionId, dto.count);
+    if (!verdict.ok || !verdict.accounts) throw refusal(verdict.reason ?? 'data-refused');
+    const accounts: TestAccountRecord[] = [];
+    for (const plan of verdict.accounts) {
+      accounts.push(
+        await this.store.createTestAccount({
+          sessionId,
+          username: plan.username,
+          email: plan.email,
+          password: plan.password,
+          role: plan.role,
+          now: this.clock(),
+        }),
+      );
+    }
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'seed',
+      target: null,
+      narration: 'Seeding ' + accounts.length + ' test accounts',
+      payload: { count: accounts.length, domain: verdict.domain },
+    });
+    return { step, accounts };
+  }
+
+  async cleanupSessionData(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    const row = await this.requireSession(userId, sessionId);
+    const accounts = await this.store.listTestAccountsBySession(sessionId);
+    const pendingRows = accounts.filter((a) => a.state !== 'cleaned');
+    const verdict = checkCleanup({
+      status: row.status,
+      pending: pendingRows.length,
+      cleaned: accounts.length - pendingRows.length,
+    });
+    if (!verdict.ok) throw refusal(verdict.reason ?? 'data-cleanup-refused');
+    if (verdict.alreadyClean) {
+      return { sessionId, alreadyClean: true, plan: [], pending: 0 };
+    }
+    const now = this.clock();
+    const cleanedIds: string[] = [];
+    for (const account of pendingRows) {
+      await this.store.saveTestAccount({ ...account, state: 'cleaned', cleanedAt: now });
+      cleanedIds.push(account.id);
+    }
+    const step = await this.appendSessionStep(sessionId, {
+      action: 'cleanup',
+      target: null,
+      narration: 'Cleaning up ' + cleanedIds.length + ' seeded test accounts',
+      payload: { plan: verdict.plan, pending: verdict.pending },
+    });
+    return {
+      sessionId,
+      alreadyClean: false,
+      plan: verdict.plan,
+      pending: verdict.pending,
+      cleanedIds,
+      step,
+    };
+  }
+
+  async listSessionAccounts(userId: string, body: unknown): Promise<unknown> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const sessionId = this.sessionIdOf(dto);
+    await this.requireSessionCapability(userId, sessionId, 'steps');
+    const accounts = await this.store.listTestAccountsBySession(sessionId);
+    return { sessionId, accounts };
   }
 }

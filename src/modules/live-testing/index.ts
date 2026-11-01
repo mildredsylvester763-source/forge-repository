@@ -18,7 +18,9 @@ export {
   type NewLiveSession,
   type NewLiveStep,
   type NewParticipant,
+  type NewTestAccount,
   type ParticipantRecord,
+  type TestAccountRecord,
 } from './live-testing-store.ts';
 export { SqliteLiveTestingStore } from './sqlite-stores.ts';
 export { PostgresLiveTestingStore } from './postgres-stores.ts';

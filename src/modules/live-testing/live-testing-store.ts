@@ -132,10 +132,32 @@ export interface NewParticipant {
   now: number;
 }
 
+export interface TestAccountRecord {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly username: string;
+  readonly email: string;
+  readonly password: string;
+  readonly role: string;
+  readonly state: string;
+  readonly createdAt: number;
+  readonly cleanedAt: number | null;
+}
+
+export interface NewTestAccount {
+  sessionId: string;
+  username: string;
+  email: string;
+  password: string;
+  role: string;
+  now: number;
+}
+
 /**
  * The live testing module's storage contract: sessions, their recorded
- * steps, chat messages, findings, custom personas and collaborators.
- * SQLite and PostgreSQL adapters sit behind the same interface.
+ * steps, chat messages, findings, custom personas, collaborators and the
+ * seeded test accounts a session derives. SQLite and PostgreSQL adapters
+ * sit behind the same interface.
  */
 export interface LiveTestingStore {
   createSession(session: NewLiveSession): Promise<LiveSessionRecord>;
@@ -159,6 +181,9 @@ export interface LiveTestingStore {
   listParticipantsBySession(sessionId: string): Promise<ParticipantRecord[]>;
   saveParticipant(participant: ParticipantRecord): Promise<ParticipantRecord>;
   deleteParticipant(id: string): Promise<void>;
+  createTestAccount(account: NewTestAccount): Promise<TestAccountRecord>;
+  listTestAccountsBySession(sessionId: string): Promise<TestAccountRecord[]>;
+  saveTestAccount(account: TestAccountRecord): Promise<TestAccountRecord>;
 }
 
 /** Development and test store. */
@@ -170,6 +195,7 @@ export class InMemoryLiveTestingStore implements LiveTestingStore {
   private readonly findingsBySession = new Map<string, LiveFindingRecord[]>();
   private readonly personasById = new Map<string, CustomPersonaRecord>();
   private readonly participantsById = new Map<string, ParticipantRecord>();
+  private readonly accountsById = new Map<string, TestAccountRecord>();
 
   async createSession(session: NewLiveSession): Promise<LiveSessionRecord> {
     const record: LiveSessionRecord = {
@@ -350,5 +376,35 @@ export class InMemoryLiveTestingStore implements LiveTestingStore {
 
   async deleteParticipant(id: string): Promise<void> {
     this.participantsById.delete(id);
+  }
+
+  async createTestAccount(account: NewTestAccount): Promise<TestAccountRecord> {
+    const record: TestAccountRecord = {
+      id: randomUUID(),
+      sessionId: account.sessionId,
+      username: account.username,
+      email: account.email,
+      password: account.password,
+      role: account.role,
+      state: 'created',
+      createdAt: account.now,
+      cleanedAt: null,
+    };
+    this.accountsById.set(record.id, record);
+    return record;
+  }
+
+  async listTestAccountsBySession(sessionId: string): Promise<TestAccountRecord[]> {
+    const out: TestAccountRecord[] = [];
+    for (const row of this.accountsById.values()) {
+      if (row.sessionId === sessionId) out.push(row);
+    }
+    return out;
+  }
+
+  async saveTestAccount(account: TestAccountRecord): Promise<TestAccountRecord> {
+    if (!this.accountsById.has(account.id)) return account;
+    this.accountsById.set(account.id, account);
+    return account;
   }
 }

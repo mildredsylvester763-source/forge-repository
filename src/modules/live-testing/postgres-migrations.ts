@@ -84,4 +84,23 @@ export const pgLiveTestingMigrations: readonly Migration[] = [
       CREATE INDEX live_participants_user_idx ON live_participants (user_id);
     `,
   },
+  {
+    version: 2,
+    name: 'live_testing_accounts',
+    sql: `
+      CREATE TABLE live_test_accounts (
+        id          TEXT PRIMARY KEY,
+        session_id  TEXT NOT NULL REFERENCES live_sessions (id) ON DELETE CASCADE,
+        username    TEXT NOT NULL,
+        email       TEXT NOT NULL,
+        password    TEXT NOT NULL,
+        role        TEXT NOT NULL,
+        state       TEXT NOT NULL,
+        created_at  BIGINT NOT NULL,
+        cleaned_at  BIGINT,
+        UNIQUE (session_id, username)
+      );
+      CREATE INDEX live_test_accounts_session_idx ON live_test_accounts (session_id);
+    `,
+  },
 ];

@@ -13,7 +13,9 @@ import type {
   NewLiveSession,
   NewLiveStep,
   NewParticipant,
+  NewTestAccount,
   ParticipantRecord,
+  TestAccountRecord,
 } from './live-testing-store.ts';
 
 interface SessionRow {
@@ -88,6 +90,18 @@ interface ParticipantRow {
   created_at: number;
 }
 
+interface AccountRow {
+  id: string;
+  session_id: string;
+  username: string;
+  email: string;
+  password: string;
+  role: string;
+  state: string;
+  created_at: number;
+  cleaned_at: number | null;
+}
+
 const sessionFromRow = (r: SessionRow): LiveSessionRecord => ({
   id: r.id,
   userId: r.user_id,
@@ -160,6 +174,18 @@ const participantFromRow = (r: ParticipantRow): ParticipantRecord => ({
   createdAt: r.created_at,
 });
 
+const accountFromRow = (r: AccountRow): TestAccountRecord => ({
+  id: r.id,
+  sessionId: r.session_id,
+  username: r.username,
+  email: r.email,
+  password: r.password,
+  role: r.role,
+  state: r.state,
+  createdAt: r.created_at,
+  cleanedAt: r.cleaned_at,
+});
+
 export class SqliteLiveTestingStore implements LiveTestingStore {
   private readonly db: Database;
   private readonly insertSession;
@@ -183,6 +209,9 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
   private readonly participantsBySession;
   private readonly updateParticipant;
   private readonly deleteParticipantStmt;
+  private readonly insertAccount;
+  private readonly accountsBySession;
+  private readonly updateAccount;
 
   constructor(db: Database) {
     this.db = db;
@@ -207,6 +236,9 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
     this.participantsBySession = db.prepare('SELECT * FROM live_participants WHERE session_id = ? ORDER BY created_at ASC, id ASC');
     this.updateParticipant = db.prepare('UPDATE live_participants SET state = ? WHERE id = ?');
     this.deleteParticipantStmt = db.prepare('DELETE FROM live_participants WHERE id = ?');
+    this.insertAccount = db.prepare('INSERT INTO live_test_accounts (id, session_id, username, email, password, role, state, created_at, cleaned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.accountsBySession = db.prepare('SELECT * FROM live_test_accounts WHERE session_id = ? ORDER BY created_at ASC, id ASC');
+    this.updateAccount = db.prepare('UPDATE live_test_accounts SET state = ?, cleaned_at = ? WHERE id = ?');
   }
 
   async createSession(session: NewLiveSession): Promise<LiveSessionRecord> {
@@ -379,6 +411,36 @@ export class SqliteLiveTestingStore implements LiveTestingStore {
   async deleteParticipant(id: string): Promise<void> {
     transaction(this.db, () => {
       this.deleteParticipantStmt.run(id);
+    });
+  }
+
+  async createTestAccount(account: NewTestAccount): Promise<TestAccountRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertAccount.run(id, account.sessionId, account.username, account.email, account.password, account.role, 'created', account.now, null);
+      return {
+        id,
+        sessionId: account.sessionId,
+        username: account.username,
+        email: account.email,
+        password: account.password,
+        role: account.role,
+        state: 'created',
+        createdAt: account.now,
+        cleanedAt: null,
+      };
+    });
+  }
+
+  async listTestAccountsBySession(sessionId: string): Promise<TestAccountRecord[]> {
+    const rows = this.accountsBySession.all(sessionId) as unknown as AccountRow[];
+    return rows.map(accountFromRow);
+  }
+
+  async saveTestAccount(account: TestAccountRecord): Promise<TestAccountRecord> {
+    return transaction(this.db, () => {
+      this.updateAccount.run(account.state, account.cleanedAt, account.id);
+      return account;
     });
   }
 }

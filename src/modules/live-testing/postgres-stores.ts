@@ -13,7 +13,9 @@ import type {
   NewLiveSession,
   NewLiveStep,
   NewParticipant,
+  NewTestAccount,
   ParticipantRecord,
+  TestAccountRecord,
 } from './live-testing-store.ts';
 
 interface SessionRow {
@@ -86,6 +88,18 @@ interface ParticipantRow {
   state: string;
   invited_by: string;
   created_at: string | number;
+}
+
+interface AccountRow {
+  id: string;
+  session_id: string;
+  username: string;
+  email: string;
+  password: string;
+  role: string;
+  state: string;
+  created_at: string | number;
+  cleaned_at: string | number | null;
 }
 
 const num = (value: string | number): number => (typeof value === 'number' ? value : Number(value));
@@ -162,6 +176,18 @@ const participantFromRow = (r: ParticipantRow): ParticipantRecord => ({
   state: r.state,
   invitedBy: r.invited_by,
   createdAt: num(r.created_at),
+});
+
+const accountFromRow = (r: AccountRow): TestAccountRecord => ({
+  id: r.id,
+  sessionId: r.session_id,
+  username: r.username,
+  email: r.email,
+  password: r.password,
+  role: r.role,
+  state: r.state,
+  createdAt: num(r.created_at),
+  cleanedAt: numOrNull(r.cleaned_at),
 });
 
 export class PostgresLiveTestingStore implements LiveTestingStore {
@@ -372,5 +398,41 @@ export class PostgresLiveTestingStore implements LiveTestingStore {
 
   async deleteParticipant(id: string): Promise<void> {
     await this.pool.query('DELETE FROM live_participants WHERE id = $1', [id]);
+  }
+
+  async createTestAccount(account: NewTestAccount): Promise<TestAccountRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO live_test_accounts (id, session_id, username, email, password, role, state, created_at, cleaned_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, account.sessionId, account.username, account.email, account.password, account.role, 'created', account.now, null],
+    );
+    return {
+      id,
+      sessionId: account.sessionId,
+      username: account.username,
+      email: account.email,
+      password: account.password,
+      role: account.role,
+      state: 'created',
+      createdAt: account.now,
+      cleanedAt: null,
+    };
+  }
+
+  async listTestAccountsBySession(sessionId: string): Promise<TestAccountRecord[]> {
+    const result = await this.pool.query<AccountRow>(
+      'SELECT * FROM live_test_accounts WHERE session_id = $1 ORDER BY created_at ASC, id ASC',
+      [sessionId],
+    );
+    return result.rows.map(accountFromRow);
+  }
+
+  async saveTestAccount(account: TestAccountRecord): Promise<TestAccountRecord> {
+    await this.pool.query('UPDATE live_test_accounts SET state = $1, cleaned_at = $2 WHERE id = $3', [
+      account.state,
+      account.cleanedAt,
+      account.id,
+    ]);
+    return account;
   }
 }

@@ -40,6 +40,50 @@ export function liveTestingRoutes(service: LiveTestingService, identity: Identit
         return { status: 200, body: { roles: service.roleCatalog() } };
       },
     },
+    '/v1/live-testing/devices': {
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: service.deviceProfileCatalog() };
+      },
+    },
+    '/v1/live-testing/creative': {
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        return { status: 200, body: service.creativeCatalogFor() };
+      },
+    },
+    '/v1/live-testing/interruptions': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['platform']);
+        return { status: 200, body: service.interruptionCatalogFor(body.platform) };
+      },
+    },
+    '/v1/live-testing/permissions': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['platform']);
+        return { status: 200, body: service.permissionCatalogFor(body.platform) };
+      },
+    },
+    '/v1/live-testing/gestures': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['platform']);
+        return { status: 200, body: service.gestureCatalogFor(body.platform) };
+      },
+    },
+    '/v1/live-testing/av/codecs': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['platform']);
+        return { status: 200, body: service.avCatalogFor(body.platform) };
+      },
+    },
     '/v1/live-testing/sessions': {
       GET: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
@@ -115,6 +159,83 @@ export function liveTestingRoutes(service: LiveTestingService, identity: Identit
         const user = await requireUser(ctx);
         const session = await service.cancelSession(user.id, await ctx.json());
         return { status: 200, body: { session } };
+      },
+    },
+    '/v1/live-testing/sessions/interrupt': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.simulateInterruption(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/permissions': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.applyPermissionPlan(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/handoff': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.handoffSession(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/gesture': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const step = await service.runGesture(user.id, await ctx.json());
+        return { status: 201, body: { step } };
+      },
+    },
+    '/v1/live-testing/sessions/creative': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.applyCreativeOperation(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/av-playback': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.checkAvPlayback(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/av-sync': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.checkAvSync(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/av-state': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.runAvTransition(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/data/seed': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.seedTestAccounts(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/data/cleanup': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.cleanupSessionData(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/live-testing/sessions/data/accounts': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.listSessionAccounts(user.id, await ctx.json());
+        return { status: 200, body: result };
       },
     },
     '/v1/live-testing/sessions/steps': {
