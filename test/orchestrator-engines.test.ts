@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { AGENTS, planHandoffs, selectAgent } from '../src/modules/orchestrator/engine/agent-selection.ts';
+import { planHandoffs, selectAgent } from '../src/modules/orchestrator/engine/agent-selection.ts';
 import { checkToolPermission, toolsForPlan } from '../src/modules/orchestrator/engine/tool-registry.ts';
 import { runSandboxed } from '../src/modules/orchestrator/engine/execution-sandbox.ts';
 import { classifyIntent, INTENTS } from '../src/modules/orchestrator/engine/intent-classification.ts';
@@ -484,5 +484,3 @@ describe('orchestrator engine: execution sandbox (AI-078)', () => {
     }
   });
 });
-
-void AGENTS;
