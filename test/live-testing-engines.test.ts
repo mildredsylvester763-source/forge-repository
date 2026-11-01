@@ -1503,7 +1503,7 @@ describe('test-data-lifecycle engine (FORGE TQ-029)', () => {
       const slug = slugRaw.length > 0 ? slugRaw.slice(0, 12) : 'session';
       assert.equal(got.accounts?.length, count);
       for (let i = 0; i < count; i++) {
-        const account = got.accounts?.[i];
+        const account = got.accounts?.[i] as { username: string; email: string; password: string; role: string } | undefined;
         const username = 'forge-' + slug + '-' + (i + 1);
         assert.equal(account?.username, username);
         assert.equal(account?.email, username + '@' + FIXTURE_DOMAIN);
