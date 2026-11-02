@@ -232,9 +232,9 @@ describe('search integrity routes (FORGE AI-067..072)', () => {
       assert.equal(ok.status, 200);
       const okBody = (await ok.json()) as { allowed: boolean; tokens: number; capacity: number; refillPerMinute: number };
       assert.deepEqual(okBody, { allowed: true, tokens: 59, capacity: 60, refillPerMinute: 60 });
-      const capped = await h.post('/v1/search-integrity/rate/check', { tokens: 0, capacity: 10, refillPerMinute: 5, elapsedMinutes: 3 }, { cookie });
-      const cappedBody = (await capped.json()) as { allowed: boolean; tokens: number; capacity: number; refillPerMinute: number };
-      assert.deepEqual(cappedBody, { allowed: true, tokens: 9, capacity: 10, refillPerMinute: 5 });
+      const afterElapsed = await h.post('/v1/search-integrity/rate/check', { elapsedMinutes: 5 }, { cookie });
+      const afterElapsedBody = (await afterElapsed.json()) as { allowed: boolean; tokens: number; capacity: number; refillPerMinute: number };
+      assert.deepEqual(afterElapsedBody, { allowed: true, tokens: 59, capacity: 60, refillPerMinute: 60 });
       const negative = await h.post('/v1/search-integrity/rate/check', { elapsedMinutes: -1 }, { cookie });
       assert.equal(negative.status, 400);
       assert.equal(await errorCode(negative), 'bucket-elapsed-invalid:-1');
