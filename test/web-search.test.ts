@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { AppError } from '../src/kernel/errors.ts';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
 
 async function signedInUser(h: Harness, email: string): Promise<string> {
@@ -271,7 +272,15 @@ describe('web search routes (FORGE AI-057..061)', () => {
       assert.equal(listed.pages.length, 1);
       assert.equal(listed.pages[0]?.url, 'https://docs.example.com/guide');
       const tooLong = await h.post('/v1/web-search/pages', { url: 'https://docs.example.com/big', html: 'x'.repeat(300001) }, { cookie });
-      assert.equal(await errorCode(tooLong), 'fetch-page-html-too-long');
+      assert.equal(tooLong.status, 413);
+      assert.equal(await errorCode(tooLong), 'payload_too_large');
+      let refusalCode: string | null = null;
+      try {
+        await h.app.webSearch.fetchPage('ws-pages-user', { url: 'https://docs.example.com/big', html: 'x'.repeat(300001) });
+      } catch (err) {
+        refusalCode = err instanceof AppError ? err.code : 'unexpected';
+      }
+      assert.equal(refusalCode, 'fetch-page-html-too-long');
       const noScheme = await h.post('/v1/web-search/pages', { url: 'docs.example.com/guide', html }, { cookie });
       assert.equal(await errorCode(noScheme), 'citation-missing-scheme');
       await h.post('/v1/web-search/domain-rules', { workspace: 'research', deny: ['docs.example.com'] }, { cookie });
