@@ -89,6 +89,24 @@ import {
   webSearchRoutes,
   type WebSearchStore,
 } from './modules/web-search/index.ts';
+import {
+  InMemorySearchIntegrityStore,
+  PostgresSearchIntegrityStore,
+  SearchIntegrityService,
+  SqliteSearchIntegrityStore,
+  searchIntegrityMigrations,
+  searchIntegrityRoutes,
+  type SearchIntegrityStore,
+} from './modules/search-integrity/index.ts';
+import {
+  InMemoryWorkspaceRetrievalStore,
+  PostgresWorkspaceRetrievalStore,
+  SqliteWorkspaceRetrievalStore,
+  WorkspaceRetrievalService,
+  workspaceRetrievalMigrations,
+  workspaceRetrievalRoutes,
+  type WorkspaceRetrievalStore,
+} from './modules/workspace-retrieval/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -110,6 +128,8 @@ export interface ForgeApp {
   testGeneration: TestGenerationService;
   liveTesting: LiveTestingService;
   webSearch: WebSearchService;
+  workspaceRetrieval: WorkspaceRetrievalService;
+  searchIntegrity: SearchIntegrityService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -129,6 +149,8 @@ interface Storage {
   suites: GeneratedSuiteStore;
   liveTesting: LiveTestingStore;
   webSearch: WebSearchStore;
+  workspaceRetrieval: WorkspaceRetrievalStore;
+  searchIntegrity: SearchIntegrityStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -144,7 +166,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const suites = new PostgresGeneratedSuiteStore(pool);
     const liveTesting = new PostgresLiveTestingStore(pool);
     const webSearch = new PostgresWebSearchStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const workspaceRetrieval = new PostgresWorkspaceRetrievalStore(pool);
+    const searchIntegrity = new PostgresSearchIntegrityStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -157,6 +181,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'test_generation', testGenerationMigrations);
     migrate(db, 'live_testing', liveTestingMigrations);
     migrate(db, 'web_search', webSearchMigrations);
+    migrate(db, 'workspace_retrieval', workspaceRetrievalMigrations);
+    migrate(db, 'search_integrity', searchIntegrityMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -166,7 +192,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const suites = new SqliteGeneratedSuiteStore(db);
     const liveTesting = new SqliteLiveTestingStore(db);
     const webSearch = new SqliteWebSearchStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const workspaceRetrieval = new SqliteWorkspaceRetrievalStore(db);
+    const searchIntegrity = new SqliteSearchIntegrityStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -177,7 +205,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const suites = new InMemoryGeneratedSuiteStore();
   const liveTesting = new InMemoryLiveTestingStore();
   const webSearch = new InMemoryWebSearchStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const workspaceRetrieval = new InMemoryWorkspaceRetrievalStore();
+  const searchIntegrity = new InMemorySearchIntegrityStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -232,6 +262,10 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const webSearch = new WebSearchService({ store: storage.webSearch, events, clock });
 
+  const workspaceRetrieval = new WorkspaceRetrievalService({ store: storage.workspaceRetrieval, events, clock });
+
+  const searchIntegrity = new SearchIntegrityService({ store: storage.searchIntegrity, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -247,6 +281,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...testGenerationRoutes(testGeneration, identity, config.cookie),
     ...liveTestingRoutes(liveTesting, identity, config.cookie),
     ...webSearchRoutes(webSearch, identity, config.cookie),
+    ...workspaceRetrievalRoutes(workspaceRetrieval, identity, config.cookie),
+    ...searchIntegrityRoutes(searchIntegrity, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -262,5 +298,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, logger, db: storage.db, close };
 }
