@@ -100,7 +100,7 @@ export function hybridSearch(input: {
       }
       next[lane] = value;
     }
-    const sum = next.keyword + next.vector + next.graph;
+    const sum = (next.keyword ?? 0) + (next.vector ?? 0) + (next.graph ?? 0);
     if (sum <= 0) {
       return { ok: false, reason: 'hybrid-weights-invalid' };
     }
@@ -150,13 +150,13 @@ export function hybridSearch(input: {
   for (const doc of docs) {
     let fused = 0;
     if (lanes.includes('keyword')) {
-      fused += weights.keyword * (kwN[doc.id] ?? 0);
+      fused += (weights.keyword ?? 0) * (kwN[doc.id] ?? 0);
     }
     if (lanes.includes('vector')) {
-      fused += weights.vector * (vecN[doc.id] ?? 0);
+      fused += (weights.vector ?? 0) * (vecN[doc.id] ?? 0);
     }
     if (lanes.includes('graph')) {
-      fused += weights.graph * (graphN[doc.id] ?? 0);
+      fused += (weights.graph ?? 0) * (graphN[doc.id] ?? 0);
     }
     if (fused > 0) {
       hits.push({ id: doc.id, score: fused });
