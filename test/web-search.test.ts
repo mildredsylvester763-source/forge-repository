@@ -266,7 +266,7 @@ describe('web search routes (FORGE AI-057..061)', () => {
       const reusedPage = (await again.json()) as { id: string; wordCount: number; reused: boolean };
       assert.equal(reusedPage.id, page.id);
       assert.equal(reusedPage.reused, true);
-      assert.equal(reusedPage.wordCount, 10);
+      assert.equal(reusedPage.wordCount, 11);
       const listed = (await (await h.post('/v1/web-search/pages/list', { limit: '1' }, { cookie })).json()) as { pages: Array<{ url: string }> };
       assert.equal(listed.pages.length, 1);
       assert.equal(listed.pages[0]?.url, 'https://docs.example.com/guide');
