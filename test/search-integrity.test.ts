@@ -263,8 +263,8 @@ describe('search integrity routes (FORGE AI-067..072)', () => {
       const upsert = await h.post('/v1/search-integrity/cache', { key: 'cache key', payload: ['q'] }, { cookie });
       assert.equal(upsert.status, 201);
       const afterUpsert = await h.post('/v1/search-integrity/cache/get', { key: 'cache key' }, { cookie });
-      const afterUpsertBody = (await afterUpsert.json()) as { hitCount: number; payload: unknown };
-      assert.deepEqual(afterUpsertBody, { hitCount: 1, payload: ['q'] });
+      const afterUpsertBody = (await afterUpsert.json()) as { key: string; state: string; ageSeconds: number; hitCount: number; payload: unknown };
+      assert.deepEqual(afterUpsertBody, { key: 'cache key', state: 'fresh', ageSeconds: 0, hitCount: 1, payload: ['q'] });
       const keyMissing = await h.post('/v1/search-integrity/cache', { key: '   ' }, { cookie });
       assert.equal(keyMissing.status, 400);
       assert.equal(await errorCode(keyMissing), 'cache-key-missing');
