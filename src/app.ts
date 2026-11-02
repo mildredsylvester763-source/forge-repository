@@ -107,6 +107,15 @@ import {
   workspaceRetrievalRoutes,
   type WorkspaceRetrievalStore,
 } from './modules/workspace-retrieval/index.ts';
+import {
+  AiTrainingService,
+  InMemoryAiTrainingStore,
+  PostgresAiTrainingStore,
+  SqliteAiTrainingStore,
+  aiTrainingMigrations,
+  aiTrainingRoutes,
+  type AiTrainingStore,
+} from './modules/ai-training/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -130,6 +139,7 @@ export interface ForgeApp {
   webSearch: WebSearchService;
   workspaceRetrieval: WorkspaceRetrievalService;
   searchIntegrity: SearchIntegrityService;
+  aiTraining: AiTrainingService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -151,6 +161,7 @@ interface Storage {
   webSearch: WebSearchStore;
   workspaceRetrieval: WorkspaceRetrievalStore;
   searchIntegrity: SearchIntegrityStore;
+  aiTraining: AiTrainingStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -168,7 +179,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const webSearch = new PostgresWebSearchStore(pool);
     const workspaceRetrieval = new PostgresWorkspaceRetrievalStore(pool);
     const searchIntegrity = new PostgresSearchIntegrityStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const aiTraining = new PostgresAiTrainingStore(pool);
+    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -183,6 +195,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'web_search', webSearchMigrations);
     migrate(db, 'workspace_retrieval', workspaceRetrievalMigrations);
     migrate(db, 'search_integrity', searchIntegrityMigrations);
+    migrate(db, 'ai_training', aiTrainingMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -194,7 +207,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const webSearch = new SqliteWebSearchStore(db);
     const workspaceRetrieval = new SqliteWorkspaceRetrievalStore(db);
     const searchIntegrity = new SqliteSearchIntegrityStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const aiTraining = new SqliteAiTrainingStore(db);
+    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -207,7 +221,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const webSearch = new InMemoryWebSearchStore();
   const workspaceRetrieval = new InMemoryWorkspaceRetrievalStore();
   const searchIntegrity = new InMemorySearchIntegrityStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const aiTraining = new InMemoryAiTrainingStore();
+  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -266,6 +281,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const searchIntegrity = new SearchIntegrityService({ store: storage.searchIntegrity, events, clock });
 
+  const aiTraining = new AiTrainingService({ store: storage.aiTraining, events, clock });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -283,6 +300,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...webSearchRoutes(webSearch, identity, config.cookie),
     ...workspaceRetrievalRoutes(workspaceRetrieval, identity, config.cookie),
     ...searchIntegrityRoutes(searchIntegrity, identity, config.cookie),
+    ...aiTrainingRoutes(aiTraining, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -298,5 +316,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, logger, db: storage.db, close };
 }
