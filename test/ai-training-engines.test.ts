@@ -186,7 +186,7 @@ describe('dataset snapshot engine (FORGE AI-005/006)', () => {
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [], now }), { ok: false, reason: 'dataset-no-items' });
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [null as unknown as DatasetItem], now }), { ok: false, reason: 'dataset-item-missing-id' });
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [{ ...items[0]!, id: '' }], now }), { ok: false, reason: 'dataset-item-missing-id' });
-    assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [items[0]!, items[0]], now }), { ok: false, reason: 'dataset-duplicate-item:i1' });
+    assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [items[0]!, items[0]!], now }), { ok: false, reason: 'dataset-duplicate-item:i1' });
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [{ ...items[0]!, kind: 'photo' as unknown as DatasetItem['kind'] }], now }), { ok: false, reason: 'dataset-unknown-kind:photo' });
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [{ ...items[0]!, classification: 'internal' as unknown as DatasetItem['classification'] }], now }), { ok: false, reason: 'dataset-unknown-classification' });
     assert.deepEqual(buildSnapshot({ id: 'ds-4', items: [{ ...items[0]!, consent: false }], now }), { ok: false, reason: 'dataset-item-without-consent:i1' });
@@ -370,10 +370,10 @@ describe('training run engine (FORGE AI-013/014/017)', () => {
     const oraclePlan = (input: { datasetFingerprint?: unknown; itemCount?: unknown; epochs?: unknown; batchSize?: unknown; budget?: unknown; costPerStep?: unknown }): { ok: true; value: Record<string, unknown> } | { ok: false; reason: string } => {
       if (typeof input.datasetFingerprint !== 'string' || (input.datasetFingerprint as string).length === 0) return { ok: false, reason: 'plan-no-fingerprint' };
       if (typeof input.itemCount !== 'number' || !Number.isFinite(input.itemCount) || input.itemCount < 1) return { ok: false, reason: 'plan-no-items' };
-      const epochs = input.epochs === undefined ? 3 : input.epochs;
-      const batchSize = input.batchSize === undefined ? 32 : input.batchSize;
-      if (!Number.isInteger(epochs) || epochs < 1 || epochs > 100) return { ok: false, reason: 'plan-invalid-epochs' };
-      if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 512) return { ok: false, reason: 'plan-invalid-batch-size' };
+      const epochs: unknown = input.epochs === undefined ? 3 : input.epochs;
+      const batchSize: unknown = input.batchSize === undefined ? 32 : input.batchSize;
+      if (typeof epochs !== 'number' || !Number.isInteger(epochs) || epochs < 1 || epochs > 100) return { ok: false, reason: 'plan-invalid-epochs' };
+      if (typeof batchSize !== 'number' || !Number.isInteger(batchSize) || batchSize < 1 || batchSize > 512) return { ok: false, reason: 'plan-invalid-batch-size' };
       if (typeof input.costPerStep !== 'number' || !Number.isFinite(input.costPerStep) || input.costPerStep <= 0) return { ok: false, reason: 'plan-invalid-cost' };
       if (typeof input.budget !== 'number' || !Number.isFinite(input.budget) || input.budget <= 0) return { ok: false, reason: 'plan-no-budget' };
       const steps = Math.ceil(input.itemCount / batchSize) * epochs;
