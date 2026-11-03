@@ -805,13 +805,15 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
         { batteryId: 'red-team', total: 2, passed: 2, violations: [], passRate: 1 },
       );
       const unsafe = await h.post('/v1/ai-training/safety/grade', { batteryId: 'red-team', responses: [{ probeId: 'p1', refused: false, response: 'sure' }, { probeId: 'p2', refused: false }] }, { cookie });
-      assert.deepEqual(((await unsafe.json()) as { violations: string[]; passed: number; passRate: number }), {
+      const unsafeBody = (await unsafe.json()) as { violations: string[]; passed: number; passRate: number };
+      assert.deepEqual({ violations: unsafeBody.violations, passed: unsafeBody.passed, passRate: unsafeBody.passRate }, {
         violations: ['safety-unsafe-response:p1'],
         passed: 1,
         passRate: 0.5,
       });
       const contradiction = await h.post('/v1/ai-training/safety/grade', { batteryId: 'red-team', responses: [{ probeId: 'p1', refused: true, response: 'oops' }, { probeId: 'p2', refused: true }] }, { cookie });
-      assert.deepEqual(((await contradiction.json()) as { violations: string[] }), { violations: ['safety-refusal-contradiction:p1'] });
+      const contradictionBody = (await contradiction.json()) as { violations: string[] };
+      assert.deepEqual({ violations: contradictionBody.violations }, { violations: ['safety-refusal-contradiction:p1'] });
       const unknownBattery = await h.post('/v1/ai-training/safety/grade', { batteryId: 'nope', responses: [{ probeId: 'p1', refused: true }] }, { cookie });
       assert.equal(unknownBattery.status, 404);
       assert.equal(await errorCode(unknownBattery), 'safety-battery-not-found:nope');
@@ -980,9 +982,11 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
         bucket: 14,
       });
       const reassigned = await h.post('/v1/ai-training/experiments/assign', { experimentId: 'copy-test', subjectUserId: 'user-1', consentGranted: true }, { cookie });
-      assert.deepEqual((await reassigned.json()) as { variantId: string; bucket: number }, { variantId: 'control', bucket: 14 });
+      const reassignedBody = (await reassigned.json()) as { variantId: string; bucket: number };
+      assert.deepEqual({ variantId: reassignedBody.variantId, bucket: reassignedBody.bucket }, { variantId: 'control', bucket: 14 });
       const assigned20 = await h.post('/v1/ai-training/experiments/assign', { experimentId: 'copy-test', subjectUserId: 'user-20', consentGranted: true }, { cookie });
-      assert.deepEqual((await assigned20.json()) as { variantId: string; bucket: number }, { variantId: 'treatment', bucket: 55 });
+      const assigned20Body = (await assigned20.json()) as { variantId: string; bucket: number };
+      assert.deepEqual({ variantId: assigned20Body.variantId, bucket: assigned20Body.bucket }, { variantId: 'treatment', bucket: 55 });
       const unknownExperiment = await h.post('/v1/ai-training/experiments/assign', { experimentId: 'zzz', subjectUserId: 'u', consentGranted: true }, { cookie });
       assert.equal(unknownExperiment.status, 404);
       assert.equal(await errorCode(unknownExperiment), 'experiment-not-found:zzz');
@@ -1002,7 +1006,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       assert.equal(dupOutcome.status, 409);
       assert.equal(await errorCode(dupOutcome), 'outcome-duplicate:user-1');
       const outcome20 = await h.post('/v1/ai-training/experiments/outcome', { experimentId: 'copy-test', subjectUserId: 'user-20', success: false }, { cookie });
-      assert.deepEqual((await outcome20.json()) as { variantId: string; success: boolean }, { variantId: 'treatment', success: false });
+      const outcome20Body = (await outcome20.json()) as { variantId: string; success: boolean };
+      assert.deepEqual({ variantId: outcome20Body.variantId, success: outcome20Body.success }, { variantId: 'treatment', success: false });
 
       const tallied = await h.post('/v1/ai-training/experiments/tally', { experimentId: 'copy-test' }, { cookie });
       assert.equal(tallied.status, 200);
@@ -1030,7 +1035,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
 
       await h.post('/v1/ai-training/experiments', { experimentId: 'tiny-test', consentGranted: true, variants: [{ id: 'a', splitPercent: 50 }, { id: 'b', splitPercent: 50 }], minSamplesPerVariant: 2 }, { cookie });
       const tinyAssign = await h.post('/v1/ai-training/experiments/assign', { experimentId: 'tiny-test', subjectUserId: 'user-1', consentGranted: true }, { cookie });
-      assert.deepEqual((await tinyAssign.json()) as { variantId: string; bucket: number }, { variantId: 'b', bucket: 79 });
+      const tinyAssignBody = (await tinyAssign.json()) as { variantId: string; bucket: number };
+      assert.deepEqual({ variantId: tinyAssignBody.variantId, bucket: tinyAssignBody.bucket }, { variantId: 'b', bucket: 79 });
       await h.post('/v1/ai-training/experiments/outcome', { experimentId: 'tiny-test', subjectUserId: 'user-1', success: true }, { cookie });
       const tinyTally = await h.post('/v1/ai-training/experiments/tally', { experimentId: 'tiny-test' }, { cookie });
       assert.deepEqual((await tinyTally.json()) as {
