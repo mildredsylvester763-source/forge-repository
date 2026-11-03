@@ -1161,10 +1161,10 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const badCap = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', maxMined: 0, cases: [{ id: 'f1', content: 'x', passed: false }] }, { cookie });
       assert.equal(badCap.status, 400);
       assert.equal(await errorCode(badCap), 'mining-invalid-cap');
-      const dupCaseId = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', cases: [{ id: 'f1', content: 'The build failed with a missing import', passed: false }, { id: 'f1', content: 'dup id', passed: false }] }, { cookie });
+      const dupCaseId = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', maxMined: 10, cases: [{ id: 'f1', content: 'The build failed with a missing import', passed: false }, { id: 'f1', content: 'dup id', passed: false }] }, { cookie });
       assert.equal(dupCaseId.status, 400);
       assert.equal(await errorCode(dupCaseId), 'mining-duplicate-case:f1');
-      const badPassed = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', cases: [{ id: 'f1', content: 'ok', passed: 'yes' }] }, { cookie });
+      const badPassed = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', maxMined: 10, cases: [{ id: 'f1', content: 'ok', passed: 'yes' }] }, { cookie });
       assert.equal(badPassed.status, 400);
       assert.equal(await errorCode(badPassed), 'mining-case-invalid-passed:f1');
       const mined = await h.post('/v1/ai-training/mining/batches', {
@@ -1191,7 +1191,7 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const dupBatch = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-1', cases: [{ id: 'f9', content: 'Another failure', passed: false }] }, { cookie });
       assert.equal(dupBatch.status, 409);
       assert.equal(await errorCode(dupBatch), 'mining-batch-duplicate:batch-1');
-      const noFailures = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-2', cases: [{ id: 'p1', content: 'fine', passed: true }] }, { cookie });
+      const noFailures = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-2', maxMined: 10, cases: [{ id: 'p1', content: 'fine', passed: true }] }, { cookie });
       assert.equal(noFailures.status, 400);
       assert.equal(await errorCode(noFailures), 'mining-no-failures');
       const capExceeded = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-3', maxMined: 1, cases: [{ id: 'f1', content: 'first failure', passed: false }, { id: 'f2', content: 'second failure', passed: false }] }, { cookie });
