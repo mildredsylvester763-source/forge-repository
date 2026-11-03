@@ -702,7 +702,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       assert.equal(await errorCode(unknownCaseVote), 'panel-case-unknown:nope');
       const vote1 = await h.post('/v1/ai-training/eval/panel/vote', { suiteId: 'art-panel', caseId: 'panel-case-1', panelist: 'p1', score: 80 }, { cookie });
       assert.equal(vote1.status, 201);
-      assert.deepEqual((await vote1.json()) as { suiteId: string; caseId: string; panelist: string; score: number; createdAt: number }, {
+      const vote1Body = (await vote1.json()) as { suiteId: string; caseId: string; panelist: string; score: number; createdAt: number };
+      assert.deepEqual({ suiteId: vote1Body.suiteId, caseId: vote1Body.caseId, panelist: vote1Body.panelist, score: vote1Body.score, createdAt: vote1Body.createdAt }, {
         suiteId: 'art-panel',
         caseId: 'panel-case-1',
         panelist: 'p1',
@@ -780,7 +781,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       ];
       const battery = await h.post('/v1/ai-training/safety/batteries', { batteryId: 'red-team', probes }, { cookie });
       assert.equal(battery.status, 201);
-      assert.deepEqual((await battery.json()) as { batteryId: string; probes: unknown[]; createdAt: number }, {
+      const batteryBody = (await battery.json()) as { batteryId: string; probes: unknown[]; createdAt: number };
+      assert.deepEqual({ batteryId: batteryBody.batteryId, probes: batteryBody.probes, createdAt: batteryBody.createdAt }, {
         batteryId: 'red-team',
         probes,
         createdAt: NOW,
@@ -871,7 +873,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
 
       const vote = await h.post('/v1/ai-training/blind/vote', { contestId: 'showdown', voterId: 'v1', preference: 'a' }, { cookie });
       assert.equal(vote.status, 201);
-      assert.deepEqual((await vote.json()) as { contestId: string; voterId: string; preference: string; createdAt: number }, {
+      const voteBody = (await vote.json()) as { contestId: string; voterId: string; preference: string; createdAt: number };
+      assert.deepEqual({ contestId: voteBody.contestId, voterId: voteBody.voterId, preference: voteBody.preference, createdAt: voteBody.createdAt }, {
         contestId: 'showdown',
         voterId: 'v1',
         preference: 'a',
@@ -945,7 +948,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const variants = [{ id: 'control', splitPercent: 50 }, { id: 'treatment', splitPercent: 50 }];
       const defined = await h.post('/v1/ai-training/experiments', { experimentId: 'copy-test', consentGranted: true, variants, minSamplesPerVariant: 1 }, { cookie });
       assert.equal(defined.status, 201);
-      assert.deepEqual((await defined.json()) as { experimentId: string; variants: unknown[]; minSamplesPerVariant: number; active: boolean; createdAt: number }, {
+      const definedBody = (await defined.json()) as { experimentId: string; variants: unknown[]; minSamplesPerVariant: number; active: boolean; createdAt: number };
+      assert.deepEqual({ experimentId: definedBody.experimentId, variants: definedBody.variants, minSamplesPerVariant: definedBody.minSamplesPerVariant, active: definedBody.active, createdAt: definedBody.createdAt }, {
         experimentId: 'copy-test',
         variants,
         minSamplesPerVariant: 1,
@@ -1030,12 +1034,14 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       await h.post('/v1/ai-training/experiments/outcome', { experimentId: 'tiny-test', subjectUserId: 'user-1', success: true }, { cookie });
       const tinyTally = await h.post('/v1/ai-training/experiments/tally', { experimentId: 'tiny-test' }, { cookie });
       assert.deepEqual((await tinyTally.json()) as {
+        experimentId: string;
         variants: Array<{ variantId: string; total: number; successCount: number; successRate: number }>;
         verdict: string;
         winner: string | null;
         zScore: number | null;
         lift: number | null;
       }, {
+        experimentId: 'tiny-test',
         variants: [
           { variantId: 'a', total: 0, successCount: 0, successRate: 0 },
           { variantId: 'b', total: 1, successCount: 1, successRate: 1 },
@@ -1060,7 +1066,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
 
       const event1 = await h.post('/v1/ai-training/agents/events', { agentId: 'forge', outcome: 'success', approved: true }, { cookie });
       assert.equal(event1.status, 201);
-      assert.deepEqual((await event1.json()) as { agentId: string; outcome: string; reverted: boolean | null; approved: boolean | null; createdAt: number }, {
+      const event1Body = (await event1.json()) as { agentId: string; outcome: string; reverted: boolean | null; approved: boolean | null; createdAt: number };
+      assert.deepEqual({ agentId: event1Body.agentId, outcome: event1Body.outcome, reverted: event1Body.reverted, approved: event1Body.approved, createdAt: event1Body.createdAt }, {
         agentId: 'forge',
         outcome: 'success',
         reverted: null,
@@ -1164,7 +1171,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
         ],
       }, { cookie });
       assert.equal(mined.status, 201);
-      assert.deepEqual((await mined.json()) as { batchId: string; count: number; duplicatesDropped: number; cases: Array<{ id: string; fingerprint: string; weight: number }>; createdAt: number }, {
+      const minedBody = (await mined.json()) as { batchId: string; count: number; duplicatesDropped: number; cases: Array<{ id: string; fingerprint: string; weight: number }>; createdAt: number };
+      assert.deepEqual({ batchId: minedBody.batchId, count: minedBody.count, duplicatesDropped: minedBody.duplicatesDropped, cases: minedBody.cases, createdAt: minedBody.createdAt }, {
         batchId: 'batch-1',
         count: 2,
         duplicatesDropped: 0,
@@ -1185,7 +1193,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       assert.equal(await errorCode(capExceeded), 'mining-cap-exceeded:2>1');
       const deduped = await h.post('/v1/ai-training/mining/batches', { batchId: 'batch-4', maxMined: 5, cases: [{ id: 'a', content: 'same text here', passed: false }, { id: 'b', content: 'same text here', passed: false }] }, { cookie });
       assert.equal(deduped.status, 201);
-      assert.deepEqual((await deduped.json()) as { batchId: string; count: number; duplicatesDropped: number; cases: Array<{ id: string; fingerprint: string; weight: number }> }, {
+      const dedupedBody = (await deduped.json()) as { batchId: string; count: number; duplicatesDropped: number; cases: Array<{ id: string; fingerprint: string; weight: number }> };
+      assert.deepEqual({ batchId: dedupedBody.batchId, count: dedupedBody.count, duplicatesDropped: dedupedBody.duplicatesDropped, cases: dedupedBody.cases }, {
         batchId: 'batch-4',
         count: 1,
         duplicatesDropped: 1,
