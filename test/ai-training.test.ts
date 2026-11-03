@@ -521,6 +521,8 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const badLoss = await h.post('/v1/ai-training/runs/metric', { id: run.id, step: 2, loss: 'flat' }, { cookie });
       assert.equal(badLoss.status, 400);
       assert.equal(await errorCode(badLoss), 'metrics-invalid-loss:step 2');
+      const m2a = await h.post('/v1/ai-training/runs/metric', { id: run.id, step: 2, loss: 0.4 }, { cookie });
+      assert.equal(m2a.status, 200);
       const badEval = await h.post('/v1/ai-training/runs/metric', { id: run.id, step: 3, loss: 0.35, evalScore: 'high' }, { cookie });
       assert.equal(badEval.status, 400);
       assert.equal(await errorCode(badEval), 'metrics-invalid-eval:step 3');
