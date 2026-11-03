@@ -114,8 +114,8 @@ export class AiTrainingService {
     this.clock = deps.clock;
   }
 
-  private emit(type: string, subjectId: string, payload: Record<string, unknown>): Promise<void> {
-    return this.events.append({
+  private async emit(type: string, subjectId: string, payload: Record<string, unknown>): Promise<void> {
+    await this.events.append({
       type,
       version: AI_TRAINING_EVENT_VERSION,
       actor: { kind: 'system', id: 'forge' },

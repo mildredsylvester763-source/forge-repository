@@ -321,7 +321,7 @@ export function applyRegressionGate(metrics: Record<string, number>, gate: Regre
     if (!th || typeof th !== 'object') {
       return { ok: false, reason: 'gate-missing-threshold:' + metric };
     }
-    const err = applyThreshold(metric, metrics[metric], th, failures);
+    const err = applyThreshold(metric, metrics[metric]!, th, failures);
     if (err) {
       return { ok: false, reason: err };
     }

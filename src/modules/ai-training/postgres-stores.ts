@@ -117,14 +117,6 @@ interface BatteryRow {
   created_at: string | number;
 }
 
-interface GradeRow {
-  id: string;
-  user_id: string;
-  battery_id: string;
-  grade: string;
-  created_at: string | number;
-}
-
 interface BallotRow {
   id: string;
   user_id: string;
@@ -264,14 +256,6 @@ const toBatteryRecord = (r: BatteryRow): SafetyBatteryRecord => ({
   userId: r.user_id,
   batteryId: r.battery_id,
   probes: JSON.parse(r.probes) as unknown,
-  createdAt: num(r.created_at),
-});
-
-const toGradeRecord = (r: GradeRow): SafetyGradeRecord => ({
-  id: r.id,
-  userId: r.user_id,
-  batteryId: r.battery_id,
-  grade: JSON.parse(r.grade) as unknown,
   createdAt: num(r.created_at),
 });
 
