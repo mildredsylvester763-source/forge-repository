@@ -747,6 +747,7 @@ export class AiTrainingService {
         ...(r.reverted === null ? {} : { reverted: r.reverted }),
         ...(r.approved === null ? {} : { approved: r.approved }),
       }));
+    if (events.length === 0) throw refusal('scorecard-no-events');
     const report = buildScorecards({ events, minEventsPerAgent: typeof dto.minEventsPerAgent === 'number' ? dto.minEventsPerAgent : undefined });
     if (!report.ok) throw refusal(report.reason);
     return { agents: report.value.agents, insufficient: report.value.insufficient };
