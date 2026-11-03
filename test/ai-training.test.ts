@@ -391,7 +391,7 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const unknownDs = await h.post('/v1/ai-training/runs', { datasetId: 'zzz' }, { cookie });
       assert.equal(unknownDs.status, 404);
       assert.equal(await errorCode(unknownDs), 'dataset-not-found:zzz');
-      const noBudget = await h.post('/v1/ai-training/runs', { datasetId: ds.id }, { cookie });
+      const noBudget = await h.post('/v1/ai-training/runs', { datasetId: ds.id, costPerStep: 0.5 }, { cookie });
       assert.equal(noBudget.status, 400);
       assert.equal(await errorCode(noBudget), 'plan-no-budget');
       const noCost = await h.post('/v1/ai-training/runs', { datasetId: ds.id, budget: 10 }, { cookie });
