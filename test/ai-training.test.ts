@@ -687,9 +687,9 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
       const unknownCriterion = await h.post('/v1/ai-training/eval/grade', { suiteId: 'forge-core', version: 1, results: { 'case-1': ['nope'], 'case-2': ['spots-bug'] } }, { cookie });
       assert.equal(unknownCriterion.status, 400);
       assert.equal(await errorCode(unknownCriterion), 'grade-criterion-unknown:case-1/nope');
-      const dupCriterion = await h.post('/v1/ai-training/eval/grade', { suiteId: 'forge-core', version: 1, results: { 'case-1': ['fixes-import', 'fixes-import'], 'case-2': ['spots-bug'] } }, { cookie });
-      assert.equal(dupCriterion.status, 400);
-      assert.equal(await errorCode(dupCriterion), 'grade-criterion-duplicate:case-1/fixes-import');
+      const dupGradeCriterion = await h.post('/v1/ai-training/eval/grade', { suiteId: 'forge-core', version: 1, results: { 'case-1': ['fixes-import', 'fixes-import'], 'case-2': ['spots-bug'] } }, { cookie });
+      assert.equal(dupGradeCriterion.status, 400);
+      assert.equal(await errorCode(dupGradeCriterion), 'grade-criterion-duplicate:case-1/fixes-import');
 
       await defineSuite(h, cookie, { suiteId: 'art-panel', version: 1, kind: 'creative', cases: [{ id: 'panel-case-1', domain: 'manhwa' }] });
       const creativeGrade = await h.post('/v1/ai-training/eval/grade', { suiteId: 'art-panel', results: {} }, { cookie });

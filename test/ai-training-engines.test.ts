@@ -483,7 +483,7 @@ describe('eval harness and regression gates (FORGE AI-021/022/023/024)', () => {
     assert.deepEqual(defineEvalSuite({} as unknown as EvalSuite), { ok: false, reason: 'suite-no-id' });
     assert.deepEqual(defineEvalSuite({ id: 'x', version: 0, kind: 'forge', cases: [] }), { ok: false, reason: 'suite-invalid-version' });
     assert.deepEqual(defineEvalSuite({ id: 'x', version: 1.5, kind: 'forge', cases: [] }), { ok: false, reason: 'suite-invalid-version' });
-    assert.deepEqual(defineEvalSuite({ id: 'x', version: 1, kind: 'other', cases: [] }), { ok: false, reason: 'suite-no-kind' });
+    assert.deepEqual(defineEvalSuite({ id: 'x', version: 1, kind: 'other' as unknown as EvalSuite['kind'], cases: [] }), { ok: false, reason: 'suite-no-kind' });
     assert.deepEqual(defineEvalSuite({ id: 'x', version: 1, kind: 'forge', cases: [] }), { ok: false, reason: 'suite-no-cases' });
     assert.deepEqual(defineEvalSuite({ ...forgeSuite, cases: [forgeSuite.cases[0]!, forgeSuite.cases[0]!] }), { ok: false, reason: 'suite-duplicate-case:c1' });
     assert.deepEqual(defineEvalSuite({ ...forgeSuite, cases: [null as unknown as EvalCase] }), { ok: false, reason: 'suite-case-invalid' });
@@ -521,7 +521,7 @@ describe('eval harness and regression gates (FORGE AI-021/022/023/024)', () => {
     assert.deepEqual(gradeSuite(forgeSuite, null as unknown as Record<string, string[]>), { ok: false, reason: 'grade-no-results' });
     assert.deepEqual(gradeSuite(forgeSuite, { c1: ['compiles'], c2: ['names'], c3: [] }), { ok: false, reason: 'grade-case-unknown:c3' });
     assert.deepEqual(gradeSuite(forgeSuite, { c1: ['compiles'] }), { ok: false, reason: 'grade-case-missing:c2' });
-    assert.deepEqual(gradeSuite(forgeSuite, { c1: 'compiles', c2: [] }), { ok: false, reason: 'grade-result-invalid:c1' });
+    assert.deepEqual(gradeSuite(forgeSuite, { c1: 'compiles' as unknown as string[], c2: [] }), { ok: false, reason: 'grade-result-invalid:c1' });
     assert.deepEqual(gradeSuite(forgeSuite, { c1: ['compiles', 'nope'], c2: [] }), { ok: false, reason: 'grade-criterion-unknown:c1/nope' });
     assert.deepEqual(gradeSuite(forgeSuite, { c1: ['compiles', 'compiles'], c2: [] }), { ok: false, reason: 'grade-criterion-duplicate:c1/compiles' });
   });
