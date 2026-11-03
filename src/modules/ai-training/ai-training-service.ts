@@ -405,7 +405,13 @@ export class AiTrainingService {
       { budget: run.budget, spent: run.spent, entries: (run.costEntries as CostEntryShape[]) ?? [] },
       { step: typeof dto.step === 'number' ? dto.step : NaN, units: typeof dto.units === 'number' ? dto.units : NaN, at: new Date(this.clock()).toISOString() },
     );
-    if (!r.ok) throw conflict(r.reason);
+    if (!r.ok) {
+      // A malformed cost event is a bad request; only the budget cap is a state conflict.
+      if (r.reason === 'cost-event-invalid-step' || r.reason === 'cost-event-invalid-units') {
+        throw refusal(r.reason);
+      }
+      throw conflict(r.reason);
+    }
     const updated = await this.store.saveRun({ ...run, spent: r.value.spent, costEntries: r.value.entries, updatedAt: this.clock() });
     return updated;
   }
