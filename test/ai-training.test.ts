@@ -1128,7 +1128,7 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
         createdAt: NOW,
       });
       const sampleAgain = await h.post('/v1/ai-training/trend/samples', { metricId: 'eval-accuracy', bucket: '2027-01', score: 0.9 }, { cookie });
-      assert.equal(sampleAgain.status, 200);
+      assert.equal(sampleAgain.status, 201);
       assert.equal(((await sampleAgain.json()) as { id: string }).id, sample1Body.id);
       const conflicting = await h.post('/v1/ai-training/trend/samples', { metricId: 'eval-accuracy', bucket: '2027-01', score: 0.5 }, { cookie });
       assert.equal(conflicting.status, 409);
