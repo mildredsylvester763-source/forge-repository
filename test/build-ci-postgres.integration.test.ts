@@ -9,6 +9,7 @@ import { PostgresScheduleOccurrenceStore } from '../src/modules/build-ci/schedul
 import { ScheduleDispatcher } from '../src/modules/build-ci/schedule-dispatcher.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
 import { PostgresProviderConnectionStore, StoredWebhookConnectionResolver } from '../src/modules/build-ci/provider-connections.ts';
+import { ProviderConnectionOperations } from '../src/modules/build-ci/provider-connection-operations.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
 
@@ -117,6 +118,55 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       ['pg-workspace', 'integration-test', 'maintainer', 'active', new Date().toISOString(), new Date().toISOString()],
     );
     const authorize = createWorkspacePipelineAuthorizer(new PostgresWorkspaceMembershipReader(testPool.pool));
+    let providerSecretLookups = 0;
+    const providerOperations = new ProviderConnectionOperations({
+      connections: providerConnections,
+      authorize,
+      secrets: {
+        resolve: async (reference) => {
+          providerSecretLookups += 1;
+          return reference.startsWith('vault://forge/pg-workspace/github/managed') ? 'managed-postgres-secret' : null;
+        },
+      },
+      now: () => Date.parse('2026-11-04T00:04:00.000Z'),
+    });
+    const managedConnection = await providerOperations.create({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      deliveryActorId: 'integration-test',
+      connectionId: 'pg-managed-connection',
+      provider: 'github',
+      repository: 'team/managed-app',
+      secretRef: 'vault://forge/pg-workspace/github/managed',
+    });
+    assert.equal(managedConnection.active, true);
+    assert.equal('secretRef' in managedConnection, false);
+    assert.equal((await providerConnections.find('github', 'pg-managed-connection'))?.actorId, 'integration-test');
+    const managedRotation = await providerOperations.rotateSecretReference({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      connectionId: 'pg-managed-connection',
+      provider: 'github',
+      nextSecretRef: 'vault://forge/pg-workspace/github/managed-v2',
+    });
+    assert.equal(managedRotation.updatedAt, '2026-11-04T00:04:00.000Z');
+    const managedEventsAfterRotation = await providerOperations.listEvents({
+      workspaceId: 'pg-workspace', actorId: 'integration-test',
+      connectionId: 'pg-managed-connection', provider: 'github',
+    });
+    assert.deepEqual(managedEventsAfterRotation.map((event) => event.eventType), ['created', 'secret_reference_rotated']);
+    const managedRevocation = await providerOperations.revoke({
+      workspaceId: 'pg-workspace', actorId: 'integration-test',
+      connectionId: 'pg-managed-connection', provider: 'github',
+    });
+    assert.equal(managedRevocation.revoked, true);
+    assert.equal(providerSecretLookups, 2);
+    const managedEvents = await providerOperations.listEvents({
+      workspaceId: 'pg-workspace', actorId: 'integration-test',
+      connectionId: 'pg-managed-connection', provider: 'github',
+    });
+    assert.deepEqual(managedEvents.map((event) => event.eventType), ['created', 'secret_reference_rotated', 'revoked']);
+    assert.equal(JSON.stringify(managedEvents).includes('vault://'), false);
     assert.equal(await authorize({ workspaceId: 'pg-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), true);
     assert.equal(await authorize({ workspaceId: 'other-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), false);
     const store = new PostgresBuildCiStore(testPool.pool);
