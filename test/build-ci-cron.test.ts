@@ -5,9 +5,9 @@ import { cronMatchesInstant, findCronOccurrences, parseCronExpression } from '..
 test('cron parser applies standard day-of-month/day-of-week OR semantics when both are restricted', () => {
   const cron = parseCronExpression('0 9 1 * 1');
   // 2026-06-01 is Monday, and 2026-07-01 is Wednesday.
-  assert.equal(cronMatchesInstant(cron, Date.parse('2026-06-01T08:00:00.000Z'), 'UTC'), true);
-  assert.equal(cronMatchesInstant(cron, Date.parse('2026-07-01T08:00:00.000Z'), 'UTC'), true);
-  assert.equal(cronMatchesInstant(cron, Date.parse('2026-07-02T08:00:00.000Z'), 'UTC'), false);
+  assert.equal(cronMatchesInstant(cron, Date.parse('2026-06-01T09:00:00.000Z'), 'UTC'), true);
+  assert.equal(cronMatchesInstant(cron, Date.parse('2026-07-01T09:00:00.000Z'), 'UTC'), true);
+  assert.equal(cronMatchesInstant(cron, Date.parse('2026-07-02T09:00:00.000Z'), 'UTC'), false);
 });
 
 test('cron matching uses the configured IANA timezone rather than server timezone', () => {
