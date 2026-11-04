@@ -1,6 +1,7 @@
 import type { PipelineAuthorizer } from './store.ts';
 import { PipelineAuthorizationError } from './store.ts';
 import type { WebhookProvider } from './webhooks.ts';
+import { errorCode } from '../../kernel/sql.ts';
 import type {
   ProviderConnectionEvent,
   ProviderConnectionRecord,
@@ -100,17 +101,28 @@ export class ProviderConnectionOperations {
     }
     if (typeof input.repository !== 'string' || !input.repository.trim() || input.repository.length > 256 ||
         /[\r\n\0]/.test(input.repository)) throw new TypeError('repository is invalid');
+    if (await this.connections.find(input.provider, input.connectionId)) throw new ProviderConnectionConflictError();
     await this.requireSecretReference(input.secretRef, input.workspaceId);
-    const record = await this.connections.create({
-      connectionId: input.connectionId,
-      provider: input.provider,
-      workspaceId: input.workspaceId,
-      actorId: input.deliveryActorId,
-      createdBy: input.actorId,
-      repository: input.repository,
-      secretRef: input.secretRef,
-      createdAt: new Date(this.now()).toISOString(),
-    });
+    let record: ProviderConnectionRecord;
+    try {
+      record = await this.connections.create({
+        connectionId: input.connectionId,
+        provider: input.provider,
+        workspaceId: input.workspaceId,
+        actorId: input.deliveryActorId,
+        createdBy: input.actorId,
+        repository: input.repository,
+        secretRef: input.secretRef,
+        createdAt: new Date(this.now()).toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const code = errorCode(error);
+      if (code === '23505' || /UNIQUE constraint failed: build_ci_provider_connections\.provider, build_ci_provider_connections\.connection_id/.test(message)) {
+        throw new ProviderConnectionConflictError();
+      }
+      throw error;
+    }
     return summary(record);
   }
 
