@@ -93,7 +93,7 @@ export class PipelineGraphError extends Error {
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const TASK = /^[a-z][a-z0-9_.-]{0,127}$/;
 const INPUT_NAME = /^[a-z][a-z0-9_]{0,63}$/;
-const SECRET_REF = /^workspace\\.[a-z][a-z0-9_-]{0,63}$/;
+const SECRET_REF = /^workspace\.[a-z][a-z0-9_-]{0,63}$/;
 const FIELD = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$/;
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const TRIGGER_KINDS = new Set<TriggerKind>(['push', 'pull_request', 'schedule', 'event', 'manual', 'api']);
