@@ -81,8 +81,15 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     });
     const importedRead = await store.getLatestVersion('pg-consumer', 'pg-imported-quality');
     assert.deepEqual(importedRead?.templateSource, imported.templateSource);
-    await templateStore.revoke('template-pg-quality', 'pg-workspace', 'pg-consumer', '2026-11-04T00:03:00.000Z');
+    await templateStore.revoke('template-pg-quality', 'pg-workspace', 'pg-consumer', 'integration-test', '2026-11-04T00:03:00.000Z');
     assert.equal(await templateStore.canAccess('template-pg-quality', 'pg-consumer'), false);
+    const templateEvents = await templateStore.listEvents('template-pg-quality', 'pg-workspace');
+    assert.ok(templateEvents.some((event) => event.eventType === 'created'));
+    assert.ok(templateEvents.some((event) => event.eventType === 'version_published'));
+    assert.ok(templateEvents.some((event) => event.eventType === 'share_granted'));
+    assert.ok(templateEvents.some((event) => event.eventType === 'share_revoked'));
+    assert.ok(templateEvents.some((event) => event.eventType === 'imported'));
+    await assert.rejects(() => testPool.pool.query("UPDATE build_pipeline_template_events SET actor_id = 'tampered' WHERE template_id = $1", ['template-pg-quality']));
     await assert.rejects(() => testPool.pool.query(
       "UPDATE build_pipeline_template_versions SET changelog = 'tampered' WHERE template_id = $1 AND version = 1",
       ['template-pg-quality'],

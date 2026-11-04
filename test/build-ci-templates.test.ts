@@ -71,9 +71,18 @@ test('SQLite templates are immutable, explicitly shared, revocable and provenanc
     assert.throws(() => db.prepare("UPDATE build_pipeline_template_versions SET changelog = 'tampered' WHERE template_id = ?").run('template-quality'));
     assert.throws(() => db.prepare('DELETE FROM build_pipeline_template_versions WHERE template_id = ?').run('template-quality'));
 
-    await templates.revoke('template-quality', 'publisher', 'consumer', '2026-11-04T00:03:00.000Z');
+    await templates.revoke('template-quality', 'publisher', 'consumer', 'owner', '2026-11-04T00:03:00.000Z');
     assert.equal(await templates.canAccess('template-quality', 'consumer'), false);
     assert.equal((await templates.listAccessible('consumer')).length, 0);
+    const audit = await templates.listEvents('template-quality', 'publisher');
+    const eventTypes = audit.map((event) => event.eventType);
+    assert.ok(eventTypes.includes('created'));
+    assert.ok(eventTypes.includes('version_published'));
+    assert.ok(eventTypes.includes('share_granted'));
+    assert.ok(eventTypes.includes('share_revoked'));
+    assert.ok(eventTypes.includes('imported'));
+    assert.throws(() => db.prepare("UPDATE build_pipeline_template_events SET actor_id = 'tampered'").run());
+    assert.throws(() => db.prepare('DELETE FROM build_pipeline_template_events').run());
   } finally {
     db.close();
   }
