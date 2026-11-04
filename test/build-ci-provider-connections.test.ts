@@ -16,10 +16,10 @@ test('provider metadata uses an opaque vault reference and revocation disables b
     assert.equal(created.secretRef, 'vault://forge/workspaces/alpha/github/webhook');
     assert.equal(await store.rotateSecretReference('github', 'github-installation-1',
       'vault://forge/workspaces/alpha/github/webhook', 'vault://forge/workspaces/alpha/github/webhook-v2',
-      '2026-11-04T12:01:00.000Z'), true);
+      '2026-11-04T12:01:00.000Z', 'workspace-service-1'), true);
     assert.equal(await store.rotateSecretReference('github', 'github-installation-1',
       'vault://forge/workspaces/alpha/github/webhook', 'vault://forge/workspaces/alpha/github/webhook-v3',
-      '2026-11-04T12:02:00.000Z'), false, 'stale rotation must not overwrite a newer secret reference');
+      '2026-11-04T12:02:00.000Z', 'workspace-service-1'), false, 'stale rotation must not overwrite a newer secret reference');
     const columns = db.prepare('PRAGMA table_info(build_ci_provider_connections)').all() as Array<{ name: string }>;
     assert.equal(columns.some((column) => /secret_value|signing_secret|token_value/i.test(column.name)), false);
     let vaultCalls = 0;
@@ -33,8 +33,8 @@ test('provider metadata uses an opaque vault reference and revocation disables b
     assert.equal(vaultCalls, 1, 'delivery lookup must not call the vault');
     assert.equal((await store.find('github', 'github-installation-1'))?.secretRef,
       'vault://forge/workspaces/alpha/github/webhook-v2');
-    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:05:00.000Z'), true);
-    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:06:00.000Z'), false);
+    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:05:00.000Z', 'workspace-service-1'), true);
+    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:06:00.000Z', 'workspace-service-1'), false);
     assert.equal(await resolver.resolveForIngress('github', 'github-installation-1'), null);
     assert.equal(await resolver.resolveForDelivery('github', 'github-installation-1'), null);
     assert.equal(vaultCalls, 1);
@@ -67,7 +67,7 @@ test('ingress rejects a secret lookup raced by revocation or secret-reference ro
       actorId: 'workspace-service-race', repository: 'team/race', secretRef: originalRef });
     const revokedResolver = new StoredWebhookConnectionResolver(store, {
       resolve: async () => {
-        await store.revoke('github', 'race-revocation', '2026-11-04T12:10:00.000Z');
+        await store.revoke('github', 'race-revocation', '2026-11-04T12:10:00.000Z', 'workspace-service-race');
         return 'secret-read-before-revocation';
       },
     });
@@ -79,7 +79,7 @@ test('ingress rejects a secret lookup raced by revocation or secret-reference ro
     const rotatedResolver = new StoredWebhookConnectionResolver(store, {
       resolve: async (reference) => {
         assert.equal(reference, originalRef);
-        await store.rotateSecretReference('github', 'race-rotation', originalRef, rotatedRef, '2026-11-04T12:11:00.000Z');
+        await store.rotateSecretReference('github', 'race-rotation', originalRef, rotatedRef, '2026-11-04T12:11:00.000Z', 'workspace-service-race');
         return 'secret-for-stale-reference';
       },
     });
