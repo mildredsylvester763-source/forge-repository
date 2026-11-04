@@ -69,7 +69,7 @@ test('scheduler scans with a durable cursor and dispatches each minute occurrenc
 });
 
 test('scheduler retries authorization failures and dispatches idempotently after recovery', async () => {
-  let allowed = false;
+  let allowed = true;
   const { db, pipelines, buildCi, occurrences } = fixture(async () => allowed);
   try {
     await buildCi.createPipeline({
@@ -80,9 +80,10 @@ test('scheduler retries authorization failures and dispatches idempotently after
         steps: [{ id: 'test', task: 'quality.test' }],
       },
     });
+    allowed = false;
     let now = Date.parse('2026-11-04T12:00:00.000Z');
     const dispatcher = new ScheduleDispatcher({
-      occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 0, retryBaseMs: 1_000,
+      occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 1, retryBaseMs: 1_000,
     });
     await dispatcher.scanWorkspace('workspace-retry');
     const failed = await dispatcher.processNext({
@@ -96,7 +97,8 @@ test('scheduler retries authorization failures and dispatches idempotently after
     });
     assert.equal(retried.dispatched, true);
     assert.equal(retried.queuedRun, true);
-    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM build_pipeline_runs').get()?.count, 1);
+    const runCount = db.prepare('SELECT COUNT(*) AS count FROM build_pipeline_runs').get() as { count: number };
+    assert.equal(Number(runCount.count), 1);
   } finally { db.close(); }
 });
 
@@ -110,7 +112,7 @@ test('queued occurrence from a superseded pipeline version is skipped, not run a
     };
     await buildCi.createPipeline({ workspaceId: 'workspace-version', actorId: 'scheduler-actor', definition });
     let now = Date.parse('2026-11-04T12:00:00.000Z');
-    const dispatcher = new ScheduleDispatcher({ occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 0 });
+    const dispatcher = new ScheduleDispatcher({ occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 1 });
     await dispatcher.scanWorkspace('workspace-version');
     await buildCi.createPipeline({
       workspaceId: 'workspace-version', actorId: 'scheduler-actor',
