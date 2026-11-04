@@ -395,3 +395,66 @@ test('SQLite version reads reject a definition that no longer matches its stored
     db.close();
   }
 });
+
+test('candidate dry-run returns a value-free baseline diff and saved versions expose the same structural comparison', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  migrateBuildCiSqlite(db);
+  const store = new SqliteBuildCiStore(db);
+  const service = new BuildCiService({
+    store,
+    templates: new SqlitePipelineTemplateStore(db),
+    authorize: async ({ actorId, action }) => actorId === 'owner' && (action === 'create' || action === 'dry_run' || action === 'read'),
+  });
+  try {
+    const original = definition();
+    const v1 = await service.createPipeline({
+      workspaceId: 'ws-diff', definition: original, actorId: 'owner',
+      createdAt: '2026-11-04T16:00:00.000Z',
+    });
+    const candidate = validatePipelineDefinition({
+      ...original,
+      name: 'Web build with security checks',
+      triggers: [...original.triggers, { id: 'on-pr', kind: 'pull_request' as const, branches: ['main'] }],
+      steps: [...original.steps, { id: 'security', task: 'quality.security', needs: ['test'] }],
+    });
+    const plan = await service.dryRunDefinition({
+      workspaceId: 'ws-diff', definition: candidate, actorId: 'owner', event: pushEvent,
+    });
+    assert.equal(plan.comparison.baselineVersion, 1);
+    assert.equal(plan.comparison.baselineHash, v1.definitionHash);
+    assert.equal(plan.comparison.candidateHash.length, 64);
+    assert.equal(plan.comparison.diff?.hasChanges, true);
+    assert.deepEqual(plan.comparison.diff?.changedFields, ['name']);
+    assert.deepEqual(plan.comparison.diff?.triggers.added, [{ id: 'on-pr', kind: 'pull_request' }]);
+    assert.deepEqual(plan.comparison.diff?.steps.added, [{ id: 'security', task: 'quality.security' }]);
+    assert.equal(JSON.stringify(plan.comparison.diff).includes('Web build with security checks'), false);
+    assert.equal(JSON.stringify(plan.comparison.diff).includes('quality.security'), true);
+
+    const v2 = await service.createPipeline({
+      workspaceId: 'ws-diff', definition: candidate, actorId: 'owner',
+      createdAt: '2026-11-04T16:01:00.000Z',
+    });
+    const savedDiff = await service.diffPipelineVersions({
+      workspaceId: 'ws-diff', pipelineId: 'web-build', fromVersion: 1, toVersion: 2, actorId: 'owner',
+    });
+    assert.equal(savedDiff.fromHash, v1.definitionHash);
+    assert.equal(savedDiff.toHash, v2.definitionHash);
+    assert.deepEqual(savedDiff.diff, plan.comparison.diff);
+
+    await assert.rejects(
+      () => service.diffPipelineVersions({
+        workspaceId: 'ws-diff', pipelineId: 'web-build', fromVersion: 1, toVersion: 2, actorId: 'attacker',
+      }),
+      PipelineAuthorizationError,
+    );
+    await assert.rejects(
+      () => service.diffPipelineVersions({
+        workspaceId: 'ws-diff', pipelineId: 'web-build', fromVersion: 1, toVersion: 0, actorId: 'owner',
+      }),
+      /positive integers/,
+    );
+  } finally {
+    db.close();
+  }
+});
