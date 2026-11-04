@@ -55,6 +55,16 @@ export interface FailWebhookDeliveryInput {
   readonly maxAttempts: number;
 }
 
+export interface WebhookDeliveryPageCursor { readonly receivedAt: string; readonly deliveryRowId: string; }
+export interface ListWebhookDeadLettersInput { readonly workspaceId: string; readonly limit: number; readonly before?: WebhookDeliveryPageCursor; }
+export interface ListWebhookDeadLettersResult { readonly items: readonly WebhookDelivery[]; readonly nextCursor?: WebhookDeliveryPageCursor; }
+export interface ReplayFailedWebhookDeliveryInput { readonly workspaceId: string; readonly deliveryRowId: string; readonly actorId: string; readonly replayedAt: string; }
+export interface ReplayFailedWebhookDeliveryResult { readonly replayed: boolean; readonly previousAttempts?: number; }
+export interface WebhookDeliveryReplayEvent {
+  readonly eventId: string; readonly deliveryRowId: string; readonly workspaceId: string; readonly actorId: string;
+  readonly eventType: 'replayed'; readonly occurredAt: string; readonly metadata: Readonly<{ previousAttempts: number }>;
+}
+
 export interface WebhookDeliveryStore {
   enqueue(input: EnqueueWebhookDeliveryInput): Promise<EnqueueWebhookDeliveryResult>;
   find(connectionId: string, deliveryId: string): Promise<WebhookDelivery | null>;
@@ -64,8 +74,15 @@ export interface WebhookDeliveryStore {
   complete(deliveryRowId: string, workerId: string, processedAt: string): Promise<boolean>;
   /** Schedules a bounded retry or moves the delivery to terminal failed state. */
   fail(input: FailWebhookDeliveryInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }>;
+  listDeadLetters(input: ListWebhookDeadLettersInput): Promise<ListWebhookDeadLettersResult>;
+  replayFailed(input: ReplayFailedWebhookDeliveryInput): Promise<ReplayFailedWebhookDeliveryResult>;
+  listReplayEvents(workspaceId: string, deliveryRowId: string): Promise<readonly WebhookDeliveryReplayEvent[]>;
 }
 
+interface WebhookDeliveryReplayEventRow {
+  event_id: string; delivery_row_id: string; workspace_id: string; actor_id: string;
+  event_type: 'replayed'; occurred_at: string; metadata_json: string;
+}
 interface DeliveryRow {
   delivery_row_id: string;
   connection_id: string;
@@ -112,6 +129,28 @@ function validTimestamp(value: string, field: string): void {
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) throw new TypeError(`${field} must be a valid timestamp`);
 }
 
+function validateDeadLetterList(input: ListWebhookDeadLettersInput): void {
+  if (typeof input.workspaceId !== 'string' || !input.workspaceId.trim() || input.workspaceId.length > 128) throw new TypeError('workspaceId is invalid');
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) throw new TypeError('limit must be an integer from 1 to 100');
+  if (input.before) {
+    validTimestamp(input.before.receivedAt, 'before.receivedAt');
+    if (typeof input.before.deliveryRowId !== 'string' || !input.before.deliveryRowId.trim() || input.before.deliveryRowId.length > 128) throw new TypeError('before.deliveryRowId is invalid');
+  }
+}
+function validateReplay(input: ReplayFailedWebhookDeliveryInput): void {
+  for (const [field, value] of [['workspaceId', input.workspaceId], ['deliveryRowId', input.deliveryRowId], ['actorId', input.actorId]] as const) {
+    if (typeof value !== 'string' || !value.trim() || value.length > 128) throw new TypeError(field + ' is invalid');
+  }
+  validTimestamp(input.replayedAt, 'replayedAt');
+}
+function replayEventFromRow(row: WebhookDeliveryReplayEventRow): WebhookDeliveryReplayEvent {
+  const metadata = JSON.parse(row.metadata_json) as { previousAttempts: number };
+  if (!Number.isSafeInteger(metadata.previousAttempts) || metadata.previousAttempts < 1) throw new Error('Webhook delivery replay audit metadata is invalid.');
+  return Object.freeze({
+    eventId: row.event_id, deliveryRowId: row.delivery_row_id, workspaceId: row.workspace_id, actorId: row.actor_id,
+    eventType: row.event_type, occurredAt: row.occurred_at, metadata: Object.freeze({ previousAttempts: metadata.previousAttempts }),
+  });
+}
 function validate(input: EnqueueWebhookDeliveryInput): void {
   for (const [field, value, max] of [
     ['connectionId', input.connectionId, 128],
@@ -199,6 +238,54 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
         .run(processedAt, deliveryRowId, workerId, processedAt);
       return Number(result.changes) === 1;
     });
+  }
+
+  async listDeadLetters(input: ListWebhookDeadLettersInput): Promise<ListWebhookDeadLettersResult> {
+    validateDeadLetterList(input);
+    const rows = this.db.prepare(`SELECT * FROM build_ci_webhook_deliveries
+      WHERE workspace_id = ? AND status = 'failed'
+        AND (? IS NULL OR (received_at, delivery_row_id) < (?, ?))
+      ORDER BY received_at DESC, delivery_row_id DESC LIMIT ?`).all(
+      input.workspaceId, input.before?.receivedAt ?? null, input.before?.receivedAt ?? null,
+      input.before?.deliveryRowId ?? null, input.limit + 1,
+    ) as DeliveryRow[];
+    const hasMore = rows.length > input.limit;
+    const page = rows.slice(0, input.limit).map(deliveryFromRow);
+    const last = page[page.length - 1];
+    return Object.freeze({ items: Object.freeze(page),
+      ...(hasMore && last ? { nextCursor: Object.freeze({ receivedAt: last.receivedAt, deliveryRowId: last.deliveryRowId }) } : {}) });
+  }
+
+  async replayFailed(input: ReplayFailedWebhookDeliveryInput): Promise<ReplayFailedWebhookDeliveryResult> {
+    validateReplay(input);
+    return withTransactionSqlite(this.db, () => {
+      const row = this.db.prepare(`SELECT attempts FROM build_ci_webhook_deliveries
+        WHERE delivery_row_id = ? AND workspace_id = ? AND status = 'failed'`)
+        .get(input.deliveryRowId, input.workspaceId) as { attempts: number } | undefined;
+      if (!row) return Object.freeze({ replayed: false });
+      const previousAttempts = Number(row.attempts);
+      if (!Number.isSafeInteger(previousAttempts) || previousAttempts < 1) throw new Error('Failed webhook delivery has invalid attempt count.');
+      const updated = this.db.prepare(`UPDATE build_ci_webhook_deliveries
+        SET status = 'queued', attempts = 0, last_error = NULL, lease_owner = NULL, lease_expires_at = NULL,
+            next_attempt_at = NULL, processed_at = NULL
+        WHERE delivery_row_id = ? AND workspace_id = ? AND status = 'failed'`)
+        .run(input.deliveryRowId, input.workspaceId);
+      if (Number(updated.changes) !== 1) return Object.freeze({ replayed: false });
+      this.db.prepare(`INSERT INTO build_ci_webhook_delivery_events
+        (event_id, delivery_row_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES (?, ?, ?, ?, 'replayed', ?, ?)`).run(
+        randomUUID(), input.deliveryRowId, input.workspaceId, input.actorId, input.replayedAt, JSON.stringify({ previousAttempts }),
+      );
+      return Object.freeze({ replayed: true, previousAttempts });
+    });
+  }
+
+  async listReplayEvents(workspaceId: string, deliveryRowId: string): Promise<readonly WebhookDeliveryReplayEvent[]> {
+    if (!workspaceId.trim() || workspaceId.length > 128 || !deliveryRowId.trim() || deliveryRowId.length > 128) throw new TypeError('workspaceId and deliveryRowId are required');
+    const rows = this.db.prepare(`SELECT event_id, delivery_row_id, workspace_id, actor_id, event_type, occurred_at, metadata_json
+      FROM build_ci_webhook_delivery_events WHERE workspace_id = ? AND delivery_row_id = ?
+      ORDER BY occurred_at, event_id`).all(workspaceId, deliveryRowId) as WebhookDeliveryReplayEventRow[];
+    return Object.freeze(rows.map(replayEventFromRow));
   }
 
   async fail(input: FailWebhookDeliveryInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }> {
@@ -293,6 +380,52 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
       WHERE delivery_row_id = $2 AND status = 'processing' AND lease_owner = $3 AND lease_expires_at > $1`,
       [processedAt, deliveryRowId, workerId]);
     return result.rowCount === 1;
+  }
+
+  async listDeadLetters(input: ListWebhookDeadLettersInput): Promise<ListWebhookDeadLettersResult> {
+    validateDeadLetterList(input);
+    const result = await this.pool.query<DeliveryRow>(`SELECT * FROM build_ci_webhook_deliveries
+      WHERE workspace_id = $1 AND status = 'failed'
+        AND ($2::text IS NULL OR (received_at, delivery_row_id) < ($2, $3))
+      ORDER BY received_at DESC, delivery_row_id DESC LIMIT $4`,
+    [input.workspaceId, input.before?.receivedAt ?? null, input.before?.deliveryRowId ?? null, input.limit + 1]);
+    const hasMore = result.rows.length > input.limit;
+    const page = result.rows.slice(0, input.limit).map(deliveryFromRow);
+    const last = page[page.length - 1];
+    return Object.freeze({ items: Object.freeze(page),
+      ...(hasMore && last ? { nextCursor: Object.freeze({ receivedAt: last.receivedAt, deliveryRowId: last.deliveryRowId }) } : {}) });
+  }
+
+  async replayFailed(input: ReplayFailedWebhookDeliveryInput): Promise<ReplayFailedWebhookDeliveryResult> {
+    validateReplay(input);
+    return withTransaction(this.pool, async (conn) => {
+      const selected = await conn.query<{ attempts: number | string }>(`SELECT attempts FROM build_ci_webhook_deliveries
+        WHERE delivery_row_id = $1 AND workspace_id = $2 AND status = 'failed' FOR UPDATE`,
+      [input.deliveryRowId, input.workspaceId]);
+      const row = selected.rows[0];
+      if (!row) return Object.freeze({ replayed: false });
+      const previousAttempts = Number(row.attempts);
+      if (!Number.isSafeInteger(previousAttempts) || previousAttempts < 1) throw new Error('Failed webhook delivery has invalid attempt count.');
+      const updated = await conn.query(`UPDATE build_ci_webhook_deliveries
+        SET status = 'queued', attempts = 0, last_error = NULL, lease_owner = NULL, lease_expires_at = NULL,
+            next_attempt_at = NULL, processed_at = NULL
+        WHERE delivery_row_id = $1 AND workspace_id = $2 AND status = 'failed'`,
+      [input.deliveryRowId, input.workspaceId]);
+      if (updated.rowCount !== 1) return Object.freeze({ replayed: false });
+      await conn.query(`INSERT INTO build_ci_webhook_delivery_events
+        (event_id, delivery_row_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES ($1, $2, $3, $4, 'replayed', $5, $6)`,
+      [randomUUID(), input.deliveryRowId, input.workspaceId, input.actorId, input.replayedAt, JSON.stringify({ previousAttempts })]);
+      return Object.freeze({ replayed: true, previousAttempts });
+    });
+  }
+
+  async listReplayEvents(workspaceId: string, deliveryRowId: string): Promise<readonly WebhookDeliveryReplayEvent[]> {
+    if (!workspaceId.trim() || workspaceId.length > 128 || !deliveryRowId.trim() || deliveryRowId.length > 128) throw new TypeError('workspaceId and deliveryRowId are required');
+    const result = await this.pool.query<WebhookDeliveryReplayEventRow>(`SELECT event_id, delivery_row_id, workspace_id, actor_id, event_type, occurred_at, metadata_json
+      FROM build_ci_webhook_delivery_events WHERE workspace_id = $1 AND delivery_row_id = $2
+      ORDER BY occurred_at, event_id`, [workspaceId, deliveryRowId]);
+    return Object.freeze(result.rows.map(replayEventFromRow));
   }
 
   async fail(input: FailWebhookDeliveryInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }> {
