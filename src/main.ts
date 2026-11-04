@@ -8,6 +8,7 @@ import { migratePostgres } from './kernel/postgres-migrate.ts';
 import { createPostgresPool } from './kernel/postgres.ts';
 import type { SqlPool } from './kernel/sql.ts';
 import { pgIdentityMigrations } from './modules/identity/index.ts';
+import { buildCiPostgresMigrations } from './modules/build-ci/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
     });
     await migratePostgres(pool, 'kernel', pgKernelMigrations);
     await migratePostgres(pool, 'identity', pgIdentityMigrations);
+    await migratePostgres(pool, 'build_ci', buildCiPostgresMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 

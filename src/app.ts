@@ -8,6 +8,14 @@ import { kernelMigrations } from './kernel/migrations.ts';
 import { migrate, openDatabase, type Database } from './kernel/sqlite.ts';
 import { PostgresEventStore } from './kernel/postgres-events.ts';
 import type { SqlPool } from './kernel/sql.ts';
+import {
+  BuildCiService,
+  PostgresBuildCiStore,
+  SqliteBuildCiStore,
+  migrateBuildCiSqlite,
+  type PipelineAuthorizer,
+  type PipelineStore,
+} from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
   CompositeBreachChecker,
@@ -44,12 +52,15 @@ export interface AppOverrides {
   throttle?: Partial<ThrottleConfig>;
   /** A connected, already-migrated PostgreSQL pool. When given, it is the storage. */
   postgres?: SqlPool;
+  /** Workspace-scoped policy supplied by the workspace/permissions module. Defaults to deny. */
+  buildCiAuthorize?: PipelineAuthorizer;
 }
 
 export interface ForgeApp {
   handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   events: EventStore;
   identity: IdentityService;
+  buildCi: BuildCiService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -63,6 +74,8 @@ interface Storage {
   users: UserStore;
   sessionStore: SessionStore;
   uow: IdentityUnitOfWork;
+  buildCiDb: Database | null;
+  buildCiStore: PipelineStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -72,22 +85,41 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const events = new PostgresEventStore({ pool, clock, logger });
     const users = new PostgresUserStore(pool);
     const sessionStore = new PostgresSessionStore(pool);
-    return { db: null, pool, events, users, sessionStore, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return {
+      db: null, pool, events, users, sessionStore,
+      uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }),
+      buildCiDb: null,
+      buildCiStore: new PostgresBuildCiStore(pool),
+    };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
     const db = openDatabase(path);
     migrate(db, 'kernel', kernelMigrations);
     migrate(db, 'identity', identityMigrations);
+    migrateBuildCiSqlite(db);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
-    return { db, pool: null, events, users, sessionStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return {
+      db, pool: null, events, users, sessionStore,
+      uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }),
+      buildCiDb: null,
+      buildCiStore: new SqliteBuildCiStore(db),
+    };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
-  return { db: null, pool: null, events, users, sessionStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  // Keep Build & CI persistence real even when identity/events use in-memory test adapters.
+  const buildCiDb = openDatabase(':memory:');
+  migrateBuildCiSqlite(buildCiDb);
+  return {
+    db: null, pool: null, events, users, sessionStore,
+    uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }),
+    buildCiDb,
+    buildCiStore: new SqliteBuildCiStore(buildCiDb),
+  };
 }
 
 /**
@@ -99,6 +131,12 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
   const storage = buildStorage(config, clock, logger, overrides);
   const { events } = storage;
+  // Never infer workspace permissions from authentication. Until a trusted workspace policy is wired,
+  // Build & CI operations are denied by default.
+  const buildCi = new BuildCiService({
+    store: storage.buildCiStore,
+    authorize: overrides.buildCiAuthorize ?? (async () => false),
+  });
 
   const hasher = new PasswordHasher({
     params: config.password.params,
@@ -151,8 +189,9 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const close = async (): Promise<void> => {
     storage.db?.close();
+    storage.buildCiDb?.close();
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, logger, db: storage.db, close };
+  return { handler, events, identity, buildCi, logger, db: storage.db, close };
 }
