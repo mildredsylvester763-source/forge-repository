@@ -4,6 +4,7 @@ import { BuildCiService } from '../src/modules/build-ci/store.ts';
 import { PostgresBuildCiStore } from '../src/modules/build-ci/postgres-store.ts';
 import { PostgresPipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
 import { PostgresWebhookDeliveryStore } from '../src/modules/build-ci/webhook-deliveries.ts';
+import { WebhookDeliveryProcessor } from '../src/modules/build-ci/webhook-processor.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
@@ -156,6 +157,52 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(retried?.attempts, 2);
     assert.equal(await webhookDeliveries.complete(retried!.deliveryRowId, 'pg-worker-c', '2026-11-04T00:12:30.000Z'), true);
     assert.equal((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1'))?.status, 'processed');
+
+    await service.createPipeline({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      definition: {
+        id: 'postgres-webhook-build',
+        name: 'PostgreSQL webhook build',
+        triggers: [{ id: 'push-main', kind: 'push' as const, branches: ['main'] }],
+        steps: [{ id: 'verify', task: 'quality.verify' }],
+      },
+    });
+    await webhookDeliveries.enqueue({
+      ...webhookInput,
+      deliveryId: 'pg-webhook-delivery-processor',
+      event: { ...webhookEvent, eventId: 'pg-webhook-delivery-processor' },
+      bodySha256: 'c'.repeat(64),
+    });
+    const webhookProcessor = new WebhookDeliveryProcessor({
+      deliveries: webhookDeliveries,
+      buildCi: service,
+      connections: {
+        resolve: async () => ({
+          connectionId: 'pg-webhook-connection',
+          provider: 'github',
+          workspaceId: 'pg-workspace',
+          actorId: 'integration-test',
+          repository: 'team/forge',
+          signingSecret: 'processor-test-secret',
+          active: true,
+        }),
+      },
+      now: () => Date.parse('2026-11-04T00:13:00.000Z'),
+    });
+    const processedWebhook = await webhookProcessor.processNext('pg-processor-worker');
+    assert.equal(processedWebhook.processed, true);
+    assert.equal(processedWebhook.pipelinesConsidered, 2);
+    assert.equal(processedWebhook.runsQueued, 1);
+    const webhookRun = await testPool.pool.query<{ event_id: string; pipeline_id: string; status: string }>(
+      'SELECT event_id, pipeline_id, status FROM build_pipeline_runs WHERE event_id = $1',
+      ['pg-webhook-delivery-processor'],
+    );
+    assert.deepEqual(webhookRun.rows, [{
+      event_id: 'pg-webhook-delivery-processor',
+      pipeline_id: 'postgres-webhook-build',
+      status: 'queued',
+    }]);
 
     const event = { kind: 'manual' as const, source: 'forge:manual', eventId: 'pg-integration-once' };
     const first = await service.trigger({
