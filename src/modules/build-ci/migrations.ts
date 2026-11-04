@@ -346,6 +346,20 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
     `,
   },
 
+
+  {
+    version: 5,
+    name: 'webhook_delivery_leases_and_retry_schedule',
+    sql: `
+      ALTER TABLE build_ci_webhook_deliveries ADD COLUMN lease_owner TEXT;
+      ALTER TABLE build_ci_webhook_deliveries ADD COLUMN lease_expires_at TEXT;
+      ALTER TABLE build_ci_webhook_deliveries ADD COLUMN next_attempt_at TEXT;
+      ALTER TABLE build_ci_webhook_deliveries ADD COLUMN processed_at TEXT;
+      CREATE INDEX build_ci_webhook_delivery_retry_idx
+        ON build_ci_webhook_deliveries (status, next_attempt_at, lease_expires_at, received_at);
+    `,
+  },
+
 ]; 
 
 export function migrateBuildCiSqlite(db: Database): number[] {
