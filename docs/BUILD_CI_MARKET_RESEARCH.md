@@ -60,9 +60,24 @@ A workspace can define a pipeline as validated data, inspect its dependency grap
 - Preserve the resolved template digest and source provenance in the pipeline version so later inspection can reconstruct what was used.
 
 ### Current FORGE status
-Implemented: strict declarative definitions, registered task references, bounded JSON parameters, DAG validation and deterministic parallel planning.
-Partly implemented: immutable version history.
-Missing within catalogue wording: reusable/shareable pipeline templates and typed reusable input contracts. This is a real BD-001 gap, not a new feature request.
+Implemented:
+- Strict declarative schema, bounded JSON parameters, dependency validation, cycle detection and deterministic DAG planning.
+- Typed `string`, `number`, `boolean` and `secret_ref` inputs with required/default/options validation.
+- Immutable workspace templates and template releases with publisher identity, source version, changelog and content hash.
+- Explicit workspace-to-workspace grants, revocation, accessible-template listing and exact-version import.
+- Imported pipeline versions retain template ID, release number, template digest and publisher workspace as provenance.
+- Template release records are immutable in both SQLite and PostgreSQL. Grant revocation does not rewrite template release history.
+
+Security and product boundaries:
+- A `secret_ref` is a symbolic workspace-scoped reference such as `workspace.deploy_key`; it is not a secret value. Secret references cannot define defaults or option lists. Actual secret existence/permissions and worker-side resolution remain the secret broker's responsibility.
+- `workspace` visibility is private to the publisher workspace. `shared` visibility requires an explicit grant to each target workspace. There is no globally public template catalogue in this implementation.
+- Consumers import a pinned release into a new pipeline ID. Publishing a newer release never silently changes an imported pipeline.
+
+Still missing within BD-001:
+- Runtime task-registry resolution and compatibility checks; task names currently receive schema/syntax validation but are not yet resolved against Mistral's task registry.
+- Template deprecation/revocation lifecycle and an append-only template event/audit stream.
+- Structured definition/template diff, compatibility metadata and guided upgrade flow.
+- A public/community catalogue or organisation-wide sharing policy; these require a separate visibility/moderation decision and are not enabled by default.
 
 ## BD-016 — Triggers: push, PR, schedule, event, manual, API
 
