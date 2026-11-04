@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { Database } from '../../kernel/sqlite.ts';
 import { transaction } from '../../kernel/sqlite.ts';
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
@@ -107,7 +107,8 @@ function identity(input: EnqueueScheduleOccurrenceInput): { occurrenceId: string
 }
 
 export class SqliteScheduleOccurrenceStore implements ScheduleOccurrenceStore {
-  constructor(private readonly db: Database) {}
+  private readonly db: Database;
+  constructor(db: Database) { this.db = db; }
 
   async enqueue(input: EnqueueScheduleOccurrenceInput) {
     validateScope(input);
@@ -140,7 +141,8 @@ export class SqliteScheduleOccurrenceStore implements ScheduleOccurrenceStore {
           (status = 'processing' AND lease_expires_at <= ?)
         )`).run(input.workerId, input.leaseExpiresAt, row.occurrence_id, input.now, input.now);
       if (Number(changed.changes) !== 1) return null;
-      const claimed = this.db.prepare('SELECT * FROM build_ci_schedule_occurrences WHERE occurrence_id = ?').get(row.occurrence_id) as OccurrenceRow;
+      const claimed = this.db.prepare('SELECT * FROM build_ci_schedule_occurrences WHERE occurrence_id = ?').get(row.occurrence_id) as unknown as OccurrenceRow | undefined;
+      if (!claimed) throw new Error('Claimed schedule occurrence disappeared.');
       return fromRow(claimed);
     });
   }
@@ -205,7 +207,8 @@ export class SqliteScheduleOccurrenceStore implements ScheduleOccurrenceStore {
 }
 
 export class PostgresScheduleOccurrenceStore implements ScheduleOccurrenceStore {
-  constructor(private readonly pool: SqlPool) {}
+  private readonly pool: SqlPool;
+  constructor(pool: SqlPool) { this.pool = pool; }
 
   async enqueue(input: EnqueueScheduleOccurrenceInput) {
     validateScope(input);
