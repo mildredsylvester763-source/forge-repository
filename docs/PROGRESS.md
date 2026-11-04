@@ -123,12 +123,12 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest verified commit: `30a63a6ee3a3ef0937246a3f86bf01b2b742e89c`
-Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41802519286
+Latest verified commit: `203ef307d4cb924de5d4c287fb32ea07d540dfbe`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41803011902
 
 - Typecheck: passed.
 - Production build: passed.
-- Complete test suite against real PostgreSQL: 165 tests, 34 suites, 165 passed, 0 failed, 0 skipped.
+- Complete test suite against real PostgreSQL: 171 tests, 34 suites, 171 passed, 0 failed, 0 skipped.
 
 ### Feature status
 
@@ -149,6 +149,7 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 - Template visibility is publisher-workspace-only or explicit named-workspace sharing. There is no global public catalogue. Imports pin an exact release, preserve template digest/publisher provenance, and re-check access under database locks in the same transaction as the import.
 - Template lifecycle audit is append-only; creation, release publication, grants/revocations, imports, deprecation and revocation are recorded. Publisher and previously granted recipient workspaces see only their permitted event history.
 - Typed `secret_ref` inputs are symbolic workspace-scoped names only; no secret material is stored or resolved by this layer. The secret broker/worker integration remains outstanding.
+- GitHub and GitLab webhook verifiers use the providers' current signature formats and exact raw body. No webhook endpoint is exposed until the provider secret vault/binding and durable delivery receipt path are ready.
 - Mistral's Task Runtime and Orchestrator remain on the `mistral` branch. Do not duplicate them or modify that branch. Worker integration requires a deliberate branch integration decision.
 
 ### Still outstanding before these features can be accepted

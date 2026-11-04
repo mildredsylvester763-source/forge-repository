@@ -204,7 +204,7 @@ The matrix is a conservative initial Build & CI policy. Workspace membership cre
 ## Not exposed yet
 
 - Global/public template catalogue, organisation-wide discovery and template moderation are not enabled.
-- Provider webhook ingress: no provider payload is trusted without signature verification and repository/workspace binding.
+- Provider webhook ingress: GitHub/GitLab signature verification and event normalization primitives exist, but no public webhook route is exposed yet. Encrypted provider-secret storage, repository/workspace binding and durable delivery deduplication must be completed first.
 - Schedule dispatcher: stored schedule metadata is not yet a running scheduler.
 - Worker execution: 202 means queued persistence only, not a completed or running task.
 - Logs, artifacts, cancellation, retry and deployment endpoints.
