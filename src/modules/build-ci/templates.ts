@@ -72,6 +72,7 @@ export interface PipelineTemplateStore {
   getVersion(templateId: string, version: number): Promise<PipelineTemplateVersion | null>;
   listAccessible(workspaceId: string): Promise<readonly PipelineTemplate[]>;
   canAccess(templateId: string, workspaceId: string): Promise<boolean>;
+  canViewEvents(templateId: string, workspaceId: string): Promise<boolean>;
   grant(templateId: string, publisherWorkspaceId: string, targetWorkspaceId: string, actorId: string, createdAt: string): Promise<void>;
   revoke(templateId: string, publisherWorkspaceId: string, targetWorkspaceId: string, actorId: string, revokedAt: string): Promise<void>;
   setStatus(templateId: string, publisherWorkspaceId: string, status: 'deprecated' | 'revoked', actorId: string, occurredAt: string): Promise<void>;
@@ -227,6 +228,13 @@ export class SqlitePipelineTemplateStore implements PipelineTemplateStore {
     return row !== undefined;
   }
 
+  async canViewEvents(templateId: string, workspaceId: string): Promise<boolean> {
+    const row = this.db.prepare(`SELECT t.template_id FROM build_pipeline_templates t
+      LEFT JOIN build_pipeline_template_grants g ON g.template_id = t.template_id AND g.target_workspace_id = ?
+      WHERE t.template_id = ? AND (t.publisher_workspace_id = ? OR g.template_id IS NOT NULL)`).get(workspaceId, templateId, workspaceId);
+    return row !== undefined;
+  }
+
   async grant(templateId: string, publisherWorkspaceId: string, targetWorkspaceId: string, actorId: string, createdAt: string): Promise<void> {
     transaction(this.db, () => {
       const owner = this.db.prepare(`UPDATE build_pipeline_templates SET visibility = 'shared'
@@ -370,6 +378,13 @@ export class PostgresPipelineTemplateStore implements PipelineTemplateStore {
       LEFT JOIN build_pipeline_template_grants g ON g.template_id = t.template_id AND g.target_workspace_id = $1 AND g.revoked_at IS NULL
       WHERE t.template_id = $2 AND t.status IN ('active', 'deprecated')
         AND (t.publisher_workspace_id = $1 OR (t.visibility = 'shared' AND g.template_id IS NOT NULL))`, [workspaceId, templateId]);
+    return result.rowCount === 1;
+  }
+
+  async canViewEvents(templateId: string, workspaceId: string): Promise<boolean> {
+    const result = await this.pool.query(`SELECT t.template_id FROM build_pipeline_templates t
+      LEFT JOIN build_pipeline_template_grants g ON g.template_id = t.template_id AND g.target_workspace_id = $1
+      WHERE t.template_id = $2 AND (t.publisher_workspace_id = $1 OR g.template_id IS NOT NULL)`, [workspaceId, templateId]);
     return result.rowCount === 1;
   }
 
