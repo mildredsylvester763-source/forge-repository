@@ -4,7 +4,7 @@ This file is the project's memory. Update it with every change. Nothing the owne
 
 ## Working rules (from the owner)
 
-1. Before building anything, list the features about to be built and wait for confirmation. For each feature: check it, show the plan, wait for the owner to weigh in.
+1. Research each feature and record its complete requirements and implementation plan before coding. For an explicitly approved feature batch, continue through implementation and verification without asking after every small step. Pause only when scope expands, a material product decision is unresolved, or a security/architecture choice requires the owner's decision.
 2. Every correction and decision is recorded, even if it makes the notes long.
 3. If a shared file conflicts with something the owner already changed in chat, the chat decision wins. If two documents contradict each other, show both versions side by side and ask which one the owner finally chooses. His documents are mixed up and not well organized.
 4. Backend logic belongs to us. Rent only the pipes that cannot reasonably be built: DNS and attack protection, delivery of phone push messages, email delivery, GPUs.
@@ -118,18 +118,48 @@ The full app spans up to about 30 files of features. Part 01 is only one of them
 
 ## Part 02 — Build & CI (GPT branch: `gpt-part2-build-ci`)
 
-This is a domain, validation, planning and persistence slice for the approved first batch. It is not a claim that a complete hosted CI runner is already operational.
+Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each as a complete product capability before implementation. Do not add unrelated catalogue IDs without approval.
 
-| ID | Current implementation status | Evidence |
-| --- | --- | --- |
-| BD-001 | Declarative definition validation, registered task references, size-bounded JSON parameters and DAG ordering implemented; integration pending | `src/modules/build-ci/pipeline.ts`; tests |
-| BD-016 | Push, pull-request, schedule, generic event, manual and API trigger types; schedule identity; branch/path filters; idempotent queued-run persistence implemented. Provider/scheduler delivery is pending | `pipeline.ts`, `store.ts`, migrations; tests |
-| BD-017 | Structured conditional AST and ordered path/branch glob evaluation implemented; integration pending | `pipeline.ts`; tests |
-| BD-029 | Pure dry-run plan with trigger evaluation, reasons and dependency skip propagation implemented | `pipeline.ts`; tests |
-| BD-030 | Content-hashed immutable versions and append-only rollback snapshots implemented in SQLite/PostgreSQL adapters; real PostgreSQL verification pending | `migrations.ts`, `sqlite-store.ts`, `postgres-store.ts`; tests |
+### Latest verified checkpoint — 2026-11-04
 
-**Security and operational boundary:** create, rollback, dry-run and trigger operations all require an explicit service-layer authorization decision. Actual HTTP authentication, provider webhook signature verification, scheduler dispatch, event-store publication, task execution, worker isolation, secret injection, logs/artifacts, retries, cancellation and deployment still need to be integrated and independently tested. Untrusted pull-request code must not receive privileged credentials.
+Branch: `gpt-part2-build-ci`
+Latest verified commit: `fb96471158834d0a25458ec9d1b32f216c29da5c`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41799120766
 
-**Verification note:** the targeted TypeScript/Node test suite was run locally. The available test runtime was Node 22.16.0, while the repository requires Node >=22.18.0. SQLite-backed tests passed; the real PostgreSQL integration test is conditional on `FORGE_TEST_POSTGRES_URL` and has not been executed here. The SQLite compatibility harness is not proof of PostgreSQL DDL, advisory locks or transaction behavior.
+- Typecheck: passed.
+- Production build: passed.
+- Complete test suite: passed against the workflow's real PostgreSQL service.
+- The preceding fully inspected run at commit `9f36f4c3beed7bc76d67b323659da26c0a217185` reported 160 tests, 34 suites, 160 passed, 0 failed, 0 skipped. The latest run also passed; its log artifact was unavailable when this note was written, so no newer test count is claimed.
 
-**Acceptance remains open:** implementation and local tests are present, but integration, independent verification and owner acceptance are not complete. This section must be updated as those stages are completed.
+### Feature status
+
+| ID | Current status | Remaining catalogue scope / integration |
+|---|---|---|
+| BD-001 | Declarative schema, strict validation, DAG ordering, persistent versions and authenticated create/read routes implemented | Shareable reusable templates, publisher/consumer permissions, template provenance and typed reusable inputs are not implemented |
+| BD-016 | Trigger model, matching, schedule identity, idempotent run persistence and authenticated manual/API trigger route implemented | Verified provider webhooks, provider-to-workspace binding, scheduler dispatcher, timezone/DST occurrence handling and retry/dead-letter delivery |
+| BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
+| BD-029 | Saved and unsaved candidate dry-run service/API implemented; no run or version is written by dry-run | Candidate-vs-current structured diff, scenario fixtures and additional route-level side-effect tests |
+| BD-030 | Immutable content-hashed versions, authenticated version reads/listing and append-only rollback implemented | Structured version diff, concurrency/tamper verification hardening and complete audit evidence |
+
+### Supporting security and integration work
+
+- Persisted workspace membership readers exist for SQLite and PostgreSQL.
+- Pipeline permissions are deny-by-default and role-based. The actor comes from the authenticated server session, never a caller-supplied actor ID.
+- Membership lifecycle management is not added here; it belongs to the workspace/permissions catalogue area. No public endpoint can grant a user membership or promote their own role.
+- Authenticated routes are registered in `src/app.ts`. The create endpoint alone receives the larger body budget needed for bounded pipeline definitions; other endpoints retain the default request limit.
+- Mistral's Task Runtime and Orchestrator remain on the `mistral` branch. Do not duplicate them or modify that branch. Worker integration requires a deliberate branch integration decision.
+
+### Still outstanding before these features can be accepted
+
+1. Complete BD-001 reusable-template publishing/import/pinning and typed input contracts.
+2. Complete provider webhook verification and scheduled trigger delivery for BD-016.
+3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
+4. Add candidate diff/scenario reporting to BD-029.
+5. Add version comparison, hash verification and concurrent save/rollback tests to BD-030.
+6. Integrate registered tasks with the existing Task Runtime/Orchestrator without duplicating those modules.
+7. Add worker isolation, scoped secret delivery, execution state transitions, cancellation/retries, logs and artifacts only where they map to approved catalogue requirements.
+8. Run the full real-PostgreSQL CI suite after every integration batch; inspect logs and security tests rather than treating a green badge as acceptance.
+9. Independent verification and owner acceptance remain outstanding for all five IDs.
+
+Detailed market and product requirements: `docs/BUILD_CI_MARKET_RESEARCH.md`.
+API contracts: `docs/BUILD_CI_API.md` (when added).

@@ -1,6 +1,6 @@
 # Build & CI engine — design and evidence
 
-Scope: BD-001, BD-016, BD-017, BD-029 and BD-030. This document records the domain-layer decisions and explicitly separates working code from integrations that still need wiring.
+Scope: BD-001, BD-016, BD-017, BD-029 and BD-030. This document records domain, persistence, authorization and HTTP integration decisions. Market research and detailed product requirements are maintained in `BUILD_CI_MARKET_RESEARCH.md`.
 
 ## Design decisions
 
@@ -13,29 +13,34 @@ Scope: BD-001, BD-016, BD-017, BD-029 and BD-030. This document records the doma
 7. **Pure dry-run.** Dry-run returns the evaluated trigger results, ordered steps, parallel groups, inclusion/skipping reasons and dependency skip propagation. It does not create a run, enqueue work, resolve credentials, deploy or mutate the pipeline.
 8. **Immutable version history.** Every save creates a new content-hashed version. Rollback copies a selected historical definition into a new version; it never rewrites history or moves the version number backwards.
 9. **Idempotent event receipt.** A trigger receipt is keyed by workspace, pipeline, source and event ID. Duplicate delivery returns the existing run rather than inserting another.
-10. **Authorization at the service boundary.** Create, rollback, dry-run and trigger each require an authorization decision scoped to workspace, pipeline, actor and action. Routes must still authenticate the actor and pass a trusted identity.
+10. **Authorization at the service boundary.** Read, create, rollback, dry-run and trigger each require an authorization decision scoped to workspace, pipeline, actor and action. Authenticated routes derive actor identity from the server-side session; caller-supplied actor IDs are rejected. Workspace membership is read from persisted records and defaults to deny.
 11. **Untrusted source boundary.** Fork and untrusted pull-request code must not receive deployment credentials or privileged secrets. Actual worker execution must use isolated, short-lived workers and deny-by-default task permissions.
 
 ## Feature mapping
 
 | Catalogue ID | Implemented domain layer | Evidence |
 |---|---|---|
-| BD-001 | Definition schema, strict validation, bounded params and stable DAG ordering | `pipeline.ts`, validation/DAG tests |
-| BD-016 | Push, PR, schedule, event, manual and API types; schedule identity; branch/path filters; trigger receipt and idempotency | `pipeline.ts`, `store.ts`, trigger tests |
-| BD-017 | Safe condition AST, path filters and ordered positive/negative glob rules | `pipeline.ts`, filter/condition tests |
-| BD-029 | Side-effect-free dry-run plan with reasons and dependency skip propagation | `pipeline.ts`, dry-run tests |
-| BD-030 | Immutable content-hashed snapshots, persistent version history and append-only rollback | `migrations.ts`, both store adapters, rollback tests |
+| BD-001 | Definition schema, strict validation, bounded params and stable DAG ordering; authenticated create/read API. **Reusable/shareable templates and typed reusable inputs remain missing.** | `pipeline.ts`, `store.ts`, `routes.ts`, validation/DAG/route tests |
+| BD-016 | Push, PR, schedule, event, manual and API types; schedule identity; branch/path filters; idempotent queued-run persistence; authenticated manual/API trigger route. Provider webhook and scheduler delivery remain missing. | `pipeline.ts`, `store.ts`, migrations, `routes.ts`, trigger tests |
+| BD-017 | Safe condition AST, path filters and ordered positive/negative glob rules; dry-run simulation accepts event fixtures for all trigger kinds | `pipeline.ts`, `routes.ts`, filter/condition tests |
+| BD-029 | Side-effect-free dry-run for saved definitions and unsaved candidate definitions, with reasons and dependency skip propagation | `pipeline.ts`, `store.ts`, `routes.ts`, dry-run/route tests |
+| BD-030 | Immutable content-hashed snapshots, persistent version history, authenticated history reads and append-only rollback | `migrations.ts`, both store adapters, `store.ts`, `routes.ts`, rollback tests |
 
 ## Deliberate limits in this slice
 
 - Cron accepts a numeric five-field subset: wildcards, integers, ranges, comma lists and numeric steps. Names such as `MON`/`JAN`, macros such as `@daily`, and provider-specific extensions are rejected rather than misinterpreted.
 - Globs support `*`, `**`, `?` and ordered `!` exclusions/re-inclusions. Brace expansion and character classes are not supported.
 - The module creates durable queued run records, but does not yet execute registered task handlers.
-- Provider webhook signature verification, scheduler delivery, authenticated HTTP routes, event-bus integration, worker isolation, task permissions, logs/artifacts, cancellation/retry execution and deployment are not included in this domain slice.
-- `src/app.ts`, `src/main.ts` and shared startup/database wiring remain under the maintainer's ownership; the module is not yet wired into the composition root or startup migration sequence.
-- SQLite tests have been executed. A real PostgreSQL integration test is included and runs when `FORGE_TEST_POSTGRES_URL` is configured. It has not been run in this environment. The SQLite compatibility harness is not proof of PostgreSQL DDL, transaction locking or concurrency semantics.
+- Provider webhook signature verification, scheduler delivery, event-store publication, worker isolation, task permissions, logs/artifacts, cancellation/retry execution and deployment remain outstanding.
+- Workspace membership records and role-based pipeline authorization are wired for SQLite and PostgreSQL. Membership creation/invitation/role-change lifecycle belongs to the workspace/permissions catalogue area and is not implemented here.
+- Authenticated HTTP routes currently cover pipeline create/read, version listing/inspection, rollback, saved/candidate dry-run and manual/API trigger. They do not expose provider webhook or scheduler ingress.
+- The pipeline-definition creation endpoint has a 300 KiB body ceiling; other routes retain the 16 KiB default. Domain validation caps canonical definitions at 256 KiB.
+- Real PostgreSQL verification has run in GitHub Actions. The latest verified run is recorded in `PROGRESS.md`; a passing run validates only the tested behaviour, not the unimplemented execution stack.
 
 ## Research references
+
+See `BUILD_CI_MARKET_RESEARCH.md` for the per-feature competitor comparison, capability requirements, settings, workflows, permissions, failure cases and gaps. That document identifies the missing BD-001 shareable-template and typed-input requirements explicitly.
+
 
 - Tekton Pipeline task dependencies and DAG execution: https://tekton.dev/docs/pipelines/tasks/ and https://github.com/tektoncd/pipeline/blob/main/docs/pipelines.md
 - Buildkite dependency and skipped-step behavior: https://buildkite.com/docs/pipelines/configure/depends-on
