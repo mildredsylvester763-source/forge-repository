@@ -118,6 +118,9 @@ function mapError(err: unknown): never {
   if (err instanceof Error && err.name === 'PipelineAuthorizationError') {
     throw new AppError(403, 'forbidden', 'You do not have permission to perform this pipeline operation.');
   }
+  if (err instanceof PipelineTemplateUnavailableError) {
+    throw new AppError(404, 'not_found', 'Pipeline template not found.');
+  }
   if (err instanceof Error && err.name === 'PipelineNotFoundError') {
     throw new AppError(404, 'not_found', 'Pipeline not found.');
   }

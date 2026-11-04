@@ -68,16 +68,12 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       createdAt: '2026-11-04T00:02:00.000Z',
     });
     assert.equal(templateV2.version, 2);
-    const imported = await store.saveVersion({
+    const imported = await store.importTemplate({
       workspaceId: 'pg-consumer',
-      definition: { ...version2.definition, id: 'pg-imported-quality' },
+      templateId: 'template-pg-quality',
+      templateVersion: templateV2.version,
+      pipelineId: 'pg-imported-quality',
       createdBy: 'integration-test',
-      templateSource: {
-        templateId: 'template-pg-quality',
-        templateVersion: templateV2.version,
-        templateHash: templateV2.definitionHash,
-        publisherWorkspaceId: 'pg-workspace',
-      },
     });
     const importedRead = await store.getLatestVersion('pg-consumer', 'pg-imported-quality');
     assert.deepEqual(importedRead?.templateSource, imported.templateSource);

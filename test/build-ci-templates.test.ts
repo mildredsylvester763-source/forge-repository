@@ -55,16 +55,12 @@ test('SQLite templates are immutable, explicitly shared, revocable and provenanc
     assert.equal((await templates.getTemplate('template-quality'))?.currentVersion, 2);
     assert.equal((await templates.getVersion('template-quality', 2))?.definitionHash, sourceV2.definitionHash);
 
-    const imported = await pipelines.saveVersion({
+    const imported = await pipelines.importTemplate({
       workspaceId: 'consumer',
-      definition: validatePipelineDefinition({ ...templateV2.definition, id: 'consumer-quality' }),
+      templateId: 'template-quality',
+      templateVersion: templateV2.version,
+      pipelineId: 'consumer-quality',
       createdBy: 'consumer-owner',
-      templateSource: {
-        templateId: 'template-quality',
-        templateVersion: templateV2.version,
-        templateHash: templateV2.definitionHash,
-        publisherWorkspaceId: 'publisher',
-      },
     });
     assert.deepEqual((await pipelines.getLatestVersion('consumer', 'consumer-quality'))?.templateSource, imported.templateSource);
 

@@ -75,6 +75,7 @@ export interface PipelineStore {
   getVersion(workspaceId: string, pipelineId: string, version: number): Promise<PipelineVersion | null>;
   getLatestVersion(workspaceId: string, pipelineId: string): Promise<PipelineVersion | null>;
   listVersions(workspaceId: string, pipelineId: string): Promise<readonly PipelineVersion[]>;
+  importTemplate(input: { workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string; createdBy: string; createdAt?: string }): Promise<PipelineVersion>;
   createRun(input: CreatePipelineRunInput): Promise<CreatePipelineRunResult>;
   getRun(workspaceId: string, pipelineId: string, runId: string): Promise<PipelineRun | null>;
 }
@@ -333,26 +334,14 @@ export class BuildCiService {
     if (!Number.isSafeInteger(input.templateVersion) || input.templateVersion < 1) throw new TypeError('templateVersion must be a positive integer');
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'create' });
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'import_template' });
-    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
-    const template = await this.templates.getTemplate(input.templateId);
-    const source = await this.templates.getVersion(input.templateId, input.templateVersion);
-    if (!template || template.status === 'revoked' || !source) throw new PipelineNotFoundError();
-    const definition = validatePipelineDefinition({
-      ...source.definition,
-      id: input.pipelineId,
-      ...(input.name ? { name: input.name } : {}),
-    });
-    return this.store.saveVersion({
+    return this.store.importTemplate({
       workspaceId: input.workspaceId,
-      definition,
+      templateId: input.templateId,
+      templateVersion: input.templateVersion,
+      pipelineId: input.pipelineId,
+      ...(input.name ? { name: input.name } : {}),
       createdBy: input.actorId,
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
-      templateSource: {
-        templateId: input.templateId,
-        templateVersion: source.version,
-        templateHash: source.definitionHash,
-        publisherWorkspaceId: template.publisherWorkspaceId,
-      },
     });
   }
 

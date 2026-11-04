@@ -5,6 +5,10 @@ import { withTransaction, type SqlPool, type SqlConn } from '../../kernel/sql.ts
 
 export type PipelineTemplateVisibility = 'workspace' | 'shared';
 export type PipelineTemplateStatus = 'active' | 'deprecated' | 'revoked';
+export class PipelineTemplateUnavailableError extends Error {
+  constructor() { super('Pipeline template not found or access is unavailable.'); this.name = 'PipelineTemplateUnavailableError'; }
+}
+
 export type PipelineTemplateEventType = 'created' | 'version_published' | 'share_granted' | 'share_revoked' | 'imported' | 'deprecated' | 'revoked';
 
 export interface PipelineTemplate {
