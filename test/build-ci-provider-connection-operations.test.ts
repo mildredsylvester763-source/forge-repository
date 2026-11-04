@@ -30,8 +30,8 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     membership(db, 'workspace-b', 'owner-b', 'owner', new Date(now).toISOString());
     const store = new SqliteProviderConnectionStore(db);
     const known = new Set([
-      'vault://forge/a/github/first',
-      'vault://forge/a/github/second',
+      'vault://forge/workspace-a/github/first',
+      'vault://forge/workspace-a/github/second',
     ]);
     const resolveCalls: string[] = [];
     const operations = new ProviderConnectionOperations({
@@ -44,13 +44,13 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     await assert.rejects(
       () => operations.create({
         workspaceId: 'workspace-a', actorId: 'member-a', deliveryActorId: 'member-a', connectionId: 'forbidden',
-        provider: 'github', repository: 'team/repo', secretRef: 'vault://forge/a/github/first',
+        provider: 'github', repository: 'team/repo', secretRef: 'vault://forge/workspace-a/github/first',
       }),
       (error: unknown) => error instanceof Error && error.name === 'PipelineAuthorizationError',
     );
     const created = await operations.create({
       workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a', connectionId: 'github-app-1',
-      provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/a/github/first',
+      provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/workspace-a/github/first',
     });
     assert.equal(created.active, true);
     assert.equal((await store.find('github', 'github-app-1'))?.actorId, 'member-a');
@@ -65,17 +65,17 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     await assert.rejects(
       () => operations.rotateSecretReference({
         workspaceId: 'workspace-a', actorId: 'owner-a', connectionId: 'github-app-1',
-        provider: 'github', nextSecretRef: 'vault://forge/a/github/missing',
+        provider: 'github', nextSecretRef: 'vault://forge/workspace-a/github/missing',
       }),
       (error: unknown) => error instanceof ProviderSecretReferenceUnavailableError,
     );
     const rotated = await operations.rotateSecretReference({
       workspaceId: 'workspace-a', actorId: 'owner-a', connectionId: 'github-app-1',
-      provider: 'github', nextSecretRef: 'vault://forge/a/github/second',
+      provider: 'github', nextSecretRef: 'vault://forge/workspace-a/github/second',
     });
     assert.equal(rotated.updatedAt, new Date(now).toISOString());
     assert.equal('secretRef' in rotated, false);
-    assert.equal((await store.find('github', 'github-app-1'))?.secretRef, 'vault://forge/a/github/second');
+    assert.equal((await store.find('github', 'github-app-1'))?.secretRef, 'vault://forge/workspace-a/github/second');
 
     const revoked = await operations.revoke({
       workspaceId: 'workspace-a', actorId: 'owner-a', connectionId: 'github-app-1', provider: 'github',
@@ -137,7 +137,7 @@ test('provider connection HTTP routes require an authorized session and never di
     const operations = new ProviderConnectionOperations({
       connections,
       authorize,
-      secrets: { resolve: async (ref) => ref === 'vault://forge/route/github/secret' || ref === 'vault://forge/route/github/secret-v2' ? 'never-return-this-secret' : null },
+      secrets: { resolve: async (ref) => ref === 'vault://forge/workspace-route/github/secret' || ref === 'vault://forge/workspace-route/github/secret-v2' ? 'never-return-this-secret' : null },
       now: () => Date.parse(at),
     });
     const identity = {
@@ -161,19 +161,19 @@ test('provider connection HTTP routes require an authorized session and never di
     assert.ok(createRoute && listRoute && rotateRoute && revokeRoute && eventsRoute);
     const unauthenticated = await createRoute(providerRouteContext({
       method: 'POST', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github', deliveryActorId: 'route-owner',
-        repository: 'team/repo', secretRef: 'vault://forge/route/github/secret' },
+        repository: 'team/repo', secretRef: 'vault://forge/workspace-route/github/secret' },
     })).catch((error: unknown) => error);
     assert.ok(unauthenticated instanceof Error && unauthenticated.name === 'AppError');
 
     const denied = await createRoute(providerRouteContext({
       method: 'POST', token: 'member', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github', deliveryActorId: 'route-owner',
-        repository: 'team/repo', secretRef: 'vault://forge/route/github/secret' },
+        repository: 'team/repo', secretRef: 'vault://forge/workspace-route/github/secret' },
     })).catch((error: unknown) => error);
     assert.ok(denied instanceof Error && denied.name === 'AppError');
 
     const created = await createRoute(providerRouteContext({
       method: 'POST', token: 'owner', body: { workspaceId: 'workspace-route', connectionId: 'route-connection',
-        provider: 'github', deliveryActorId: 'route-member', repository: 'team/private-repo', secretRef: 'vault://forge/route/github/secret' },
+        provider: 'github', deliveryActorId: 'route-member', repository: 'team/private-repo', secretRef: 'vault://forge/workspace-route/github/secret' },
     }));
     assert.equal(created.status, 201);
     assert.equal(JSON.stringify(created.body).includes('vault://'), false);
@@ -185,7 +185,7 @@ test('provider connection HTTP routes require an authorized session and never di
 
     const rotated = await rotateRoute(providerRouteContext({
       method: 'POST', token: 'owner', body: { workspaceId: 'workspace-route', connectionId: 'route-connection',
-        provider: 'github', nextSecretRef: 'vault://forge/route/github/secret-v2' },
+        provider: 'github', nextSecretRef: 'vault://forge/workspace-route/github/secret-v2' },
     }));
     assert.equal(rotated.status, 200);
     assert.equal(JSON.stringify(rotated.body).includes('secretRef'), false);
