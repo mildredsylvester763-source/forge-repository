@@ -49,3 +49,11 @@ test('Build & CI service uses injected workspace authorization and migrated SQLi
     await app.close();
   }
 });
+
+test('app rejects split webhook and provider-secret resolvers', () => {
+  const resolver = {} as never;
+  assert.throws(
+    () => buildApp(config(), { webhookConnections: resolver, providerSecrets: resolver }),
+    /Configure either webhookConnections or providerSecrets/,
+  );
+});
