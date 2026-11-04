@@ -12,6 +12,21 @@ export const AiTrainingEvents = {
   SafetyGradeRecorded: 'ai_training.safety.grade.recorded',
   ExperimentDefined: 'ai_training.experiment.defined',
   MiningBatchCreated: 'ai_training.mining.batch.created',
+  ModelVersionRegistered: 'ai_training.model.version.registered',
+  ModelCardCreated: 'ai_training.model.card.created',
+  ModelPromoted: 'ai_training.model.promoted',
+  ModelPinned: 'ai_training.model.pinned',
+  ModelUnpinned: 'ai_training.model.unpinned',
+  SlotsReserved: 'ai_training.slots.reserved',
+  SlotsReleased: 'ai_training.slots.released',
+  OnPremPackageBuilt: 'ai_training.onprem.package.built',
+  ProviderRegistered: 'ai_training.provider.registered',
+  ByokKeyRegistered: 'ai_training.byok.key.registered',
+  GatewayLogRecorded: 'ai_training.gateway.log.recorded',
+  CapabilityMatrixSaved: 'ai_training.capability.matrix.saved',
+  OutputSchemaRegistered: 'ai_training.output.schema.registered',
+  RollbackPlanned: 'ai_training.rollback.planned',
+  ServingPlanCreated: 'ai_training.serving.plan.created',
 } as const;
 
 export type AiTrainingEventType = (typeof AiTrainingEvents)[keyof typeof AiTrainingEvents];
