@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { PipelineTemplateStore, PipelineTemplate, PipelineTemplateVersion, PipelineTemplateVisibility, PipelineTemplateEvent } from './templates.ts';
 import {
   buildDryRunPlan,
+  comparePipelineDefinitions,
+  hashPipelineDefinition,
   createPipelineVersion,
   createRollbackVersion,
   evaluatePipelineTriggers,
@@ -210,12 +212,51 @@ export class BuildCiService {
     return versions;
   }
 
+  async diffPipelineVersions(input: {
+    workspaceId: string; pipelineId: string; fromVersion: number; toVersion: number; actorId: string;
+  }): Promise<{
+    pipelineId: string; fromVersion: number; toVersion: number; fromHash: string; toHash: string;
+    diff: ReturnType<typeof comparePipelineDefinitions>;
+  }> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    if (!Number.isSafeInteger(input.fromVersion) || input.fromVersion < 1 ||
+        !Number.isSafeInteger(input.toVersion) || input.toVersion < 1) {
+      throw new TypeError('fromVersion and toVersion must be positive integers');
+    }
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'read' });
+    const [from, to] = await Promise.all([
+      this.store.getVersion(input.workspaceId, input.pipelineId, input.fromVersion),
+      this.store.getVersion(input.workspaceId, input.pipelineId, input.toVersion),
+    ]);
+    if (!from || !to) throw new PipelineNotFoundError();
+    return Object.freeze({
+      pipelineId: input.pipelineId,
+      fromVersion: from.version,
+      toVersion: to.version,
+      fromHash: from.definitionHash,
+      toHash: to.definitionHash,
+      diff: comparePipelineDefinitions(from.definition, to.definition),
+    });
+  }
+
   async dryRunDefinition(input: { workspaceId: string; definition: unknown; actorId: string; event?: TriggerEvent; inputs?: unknown }) {
     requiredId(input.workspaceId, 'workspaceId');
     requiredId(input.actorId, 'actorId');
     const definition = validatePipelineDefinition(input.definition);
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: definition.id, actorId: input.actorId, action: 'dry_run' });
-    return buildDryRunPlan(definition, input.event, input.inputs);
+    const baseline = await this.store.getLatestVersion(input.workspaceId, definition.id);
+    const plan = buildDryRunPlan(definition, input.event, input.inputs);
+    return Object.freeze({
+      ...plan,
+      comparison: Object.freeze({
+        baselineVersion: baseline?.version ?? null,
+        baselineHash: baseline?.definitionHash ?? null,
+        candidateHash: hashPipelineDefinition(definition),
+        diff: baseline ? comparePipelineDefinitions(baseline.definition, definition) : null,
+      }),
+    });
   }
 
   async publishTemplate(input: {
