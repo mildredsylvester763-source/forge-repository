@@ -137,6 +137,7 @@ test('verified webhook ingress enqueues once and rejects repository-binding mism
       connectionId: 'connection-123',
       provider: 'github' as const,
       workspaceId: 'workspace-web',
+      actorId: 'webhook-service-actor',
       repository: 'team/api',
       signingSecret: secret,
       active: true,
