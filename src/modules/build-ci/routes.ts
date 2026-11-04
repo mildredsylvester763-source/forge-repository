@@ -36,11 +36,11 @@ function jsonValue(value: unknown, depth = 0): value is JsonValue {
     !['__proto__', 'prototype', 'constructor'].includes(key) && jsonValue(child, depth + 1));
 }
 
-function triggerEvent(value: unknown): TriggerEvent {
+function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent {
   if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
   const allowed = ['kind', 'source', 'eventId', 'branch', 'baseBranch', 'changedFiles', 'scheduleId', 'commitSha', 'pullRequestNumber', 'payload', 'eventType'];
   exact(value, allowed, ['kind', 'source', 'eventId']);
-  if (value.kind !== 'manual' && value.kind !== 'api') {
+  if (!allowExternalKinds && value.kind !== 'manual' && value.kind !== 'api') {
     throw new AppError(400, 'invalid_request', 'Only authenticated manual and API triggers are accepted on this endpoint.');
   }
   const event: TriggerEvent = {
@@ -134,7 +134,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
             workspaceId: id(body.workspaceId, 'workspaceId'),
             pipelineId: id(body.pipelineId, 'pipelineId'),
             actorId,
-            ...(body.event !== undefined ? { event: triggerEvent(body.event) } : {}),
+            ...(body.event !== undefined ? { event: triggerEvent(body.event, true) } : {}),
           });
           return { status: 200, body: { plan } };
         } catch (err) { return mapError(err); }
