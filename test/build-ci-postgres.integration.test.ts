@@ -5,6 +5,8 @@ import { PostgresBuildCiStore } from '../src/modules/build-ci/postgres-store.ts'
 import { PostgresPipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
 import { PostgresWebhookDeliveryStore } from '../src/modules/build-ci/webhook-deliveries.ts';
 import { WebhookDeliveryProcessor } from '../src/modules/build-ci/webhook-processor.ts';
+import { PostgresScheduleOccurrenceStore } from '../src/modules/build-ci/schedule-occurrences.ts';
+import { ScheduleDispatcher } from '../src/modules/build-ci/schedule-dispatcher.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
@@ -203,6 +205,46 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       pipeline_id: 'postgres-webhook-build',
       status: 'queued',
     }]);
+
+    await service.createPipeline({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      definition: {
+        id: 'postgres-scheduled-build',
+        name: 'PostgreSQL scheduled build',
+        triggers: [{
+          id: 'every-minute',
+          kind: 'schedule' as const,
+          scheduleId: 'pg-schedule',
+          cron: '* * * * *',
+          timeZone: 'UTC',
+        }],
+        steps: [{ id: 'verify', task: 'quality.verify' }],
+      },
+    });
+    const scheduleOccurrences = new PostgresScheduleOccurrenceStore(testPool.pool);
+    const scheduler = new ScheduleDispatcher({
+      occurrences: scheduleOccurrences,
+      pipelines: store,
+      buildCi: service,
+      now: () => Date.parse('2026-11-04T00:14:00.000Z'),
+      initialLookbackMinutes: 1,
+      retryBaseMs: 1_000,
+    });
+    const scheduleScan = await scheduler.scanWorkspace('pg-workspace');
+    assert.equal(scheduleScan.inserted, 1);
+    const parallelScheduleClaims = await Promise.all([
+      scheduler.processNext({ workspaceId: 'pg-workspace', actorId: 'integration-test', workerId: 'pg-scheduler-a' }),
+      scheduler.processNext({ workspaceId: 'pg-workspace', actorId: 'integration-test', workerId: 'pg-scheduler-b' }),
+    ]);
+    assert.equal(parallelScheduleClaims.filter((item) => item.dispatched).length, 1);
+    assert.equal(parallelScheduleClaims.filter((item) => item.claimed).length, 1);
+    const scheduledRuns = await testPool.pool.query<{ event_id: string; pipeline_id: string; status: string }>(
+      "SELECT event_id, pipeline_id, status FROM build_pipeline_runs WHERE pipeline_id = 'postgres-scheduled-build'",
+    );
+    assert.equal(scheduledRuns.rows.length, 1);
+    assert.equal(scheduledRuns.rows[0]?.status, 'queued');
+    assert.equal((await scheduleOccurrences.list('pg-workspace')).filter((item) => item.status === 'dispatched').length, 1);
 
     const event = { kind: 'manual' as const, source: 'forge:manual', eventId: 'pg-integration-once' };
     const first = await service.trigger({
