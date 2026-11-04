@@ -65,8 +65,8 @@ Implemented:
 - Typed `string`, `number`, `boolean` and `secret_ref` inputs with required/default/options validation.
 - Immutable workspace templates and template releases with publisher identity, source version, changelog and content hash.
 - Explicit workspace-to-workspace grants, revocation, accessible-template listing and exact-version import.
-- Imported pipeline versions retain template ID, release number, template digest and publisher workspace as provenance.
-- Template release records are immutable in both SQLite and PostgreSQL. Grant revocation does not rewrite template release history.
+- Imported pipeline versions retain template ID, release number, template digest and publisher workspace as provenance. Import access is rechecked and locked inside the same database transaction that creates the pipeline version, preventing a revoke/import race.
+- Template release records and template lifecycle events are append-only in both SQLite and PostgreSQL. Events cover creation, release publication, share grant/revocation, import, deprecation and revocation. Grant records retain the revoking actor. Grant revocation does not rewrite template release history.
 
 Security and product boundaries:
 - A `secret_ref` is a symbolic workspace-scoped reference such as `workspace.deploy_key`; it is not a secret value. Secret references cannot define defaults or option lists. Actual secret existence/permissions and worker-side resolution remain the secret broker's responsibility.
@@ -75,7 +75,6 @@ Security and product boundaries:
 
 Still missing within BD-001:
 - Runtime task-registry resolution and compatibility checks; task names currently receive schema/syntax validation but are not yet resolved against Mistral's task registry.
-- Template deprecation/revocation lifecycle and an append-only template event/audit stream.
 - Structured definition/template diff, compatibility metadata and guided upgrade flow.
 - A public/community catalogue or organisation-wide sharing policy; these require a separate visibility/moderation decision and are not enabled by default.
 

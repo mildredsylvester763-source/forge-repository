@@ -123,8 +123,8 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest verified commit: `cb529bd30e40aca9d6fe582bce83ff908c07b939`
-Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41801054782
+Latest verified commit: `30a63a6ee3a3ef0937246a3f86bf01b2b742e89c`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41802519286
 
 - Typecheck: passed.
 - Production build: passed.
@@ -134,7 +134,7 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 
 | ID | Current status | Remaining catalogue scope / integration |
 |---|---|---|
-| BD-001 | Declarative schema, typed inputs, immutable versions, reusable template publishing/releases, explicit workspace sharing/revocation, pinned import and source provenance implemented | Runtime task-registry compatibility, template lifecycle audit/deprecation/revocation, structured template diff and any public/global catalogue policy |
+| BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance and append-only lifecycle audit implemented | Runtime task-registry compatibility, structured template diff/upgrade flow and any public/global catalogue policy |
 | BD-016 | Trigger model, matching, schedule identity, idempotent run persistence and authenticated manual/API trigger route implemented | Verified provider webhooks, provider-to-workspace binding, scheduler dispatcher, timezone/DST occurrence handling and retry/dead-letter delivery |
 | BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
 | BD-029 | Saved and unsaved candidate dry-run service/API implemented; no run or version is written by dry-run | Candidate-vs-current structured diff, scenario fixtures and additional route-level side-effect tests |
@@ -146,13 +146,14 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 - Pipeline permissions are deny-by-default and role-based. The actor comes from the authenticated server session, never a caller-supplied actor ID.
 - Membership lifecycle management is not added here; it belongs to the workspace/permissions catalogue area. No public endpoint can grant a user membership or promote their own role.
 - Authenticated routes are registered in `src/app.ts`: pipeline create/read/history/rollback/dry-run/trigger plus template publish/version/share/revoke/list/import. The create endpoint alone receives the larger body budget needed for bounded pipeline definitions; other endpoints retain the default request limit.
-- Template visibility is publisher-workspace-only or explicit named-workspace sharing. There is no global public catalogue. Imports pin an exact release and preserve template digest/publisher provenance.
+- Template visibility is publisher-workspace-only or explicit named-workspace sharing. There is no global public catalogue. Imports pin an exact release, preserve template digest/publisher provenance, and re-check access under database locks in the same transaction as the import.
+- Template lifecycle audit is append-only; creation, release publication, grants/revocations, imports, deprecation and revocation are recorded. Publisher and previously granted recipient workspaces see only their permitted event history.
 - Typed `secret_ref` inputs are symbolic workspace-scoped names only; no secret material is stored or resolved by this layer. The secret broker/worker integration remains outstanding.
 - Mistral's Task Runtime and Orchestrator remain on the `mistral` branch. Do not duplicate them or modify that branch. Worker integration requires a deliberate branch integration decision.
 
 ### Still outstanding before these features can be accepted
 
-1. Complete BD-001 task-registry compatibility, template lifecycle audit/deprecation/revocation, structured definition/template diff and decide whether a public/global catalogue is in scope.
+1. Complete BD-001 task-registry compatibility, structured definition/template diff and upgrade flow; decide whether a public/global catalogue is in scope.
 2. Complete provider webhook verification and scheduled trigger delivery for BD-016.
 3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
 4. Add candidate diff/scenario reporting to BD-029.

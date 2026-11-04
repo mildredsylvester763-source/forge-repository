@@ -152,6 +152,23 @@ Body: `workspaceId`, `templateId`, `targetWorkspaceId`.
 
 Body: same fields. Revocation blocks future discovery and import; it does not delete prior imported pipelines or rewrite release history.
 
+### Deprecate or revoke a template
+
+`POST /v1/build-ci/templates/status`
+
+Body: `workspaceId`, `templateId`, and `status` (`deprecated` or `revoked`). Only the publisher workspace's owner, admin or maintainer can change template lifecycle.
+
+- Deprecated templates remain discoverable and importable, but no new template release can be published.
+- Revoked templates are no longer discoverable or importable. Previously imported pipelines remain intact.
+
+### Read template audit events
+
+`GET /v1/build-ci/templates/events?workspaceId=publisher-workspace&templateId=<template-id>`
+
+Returns append-only lifecycle events. The publisher can inspect the full template history. A previously granted target workspace can inspect events scoped to its own workspace even after the grant is revoked. Other workspaces cannot read that history.
+
+Events include creation, release publication, share grant/revocation, import, deprecation and revocation. The imported event is committed in the same database transaction as the imported pipeline version. The import operation also re-checks access while holding the relevant database locks, so a concurrent share revocation cannot slip between authorization and import.
+
 ### Import an exact release
 
 `POST /v1/build-ci/templates/import`
@@ -173,14 +190,14 @@ A user must have permission to create pipelines in the target workspace and the 
 
 ## Role matrix
 
-| Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates |
+| Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates | Deprecate/revoke template |
 |---|---:|---:|---:|---:|---:|
-| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Member | Yes | No | No | Yes | Yes | Yes | No | No |
-| Viewer | Yes | No | No | Yes | No | Yes | No | No |
-| Suspended / no membership | No | No | No | No | No | No | No | No |
+| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Member | Yes | No | No | Yes | Yes | Yes | No | No | No |
+| Viewer | Yes | No | No | Yes | No | Yes | No | No | No |
+| Suspended / no membership | No | No | No | No | No | No | No | No | No |
 
 The matrix is a conservative initial Build & CI policy. Workspace membership creation, invitation, role changes and revocation are owned by the workspace/permissions catalogue area, not these endpoints.
 

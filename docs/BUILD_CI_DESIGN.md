@@ -20,7 +20,7 @@ Scope: BD-001, BD-016, BD-017, BD-029 and BD-030. This document records domain, 
 
 | Catalogue ID | Implemented domain layer | Evidence |
 |---|---|---|
-| BD-001 | Declarative schema, strict validation, bounded params, stable DAG, typed inputs, immutable template releases, explicit workspace grants/revocation, pinned imports and source provenance. Runtime task-registry compatibility and public catalogue remain missing. | `pipeline.ts`, `templates.ts`, both stores, migrations, `routes.ts`, template/input/route tests |
+| BD-001 | Declarative schema, strict validation, bounded params, stable DAG, typed inputs, immutable template releases, explicit workspace grants/revocation, pinned imports and source provenance. Runtime task-registry compatibility, structured template diff and public catalogue remain missing. | `pipeline.ts`, `templates.ts`, both stores, migrations, `routes.ts`, template/input/route tests |
 | BD-016 | Push, PR, schedule, event, manual and API types; schedule identity; branch/path filters; idempotent queued-run persistence; authenticated manual/API trigger route. Provider webhook and scheduler delivery remain missing. | `pipeline.ts`, `store.ts`, migrations, `routes.ts`, trigger tests |
 | BD-017 | Safe condition AST, path filters and ordered positive/negative glob rules; dry-run simulation accepts event fixtures for all trigger kinds | `pipeline.ts`, `routes.ts`, filter/condition tests |
 | BD-029 | Side-effect-free dry-run for saved definitions and unsaved candidate definitions, with reasons and dependency skip propagation | `pipeline.ts`, `store.ts`, `routes.ts`, dry-run/route tests |
@@ -33,6 +33,7 @@ Scope: BD-001, BD-016, BD-017, BD-029 and BD-030. This document records domain, 
 - The module creates durable queued run records, but does not yet execute registered task handlers.
 - Provider webhook signature verification, scheduler delivery, event-store publication, worker isolation, task permissions, logs/artifacts, cancellation/retry execution and deployment remain outstanding.
 - Workspace membership records and role-based pipeline authorization are wired for SQLite and PostgreSQL. Membership creation/invitation/role-change lifecycle belongs to the workspace/permissions catalogue area and is not implemented here.
+- Template versions and template events are append-only. Imports re-check publisher/recipient access under the same database transaction and lock the template/grant rows while saving the imported pipeline.
 - Authenticated HTTP routes cover pipeline create/read, version listing/inspection, rollback, saved/candidate dry-run, manual/API trigger, template publish/release, workspace share/revoke, template listing/version inspection and pinned import. They do not expose provider webhook or scheduler ingress.
 - The pipeline-definition creation endpoint has a 300 KiB body ceiling; other routes retain the 16 KiB default. Domain validation caps canonical definitions at 256 KiB.
 - Real PostgreSQL verification has run in GitHub Actions. The latest verified run is recorded in `PROGRESS.md`; a passing run validates only the tested behaviour, not the unimplemented execution stack.
