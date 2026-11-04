@@ -12,7 +12,7 @@ export interface ProviderConnectionRecord extends WebhookConnectionBinding {
 }
 export interface CreateProviderConnectionInput {
   readonly connectionId: string; readonly provider: WebhookProvider; readonly workspaceId: string;
-  readonly actorId: string; readonly repository: string; readonly secretRef: string; readonly createdAt?: string;
+  readonly actorId: string; readonly createdBy?: string; readonly repository: string; readonly secretRef: string; readonly createdAt?: string;
 }
 export interface ProviderConnectionEvent {
   readonly eventId: string; readonly provider: WebhookProvider; readonly connectionId: string;
@@ -50,7 +50,8 @@ function validateSecretRef(value: string): void {
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
-  required(input.actorId, 'actorId', 128); required(input.repository, 'repository', 256);
+  required(input.actorId, 'actorId', 128); if (input.createdBy !== undefined) required(input.createdBy, 'createdBy', 128);
+  required(input.repository, 'repository', 256);
   required(input.secretRef, 'secretRef', 512);
   if (!/^(secret|vault|kms):\/\/[A-Za-z0-9._:/-]+$/.test(input.secretRef)) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
   if (input.provider !== 'github' && input.provider !== 'gitlab') throw new TypeError('provider is invalid');
@@ -91,7 +92,7 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
       this.db.prepare(`INSERT INTO build_ci_provider_connection_events
         (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
         VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`).run(
-        randomUUID(), input.provider, input.connectionId, input.workspaceId, input.actorId, now,
+        randomUUID(), input.provider, input.connectionId, input.workspaceId, input.createdBy ?? input.actorId, now,
         JSON.stringify({ repository: input.repository }),
       );
       return this.db.prepare(`SELECT ${COLUMNS} FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
@@ -178,7 +179,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
       await conn.query(`INSERT INTO build_ci_provider_connection_events
         (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
         VALUES ($1, $2, $3, $4, $5, 'created', $6, $7)`,
-      [randomUUID(), input.provider, input.connectionId, input.workspaceId, input.actorId, now, JSON.stringify({ repository: input.repository })]);
+      [randomUUID(), input.provider, input.connectionId, input.workspaceId, input.createdBy ?? input.actorId, now, JSON.stringify({ repository: input.repository })]);
       return fromRow(result.rows[0]);
     });
   }
