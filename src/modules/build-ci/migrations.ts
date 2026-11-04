@@ -187,7 +187,7 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         schedule_id TEXT NOT NULL,
         scheduled_for TEXT NOT NULL,
         event_id TEXT NOT NULL UNIQUE,
-        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'failed')),
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'skipped', 'failed')),
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_attempt_at TEXT,
         lease_owner TEXT,
@@ -203,6 +203,11 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         ON build_ci_schedule_occurrences (workspace_id, status, next_attempt_at, lease_expires_at, scheduled_for);
       CREATE INDEX build_ci_schedule_occurrence_history_idx
         ON build_ci_schedule_occurrences (workspace_id, pipeline_id, scheduled_for);
+      CREATE TABLE build_ci_schedule_scan_cursors (
+        workspace_id TEXT PRIMARY KEY,
+        cursor_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `,
   },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
@@ -406,7 +411,7 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         schedule_id TEXT NOT NULL,
         scheduled_for TEXT NOT NULL,
         event_id TEXT NOT NULL UNIQUE,
-        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'failed')),
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'skipped', 'failed')),
         attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
         next_attempt_at TEXT,
         lease_owner TEXT,
@@ -422,6 +427,11 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         ON build_ci_schedule_occurrences (workspace_id, status, next_attempt_at, lease_expires_at, scheduled_for);
       CREATE INDEX build_ci_schedule_occurrence_history_idx
         ON build_ci_schedule_occurrences (workspace_id, pipeline_id, scheduled_for);
+      CREATE TABLE build_ci_schedule_scan_cursors (
+        workspace_id TEXT PRIMARY KEY,
+        cursor_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `,
   },
 ]; 
