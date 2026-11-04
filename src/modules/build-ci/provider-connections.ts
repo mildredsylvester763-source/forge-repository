@@ -263,6 +263,7 @@ export class StoredWebhookConnectionResolver implements WebhookConnectionResolve
   async resolveForIngress(provider: WebhookProvider, connectionId: string): Promise<WebhookIngressConnection | null> {
     const record = await this.connections.find(provider, connectionId);
     if (!record || !record.active) return null;
+    try { validateSecretRef(record.secretRef, record.workspaceId); } catch { return null; }
     const signingSecret = await this.secrets.resolve(record.secretRef);
     if (typeof signingSecret !== 'string' || signingSecret.length === 0) return null;
     const current = await this.connections.find(provider, connectionId);
