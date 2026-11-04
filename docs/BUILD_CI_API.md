@@ -188,6 +188,21 @@ Import creates a new pipeline version with the requested pipeline ID. Its versio
 
 A user must have permission to create pipelines in the target workspace and the template must be accessible there. Publishing/sharing requires owner, admin or maintainer rights. Listing/reading visible templates is allowed to active members and viewers.
 
+## Provider webhook ingress — BD-016
+
+These routes are registered only when the application is composed with a trusted \`WebhookConnectionResolver\` from the secret/integration subsystem. The default app does not register them.
+
+- \`POST /v1/webhooks/github?connectionId=<opaque-connection-id>\`
+- \`POST /v1/webhooks/gitlab?connectionId=<opaque-connection-id>\`
+
+Both require \`Content-Type: application/json\` and the provider's signature headers. The server verifies the exact raw request bytes before parsing or acting on the event. GitHub requires \`X-Hub-Signature-256\`, \`X-GitHub-Event\` and \`X-GitHub-Delivery\`. GitLab requires Standard Webhooks \`webhook-id\`, \`webhook-timestamp\`, \`webhook-signature\` and \`X-Gitlab-Event\`.
+
+The connection resolver must return an active provider connection with a workspace, exact repository binding and signing secret. The normalized repository must exactly match the configured repository. The signing secret is resolved in memory and is never persisted by Build & CI.
+
+A successful first delivery returns HTTP 202 with \`accepted: true\`, \`duplicate: false\`, delivery ID and workspace ID. A repeated delivery ID for the same connection returns HTTP 202 with \`duplicate: true\`. Only normalized event data and a SHA-256 body digest are stored; raw provider payloads and secrets are not stored in the delivery queue.
+
+The delivery is durably queued, but worker claiming, Task Runtime dispatch, retry/backoff and terminal status updates are not implemented yet. A 202 response therefore means “verified and queued,” not “pipeline executed.”
+
 ## Role matrix
 
 | Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates | Deprecate/revoke template |
