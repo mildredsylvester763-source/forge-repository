@@ -110,8 +110,8 @@ Schedules: due → occurrence claimed → evaluated → queued/no-match; missed 
 - Do not execute untrusted PR code with privileged secrets or deployment permissions.
 
 ### Current FORGE status
-Implemented: trigger type definitions and matching, schedule identity, branch/path filtering, and idempotent queued-run persistence.
-Missing: provider webhook verification/delivery, schedule dispatcher, event-bus integration, and operational retries.
+Implemented: trigger type definitions and matching; schedule identity; branch/path filtering; idempotent queued-run persistence; authenticated manual/API trigger route; GitHub HMAC-SHA256 and GitLab Standard Webhooks signature verification over raw request bytes; provider event normalization; trusted connection/repository binding; and durable, deduplicated webhook receipt persistence in SQLite and PostgreSQL.
+Still missing: production secret/integration resolver wiring; webhook queue claiming/leases, retry scheduling and processing; mapping verified deliveries to matching pipeline runs; schedule dispatcher with explicit DST/catch-up/concurrency policy; event-bus integration; and operational dead-letter/replay controls. The current webhook HTTP 202 confirms verified durable receipt only, not a queued pipeline run or execution.
 
 ## BD-017 — Conditional and path-based pipelines
 
