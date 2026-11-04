@@ -8,6 +8,7 @@ import type { JsonValue, TriggerEvent, TriggerKind } from './pipeline.ts';
 import { PipelineTemplateUnavailableError } from './templates.ts';
 import { WebhookIngressError, WebhookIngressService } from './webhook-ingress.ts';
 import { WebhookPayloadError } from './webhooks.ts';
+import type { WebhookDeliveryOperations } from './webhook-operations.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -133,13 +134,67 @@ function mapError(err: unknown): never {
   throw err;
 }
 
-export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock, webhookIngress?: WebhookIngressService): RouteTable {
+export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock, webhookIngress?: WebhookIngressService, webhookOperations?: WebhookDeliveryOperations): RouteTable {
   const actor = async (ctx: RequestContext): Promise<string> => {
     const auth = await identity.authenticate(ctx.cookie(cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
     return auth.user.id;
   };
   return {
+    ...(webhookOperations ? {
+      '/v1/build-ci/webhooks/dead-letters': {
+        GET: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          const workspaceId = id(ctx.query('workspaceId'), 'workspaceId');
+          const rawLimit = ctx.query('limit');
+          const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+          if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new AppError(400, 'invalid_request', 'limit must be an integer from 1 to 100.');
+          const beforeReceivedAt = ctx.query('beforeReceivedAt');
+          const beforeDeliveryRowId = ctx.query('beforeDeliveryRowId');
+          if ((beforeReceivedAt === undefined) !== (beforeDeliveryRowId === undefined)) {
+            throw new AppError(400, 'invalid_request', 'Both pagination cursor fields are required together.');
+          }
+          try {
+            const page = await webhookOperations.listDeadLetters({
+              workspaceId, actorId, limit,
+              ...(beforeReceivedAt !== undefined && beforeDeliveryRowId !== undefined
+                ? { before: { receivedAt: beforeReceivedAt, deliveryRowId: id(beforeDeliveryRowId, 'beforeDeliveryRowId') } }
+                : {}),
+            });
+            return { status: 200, body: page };
+          } catch (err) { return mapError(err); }
+        },
+      },
+      '/v1/build-ci/webhooks/dead-letters/events': {
+        GET: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          try {
+            const events = await webhookOperations.listReplayEvents({
+              workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+              deliveryRowId: id(ctx.query('deliveryRowId'), 'deliveryRowId'),
+              actorId,
+            });
+            return { status: 200, body: { events } };
+          } catch (err) { return mapError(err); }
+        },
+      },
+      '/v1/build-ci/webhooks/dead-letters/replay': {
+        POST: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          const body = await ctx.json();
+          exact(body, ['workspaceId', 'deliveryRowId'], ['workspaceId', 'deliveryRowId']);
+          try {
+            const result = await webhookOperations.replayFailed({
+              workspaceId: id(body.workspaceId, 'workspaceId'),
+              deliveryRowId: id(body.deliveryRowId, 'deliveryRowId'),
+              actorId,
+            });
+            if (!result.replayed) throw new AppError(404, 'not_found', 'Failed webhook delivery not found.');
+            return { status: 202, body: result };
+          } catch (err) { return mapError(err); }
+        },
+      },
+    } : {}),
     ...(webhookIngress ? {
       '/v1/webhooks/github': {
         POST: async (ctx: RequestContext) => {
