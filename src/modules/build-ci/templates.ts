@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createPipelineVersion, type PipelineDefinition, type PipelineVersion } from './pipeline.ts';
 import { transaction, type Database } from '../../kernel/sqlite.ts';
-import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
+import { withTransaction, type SqlPool, type SqlConn } from '../../kernel/sql.ts';
 
 export type PipelineTemplateVisibility = 'workspace' | 'shared';
 export type PipelineTemplateStatus = 'active' | 'deprecated' | 'revoked';
@@ -281,7 +281,7 @@ export class PostgresPipelineTemplateStore implements PipelineTemplateStore {
   private readonly pool: SqlPool;
   constructor(pool: SqlPool) { this.pool = pool; }
 
-  private async writeEvent(conn: { query: SqlPool['query'] extends (...args: never[]) => infer R ? (...args: never[]) => R : never }, input: Omit<PipelineTemplateEvent, 'metadata'> & { metadata?: Readonly<Record<string, unknown>> }): Promise<void> {
+  private async writeEvent(conn: SqlConn, input: Omit<PipelineTemplateEvent, 'metadata'> & { metadata?: Readonly<Record<string, unknown>> }): Promise<void> {
     await conn.query(`INSERT INTO build_pipeline_template_events
       (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [
