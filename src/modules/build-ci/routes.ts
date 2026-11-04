@@ -5,6 +5,7 @@ import type { RouteTable, RequestContext } from '../../kernel/http.ts';
 import type { IdentityService } from '../identity/identity-service.ts';
 import type { BuildCiService } from './store.ts';
 import type { JsonValue, TriggerEvent, TriggerKind } from './pipeline.ts';
+import { PipelineTemplateUnavailableError } from './templates.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
