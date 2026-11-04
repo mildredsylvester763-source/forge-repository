@@ -69,6 +69,14 @@ test('SQLite templates are immutable, explicitly shared, revocable and provenanc
 
     await templates.revoke('template-quality', 'publisher', 'consumer', 'owner', '2026-11-04T00:03:00.000Z');
     assert.equal(await templates.canAccess('template-quality', 'consumer'), false);
+    await assert.rejects(() => pipelines.importTemplate({
+      workspaceId: 'consumer', templateId: 'template-quality', templateVersion: 2,
+      pipelineId: 'blocked-after-revoke', createdBy: 'consumer-owner',
+    }));
+    await templates.setStatus('template-quality', 'publisher', 'deprecated', 'owner', '2026-11-04T00:04:00.000Z');
+    assert.equal(await templates.canAccess('template-quality', 'publisher'), true);
+    await templates.setStatus('template-quality', 'publisher', 'revoked', 'owner', '2026-11-04T00:05:00.000Z');
+    assert.equal(await templates.canAccess('template-quality', 'publisher'), false);
     assert.equal((await templates.listAccessible('consumer')).length, 0);
     const audit = await templates.listEvents('template-quality', 'publisher');
     const eventTypes = audit.map((event) => event.eventType);
@@ -76,6 +84,8 @@ test('SQLite templates are immutable, explicitly shared, revocable and provenanc
     assert.ok(eventTypes.includes('version_published'));
     assert.ok(eventTypes.includes('share_granted'));
     assert.ok(eventTypes.includes('share_revoked'));
+    assert.ok(eventTypes.includes('deprecated'));
+    assert.ok(eventTypes.includes('revoked'));
     const consumerAudit = await templates.listEvents('template-quality', 'consumer');
     assert.ok(consumerAudit.some((event) => event.eventType === 'imported'));
     assert.throws(() => db.prepare("UPDATE build_pipeline_template_events SET actor_id = 'tampered'").run());
