@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 import { BuildCiService } from '../src/modules/build-ci/store.ts';
 import { PostgresBuildCiStore } from '../src/modules/build-ci/postgres-store.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
+import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
+import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
 
 test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receipts', { skip: !process.env.FORGE_TEST_POSTGRES_URL }, async () => {
   const { makeBlankRealPool } = await import('./pg-helpers.ts');
   const testPool = await makeBlankRealPool();
   try {
     await migrateBuildCiPostgres(testPool.pool);
+    await migratePostgres(testPool.pool, 'workspace_access', workspaceAccessMigrations);
+    await testPool.pool.query(
+      "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      ['pg-workspace', 'integration-test', 'maintainer', 'active', new Date().toISOString(), new Date().toISOString()],
+    );
+    const authorize = createWorkspacePipelineAuthorizer(new PostgresWorkspaceMembershipReader(testPool.pool));
+    assert.equal(await authorize({ workspaceId: 'pg-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), true);
+    assert.equal(await authorize({ workspaceId: 'other-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), false);
     const store = new PostgresBuildCiStore(testPool.pool);
     const service = new BuildCiService({ store, authorize: async () => true });
     const definition = {
