@@ -32,6 +32,7 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     const known = new Set([
       'vault://forge/workspace-a/github/first',
       'vault://forge/workspace-a/github/second',
+      'vault://forge/workspace-a/gitlab/secret',
     ]);
     const resolveCalls: string[] = [];
     const operations = new ProviderConnectionOperations({
@@ -71,6 +72,23 @@ test('provider connection operations are workspace-authorized, secret-safe and a
       );
     }
     assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'malformed path references must be rejected before vault lookup');
+
+    for (const invalid of [
+      { provider: 'github' as const, repository: 'group/subgroup/project' },
+      { provider: 'gitlab' as const, repository: 'group//project' },
+      { provider: 'gitlab' as const, repository: 'group/../project' },
+    ]) {
+      await assert.rejects(
+        () => operations.create({
+          workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a',
+          connectionId: 'invalid-repository', provider: invalid.provider, repository: invalid.repository,
+          secretRef: 'vault://forge/workspace-a/github/first',
+        }),
+        /repository/,
+      );
+    }
+    assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'invalid repository bindings must be rejected before vault lookup');
+
 
 
     const created = await operations.create({
@@ -143,7 +161,15 @@ test('provider connection operations are workspace-authorized, secret-safe and a
       }),
       (error: unknown) => error instanceof ProviderConnectionNotFoundError,
     );
-    assert.equal(resolveCalls.length, 3);
+
+    const gitlabConnection = await operations.create({
+      workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a',
+      connectionId: 'gitlab-app-1', provider: 'gitlab',
+      repository: 'group/subgroup/project', secretRef: 'vault://forge/workspace-a/gitlab/secret',
+    });
+    assert.equal(gitlabConnection.active, true);
+    assert.equal(gitlabConnection.repository, 'group/subgroup/project');
+    assert.equal(resolveCalls.length, 4);
   } finally {
     db.close();
   }
