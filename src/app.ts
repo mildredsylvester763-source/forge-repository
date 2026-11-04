@@ -24,6 +24,7 @@ import {
   workspaceAccessMigrations,
   type WorkspaceMembershipReader,
   WebhookIngressService,
+  WebhookDeliveryProcessor,
   SqliteWebhookDeliveryStore,
   PostgresWebhookDeliveryStore,
   type WebhookDeliveryStore,
@@ -80,6 +81,8 @@ export interface ForgeApp {
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
+  /** Available only when a trusted webhook connection resolver is configured. */
+  webhookProcessor?: WebhookDeliveryProcessor;
   close(): Promise<void>;
 }
 
@@ -202,6 +205,10 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ? new WebhookIngressService({ connections: overrides.webhookConnections, deliveries: storage.webhookDeliveries })
     : undefined;
 
+  const webhookProcessor = overrides.webhookConnections
+    ? new WebhookDeliveryProcessor({ deliveries: storage.webhookDeliveries, connections: overrides.webhookConnections, buildCi, now: clock })
+    : undefined;
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -230,5 +237,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), close };
+  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), close };
 }
