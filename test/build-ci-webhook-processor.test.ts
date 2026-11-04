@@ -90,6 +90,40 @@ test('webhook processor retries when trusted connection is unavailable', async (
 });
 
 
+
+test('webhook delivery storage redacts arbitrary failure details at the persistence boundary', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateBuildCiSqlite(db);
+    const deliveries = new SqliteWebhookDeliveryStore(db);
+    await deliveries.enqueue({
+      connectionId: 'connection-store-redaction', provider: 'github', workspaceId: 'workspace-safe',
+      repository: 'team/private', deliveryId: 'delivery-store-redaction',
+      event: { kind: 'push', source: 'github:push', eventType: 'push', eventId: 'delivery-store-redaction', branch: 'main' },
+      bodySha256: 'd'.repeat(64), receivedAt: '2026-11-04T11:00:00.000Z',
+    });
+    const claimed = await deliveries.claimNext({
+      workerId: 'worker-store-redaction',
+      now: '2026-11-04T11:01:00.000Z',
+      leaseExpiresAt: '2026-11-04T11:02:00.000Z',
+    });
+    assert.ok(claimed);
+    const credential = 'ghp_STORAGE_BOUNDARY_SECRET_MUST_NOT_PERSIST';
+    assert.deepEqual(await deliveries.fail({
+      deliveryRowId: claimed.deliveryRowId,
+      workerId: 'worker-store-redaction',
+      error: 'provider failure included credential ' + credential,
+      failedAt: '2026-11-04T11:01:30.000Z',
+      retryAt: '2026-11-04T11:03:00.000Z',
+      maxAttempts: 1,
+    }), { updated: true, terminal: true });
+    const failed = await deliveries.find('connection-store-redaction', 'delivery-store-redaction');
+    assert.equal(failed?.status, 'failed');
+    assert.equal(failed?.lastError, 'Webhook delivery processing failed.');
+    assert.equal(failed?.lastError?.includes(credential), false);
+  } finally { db.close(); }
+});
+
 test('webhook processor never persists provider exception text that may contain credentials', async () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
