@@ -73,7 +73,7 @@ export interface PipelineStore {
   getRun(workspaceId: string, pipelineId: string, runId: string): Promise<PipelineRun | null>;
 }
 
-export type PipelineAction = 'create' | 'rollback' | 'dry_run' | 'trigger';
+export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger';
 
 export interface PipelineAuthorizationRequest {
   readonly workspaceId: string;
@@ -166,6 +166,45 @@ export class BuildCiService {
     const latest = await this.store.getLatestVersion(input.workspaceId, input.pipelineId);
     if (!latest) throw new PipelineNotFoundError();
     return buildDryRunPlan(latest.definition, input.event);
+  }
+
+  async getPipeline(input: { workspaceId: string; pipelineId: string; actorId: string }): Promise<PipelineVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'read' });
+    const latest = await this.store.getLatestVersion(input.workspaceId, input.pipelineId);
+    if (!latest) throw new PipelineNotFoundError();
+    return latest;
+  }
+
+  async getPipelineVersion(input: { workspaceId: string; pipelineId: string; version: number; actorId: string }): Promise<PipelineVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    if (!Number.isSafeInteger(input.version) || input.version < 1) throw new TypeError('version must be a positive integer');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'read' });
+    const version = await this.store.getVersion(input.workspaceId, input.pipelineId, input.version);
+    if (!version) throw new PipelineNotFoundError();
+    return version;
+  }
+
+  async listPipelineVersions(input: { workspaceId: string; pipelineId: string; actorId: string }): Promise<readonly PipelineVersion[]> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'read' });
+    const versions = await this.store.listVersions(input.workspaceId, input.pipelineId);
+    if (versions.length === 0) throw new PipelineNotFoundError();
+    return versions;
+  }
+
+  async dryRunDefinition(input: { workspaceId: string; definition: unknown; actorId: string; event?: TriggerEvent }) {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.actorId, 'actorId');
+    const definition = validatePipelineDefinition(input.definition);
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: definition.id, actorId: input.actorId, action: 'dry_run' });
+    return buildDryRunPlan(definition, input.event);
   }
 
   async trigger(input: { workspaceId: string; pipelineId: string; actorId: string; event: TriggerEvent; createdAt?: string }): Promise<TriggerPipelineResult> {

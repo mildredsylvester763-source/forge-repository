@@ -14,13 +14,14 @@ const definition = {
   steps: [{ id: 'verify', task: 'quality.verify' }],
 };
 
-function context(body: Record<string, unknown>, token?: string): RequestContext {
+function context(body: Record<string, unknown>, token?: string, query: Record<string, string> = {}): RequestContext {
   return {
     requestId: 'request-test',
     ip: '127.0.0.1',
     userAgent: 'test',
     method: 'POST',
     path: '/v1/build-ci/pipelines',
+    query: (name) => query[name],
     header: () => undefined,
     cookie: (name) => name === 'forge_session' ? token : undefined,
     json: async () => body,
@@ -51,6 +52,25 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     const body = allowed.body as { pipeline: { createdBy: string; version: number } };
     assert.equal(body.pipeline.createdBy, 'session-user');
     assert.equal(body.pipeline.version, 1);
+
+    const read = routes['/v1/build-ci/pipelines']?.GET;
+    const listVersions = routes['/v1/build-ci/pipelines/versions']?.GET;
+    const getVersion = routes['/v1/build-ci/pipelines/version']?.GET;
+    assert.ok(read && listVersions && getVersion);
+    const readResult = await read(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline' }));
+    assert.equal(readResult.status, 200);
+    const history = await listVersions(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline' }));
+    assert.equal((history.body as { versions: unknown[] }).versions.length, 1);
+    const version = await getVersion(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', version: '1' }));
+    assert.equal(version.status, 200);
+
+    const dryRun = routes['/v1/build-ci/pipelines/dry-run']?.POST;
+    assert.ok(dryRun);
+    const candidate = { ...definition, id: 'candidate-pipeline' };
+    const candidateResult = await dryRun(context({ workspaceId: 'workspace-a', definition: candidate }, 'valid-session'));
+    assert.equal(candidateResult.status, 200);
+    assert.equal((candidateResult.body as { source: string }).source, 'candidate');
+    await assert.rejects(() => app.buildCi.getPipeline({ workspaceId: 'workspace-a', pipelineId: 'candidate-pipeline', actorId: 'session-user' }));
 
     await assert.rejects(
       () => create(context({ workspaceId: 'workspace-a', definition, actorId: 'attacker' }, 'valid-session')),

@@ -18,6 +18,7 @@ export interface RequestContext {
   readonly userAgent: string;
   readonly method: string;
   readonly path: string;
+  query(name: string): string | undefined;
   header(name: string): string | undefined;
   cookie(name: string): string | undefined;
   json(): Promise<Record<string, unknown>>;
@@ -163,6 +164,7 @@ export function createHttpHandler(options: HttpOptions) {
         userAgent: String(req.headers['user-agent'] ?? '').slice(0, 256),
         method,
         path: url.pathname,
+        query: (name) => url.searchParams.get(name) ?? undefined,
         header: (name) => {
           const v = req.headers[name.toLowerCase()];
           return Array.isArray(v) ? v[0] : v;

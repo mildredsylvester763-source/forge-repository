@@ -125,6 +125,17 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
   };
   return {
     '/v1/build-ci/pipelines': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const pipeline = await buildCi.getPipeline({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            pipelineId: id(ctx.query('pipelineId'), 'pipelineId'),
+            actorId,
+          });
+          return { status: 200, body: { pipeline } };
+        } catch (err) { return mapError(err); }
+      },
       POST: async (ctx) => {
         const actorId = await actor(ctx);
         const body = await ctx.json();
@@ -138,6 +149,36 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
             createdAt: new Date(clock()).toISOString(),
           });
           return { status: 201, body: { pipeline: version } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/pipelines/versions': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const versions = await buildCi.listPipelineVersions({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            pipelineId: id(ctx.query('pipelineId'), 'pipelineId'),
+            actorId,
+          });
+          return { status: 200, body: { versions } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/pipelines/version': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        const versionRaw = id(ctx.query('version'), 'version');
+        const version = Number(versionRaw);
+        if (!Number.isSafeInteger(version) || version < 1) throw new AppError(400, 'invalid_request', 'version must be a positive integer.');
+        try {
+          const result = await buildCi.getPipelineVersion({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            pipelineId: id(ctx.query('pipelineId'), 'pipelineId'),
+            version,
+            actorId,
+          });
+          return { status: 200, body: { version: result } };
         } catch (err) { return mapError(err); }
       },
     },
@@ -163,15 +204,20 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
       POST: async (ctx) => {
         const actorId = await actor(ctx);
         const body = await ctx.json();
-        exact(body, ['workspaceId', 'pipelineId', 'event'], ['workspaceId', 'pipelineId']);
+        exact(body, ['workspaceId', 'pipelineId', 'definition', 'event'], ['workspaceId']);
+        if ((body.pipelineId === undefined) === (body.definition === undefined)) {
+          throw new AppError(400, 'invalid_request', 'Provide exactly one of pipelineId or definition.');
+        }
         try {
-          const plan = await buildCi.dryRun({
-            workspaceId: id(body.workspaceId, 'workspaceId'),
-            pipelineId: id(body.pipelineId, 'pipelineId'),
-            actorId,
-            ...(body.event !== undefined ? { event: triggerEvent(body.event, true) } : {}),
-          });
-          return { status: 200, body: { plan } };
+          const event = body.event !== undefined ? triggerEvent(body.event, true) : undefined;
+          const workspaceId = id(body.workspaceId, 'workspaceId');
+          if (body.definition !== undefined) {
+            if (!isRecord(body.definition)) throw new AppError(400, 'invalid_request', 'definition must be an object.');
+            const plan = await buildCi.dryRunDefinition({ workspaceId, definition: body.definition, actorId, ...(event ? { event } : {}) });
+            return { status: 200, body: { source: 'candidate', plan } };
+          }
+          const plan = await buildCi.dryRun({ workspaceId, pipelineId: id(body.pipelineId, 'pipelineId'), actorId, ...(event ? { event } : {}) });
+          return { status: 200, body: { source: 'saved', plan } };
         } catch (err) { return mapError(err); }
       },
     },
