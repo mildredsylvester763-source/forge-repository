@@ -20,6 +20,16 @@ function exact(body: Record<string, unknown>, allowed: readonly string[], requir
   }
 }
 
+function textField(value: unknown, field: string, max: number): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > max) throw new AppError(400, 'invalid_request', `Invalid ${field}.`);
+  return value;
+}
+
+function positiveInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new AppError(400, 'invalid_request', `${field} must be a positive integer.`);
+  return value as number;
+}
+
 function id(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > 128) {
     throw new AppError(400, 'invalid_request', `Invalid ${field}.`);
@@ -218,6 +228,117 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
           }
           const plan = await buildCi.dryRun({ workspaceId, pipelineId: id(body.pipelineId, 'pipelineId'), actorId, ...(event ? { event } : {}), ...(body.inputs !== undefined ? { inputs: body.inputs } : {}) });
           return { status: 200, body: { source: 'saved', plan } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+
+    '/v1/build-ci/templates': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const templates = await buildCi.listTemplates({ workspaceId: id(ctx.query('workspaceId'), 'workspaceId'), actorId });
+          return { status: 200, body: { templates } };
+        } catch (err) { return mapError(err); }
+      },
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'pipelineId', 'name', 'description', 'sourceVersion', 'visibility', 'changelog'], ['workspaceId', 'pipelineId', 'name', 'changelog']);
+        const visibility = body.visibility === undefined ? 'workspace' : body.visibility;
+        if (visibility !== 'workspace' && visibility !== 'shared') throw new AppError(400, 'invalid_request', 'visibility must be workspace or shared.');
+        try {
+          const template = await buildCi.publishTemplate({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            pipelineId: id(body.pipelineId, 'pipelineId'),
+            actorId,
+            name: textField(body.name, 'name', 100),
+            ...(body.description !== undefined ? { description: textField(body.description, 'description', 1000) } : {}),
+            ...(body.sourceVersion !== undefined ? { sourceVersion: positiveInteger(body.sourceVersion, 'sourceVersion') } : {}),
+            visibility,
+            changelog: textField(body.changelog, 'changelog', 2000),
+          });
+          return { status: 201, body: { template } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/publish-version': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'templateId', 'sourceVersion', 'changelog'], ['workspaceId', 'templateId', 'changelog']);
+        try {
+          const template = await buildCi.publishTemplateVersion({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            templateId: id(body.templateId, 'templateId'),
+            actorId,
+            ...(body.sourceVersion !== undefined ? { sourceVersion: positiveInteger(body.sourceVersion, 'sourceVersion') } : {}),
+            changelog: textField(body.changelog, 'changelog', 2000),
+          });
+          return { status: 201, body: { template } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/version': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const template = await buildCi.getTemplateVersion({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            templateId: id(ctx.query('templateId'), 'templateId'),
+            version: positiveInteger(Number(ctx.query('version')), 'version'),
+            actorId,
+          });
+          return { status: 200, body: { template } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/share': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'templateId', 'targetWorkspaceId'], ['workspaceId', 'templateId', 'targetWorkspaceId']);
+        try {
+          await buildCi.shareTemplate({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            templateId: id(body.templateId, 'templateId'),
+            targetWorkspaceId: id(body.targetWorkspaceId, 'targetWorkspaceId'),
+            actorId,
+          });
+          return { status: 200, body: { shared: true } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/revoke-share': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'templateId', 'targetWorkspaceId'], ['workspaceId', 'templateId', 'targetWorkspaceId']);
+        try {
+          await buildCi.revokeTemplateShare({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            templateId: id(body.templateId, 'templateId'),
+            targetWorkspaceId: id(body.targetWorkspaceId, 'targetWorkspaceId'),
+            actorId,
+          });
+          return { status: 200, body: { revoked: true } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/import': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'templateId', 'templateVersion', 'pipelineId', 'name'], ['workspaceId', 'templateId', 'templateVersion', 'pipelineId']);
+        try {
+          const pipeline = await buildCi.importTemplate({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            templateId: id(body.templateId, 'templateId'),
+            templateVersion: positiveInteger(body.templateVersion, 'templateVersion'),
+            pipelineId: id(body.pipelineId, 'pipelineId'),
+            ...(body.name !== undefined ? { name: textField(body.name, 'name', 100) } : {}),
+            actorId,
+          });
+          return { status: 201, body: { pipeline } };
         } catch (err) { return mapError(err); }
       },
     },

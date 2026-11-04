@@ -59,6 +59,53 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     assert.equal(body.pipeline.createdBy, 'session-user');
     assert.equal(body.pipeline.version, 1);
 
+    const publishTemplate = routes['/v1/build-ci/templates']?.POST;
+    const listTemplates = routes['/v1/build-ci/templates']?.GET;
+    const shareTemplate = routes['/v1/build-ci/templates/share']?.POST;
+    const revokeTemplateShare = routes['/v1/build-ci/templates/revoke-share']?.POST;
+    const importTemplate = routes['/v1/build-ci/templates/import']?.POST;
+    const readTemplateVersion = routes['/v1/build-ci/templates/version']?.GET;
+    assert.ok(publishTemplate && listTemplates && shareTemplate && revokeTemplateShare && importTemplate && readTemplateVersion);
+    const published = await publishTemplate(context({
+      workspaceId: 'workspace-a', pipelineId: 'http-pipeline', name: 'Quality gate template',
+      visibility: 'workspace', changelog: 'Initial reviewed release',
+    }, 'valid-session'));
+    assert.equal(published.status, 201);
+    const template = (published.body as { template: { templateId: string; version: number; definitionHash: string } }).template;
+    assert.equal(template.version, 1);
+
+    const beforeShare = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
+    assert.equal((beforeShare.body as { templates: unknown[] }).templates.length, 0);
+    const shared = await shareTemplate(context({
+      workspaceId: 'workspace-a', templateId: template.templateId, targetWorkspaceId: 'workspace-b',
+    }, 'valid-session'));
+    assert.equal(shared.status, 200);
+    const afterShare = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
+    assert.equal((afterShare.body as { templates: unknown[] }).templates.length, 1);
+    const templateVersion = await readTemplateVersion(context({}, 'valid-session', {
+      workspaceId: 'workspace-b', templateId: template.templateId, version: '1',
+    }));
+    assert.equal(templateVersion.status, 200);
+
+    const imported = await importTemplate(context({
+      workspaceId: 'workspace-b', templateId: template.templateId, templateVersion: 1, pipelineId: 'imported-quality-gate',
+    }, 'valid-session'));
+    assert.equal(imported.status, 201);
+    const importedVersion = (imported.body as { pipeline: { templateSource?: { templateId: string; templateVersion: number; templateHash: string } } }).pipeline;
+    assert.deepEqual(importedVersion.templateSource, {
+      templateId: template.templateId, templateVersion: 1, templateHash: template.definitionHash, publisherWorkspaceId: 'workspace-a',
+    });
+
+    const revoked = await revokeTemplateShare(context({
+      workspaceId: 'workspace-a', templateId: template.templateId, targetWorkspaceId: 'workspace-b',
+    }, 'valid-session'));
+    assert.equal(revoked.status, 200);
+    const afterRevoke = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
+    assert.equal((afterRevoke.body as { templates: unknown[] }).templates.length, 0);
+    await assert.rejects(() => importTemplate(context({
+      workspaceId: 'workspace-b', templateId: template.templateId, templateVersion: 1, pipelineId: 'blocked-import',
+    }, 'valid-session')));
+
     const read = routes['/v1/build-ci/pipelines']?.GET;
     const listVersions = routes['/v1/build-ci/pipelines/versions']?.GET;
     const getVersion = routes['/v1/build-ci/pipelines/version']?.GET;
