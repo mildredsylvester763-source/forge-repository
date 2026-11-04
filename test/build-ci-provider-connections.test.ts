@@ -54,3 +54,37 @@ test('provider metadata rejects inline credential values and malformed secret re
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM build_ci_provider_connections').get() as { count: number }).count, 0);
   } finally { db.close(); }
 });
+
+
+test('ingress rejects a secret lookup raced by revocation or secret-reference rotation', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateBuildCiSqlite(db);
+    const store = new SqliteProviderConnectionStore(db);
+    const originalRef = 'vault://forge/workspaces/race/github/webhook';
+    const rotatedRef = 'vault://forge/workspaces/race/github/webhook-v2';
+    await store.create({ connectionId: 'race-revocation', provider: 'github', workspaceId: 'workspace-race',
+      actorId: 'workspace-service-race', repository: 'team/race', secretRef: originalRef });
+    const revokedResolver = new StoredWebhookConnectionResolver(store, {
+      resolve: async () => {
+        await store.revoke('github', 'race-revocation', '2026-11-04T12:10:00.000Z');
+        return 'secret-read-before-revocation';
+      },
+    });
+    assert.equal(await revokedResolver.resolveForIngress('github', 'race-revocation'), null,
+      'a connection revoked while the vault is resolving must not be accepted');
+
+    await store.create({ connectionId: 'race-rotation', provider: 'github', workspaceId: 'workspace-race',
+      actorId: 'workspace-service-race', repository: 'team/race', secretRef: originalRef });
+    const rotatedResolver = new StoredWebhookConnectionResolver(store, {
+      resolve: async (reference) => {
+        assert.equal(reference, originalRef);
+        await store.rotateSecretReference('github', 'race-rotation', originalRef, rotatedRef, '2026-11-04T12:11:00.000Z');
+        return 'secret-for-stale-reference';
+      },
+    });
+    assert.equal(await rotatedResolver.resolveForIngress('github', 'race-rotation'), null,
+      'a secret resolved for a superseded reference must not be accepted');
+    assert.equal((await store.find('github', 'race-rotation'))?.secretRef, rotatedRef);
+  } finally { db.close(); }
+});
