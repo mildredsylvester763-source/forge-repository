@@ -107,6 +107,33 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
       CREATE INDEX build_pipeline_template_grants_target_idx ON build_pipeline_template_grants (target_workspace_id, revoked_at);
     `,
   },
+
+  {
+    version: 3,
+    name: 'append_only_pipeline_template_audit',
+    sql: `
+      ALTER TABLE build_pipeline_template_grants ADD COLUMN revoked_by TEXT;
+      CREATE TABLE build_pipeline_template_events (
+        event_id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'version_published', 'share_granted', 'share_revoked', 'imported', 'deprecated', 'revoked')),
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        target_workspace_id TEXT,
+        template_version INTEGER,
+        template_hash TEXT,
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      ) STRICT;
+      CREATE INDEX build_pipeline_template_events_scope_idx ON build_pipeline_template_events (template_id, workspace_id, occurred_at);
+      CREATE TRIGGER build_pipeline_template_events_block_update BEFORE UPDATE ON build_pipeline_template_events
+        BEGIN SELECT RAISE(ABORT, 'pipeline template events are append-only'); END;
+      CREATE TRIGGER build_pipeline_template_events_block_delete BEFORE DELETE ON build_pipeline_template_events
+        BEGIN SELECT RAISE(ABORT, 'pipeline template events are append-only'); END;
+    `,
+  },
+
 ]; 
 
 export const buildCiPostgresMigrations: readonly Migration[] = [
@@ -224,6 +251,38 @@ export const buildCiPostgresMigrations: readonly Migration[] = [
       CREATE INDEX build_pipeline_template_grants_target_idx ON build_pipeline_template_grants (target_workspace_id, revoked_at);
     `,
   },
+
+  {
+    version: 3,
+    name: 'append_only_pipeline_template_audit',
+    sql: `
+      ALTER TABLE build_pipeline_template_grants ADD COLUMN revoked_by TEXT;
+      CREATE TABLE build_pipeline_template_events (
+        event_id TEXT PRIMARY KEY,
+        template_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'version_published', 'share_granted', 'share_revoked', 'imported', 'deprecated', 'revoked')),
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        target_workspace_id TEXT,
+        template_version INTEGER,
+        template_hash TEXT,
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      );
+      CREATE INDEX build_pipeline_template_events_scope_idx ON build_pipeline_template_events (template_id, workspace_id, occurred_at);
+      CREATE FUNCTION build_pipeline_template_events_block_change() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'pipeline template events are append-only'; END;
+      $$;
+      CREATE TRIGGER build_pipeline_template_events_block_update BEFORE UPDATE ON build_pipeline_template_events
+        FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_events_block_change();
+      CREATE TRIGGER build_pipeline_template_events_block_delete BEFORE DELETE ON build_pipeline_template_events
+        FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_events_block_change();
+      CREATE TRIGGER build_pipeline_template_events_block_truncate BEFORE TRUNCATE ON build_pipeline_template_events
+        FOR EACH STATEMENT EXECUTE FUNCTION build_pipeline_template_events_block_change();
+    `,
+  },
+
 ]; 
 
 export function migrateBuildCiSqlite(db: Database): number[] {
