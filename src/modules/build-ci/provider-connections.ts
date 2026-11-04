@@ -230,7 +230,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
   async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
-    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
     return withTransaction(this.pool, async (conn) => {
       const current = await conn.query<{ workspace_id: string }>(`SELECT workspace_id FROM build_ci_provider_connections
