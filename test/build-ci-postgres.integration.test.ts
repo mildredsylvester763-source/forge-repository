@@ -130,6 +130,33 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(webhookDuplicate.deliveryRowId, webhookFirst.deliveryRowId);
     assert.deepEqual((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1'))?.event, webhookEvent);
 
+    const concurrentClaims = await Promise.all([
+      webhookDeliveries.claimNext({
+        workerId: 'pg-worker-a', now: '2026-11-04T00:11:00.000Z', leaseExpiresAt: '2026-11-04T00:12:00.000Z',
+      }),
+      webhookDeliveries.claimNext({
+        workerId: 'pg-worker-b', now: '2026-11-04T00:11:00.000Z', leaseExpiresAt: '2026-11-04T00:12:00.000Z',
+      }),
+    ]);
+    assert.equal(concurrentClaims.filter(Boolean).length, 1, 'SKIP LOCKED allows only one worker to claim the delivery');
+    const claimed = concurrentClaims.find((item) => item !== null)!;
+    assert.equal(claimed.status, 'processing');
+    assert.equal(claimed.attempts, 1);
+    const claimOwner = claimed.leaseOwner!;
+    assert.deepEqual(await webhookDeliveries.fail({
+      deliveryRowId: claimed.deliveryRowId, workerId: claimOwner, error: 'retry integration test',
+      failedAt: '2026-11-04T00:11:30.000Z', retryAt: '2026-11-04T00:12:00.000Z', maxAttempts: 2,
+    }), { updated: true, terminal: false });
+    assert.equal(await webhookDeliveries.claimNext({
+      workerId: 'pg-worker-c', now: '2026-11-04T00:11:59.000Z', leaseExpiresAt: '2026-11-04T00:13:00.000Z',
+    }), null);
+    const retried = await webhookDeliveries.claimNext({
+      workerId: 'pg-worker-c', now: '2026-11-04T00:12:00.000Z', leaseExpiresAt: '2026-11-04T00:13:00.000Z',
+    });
+    assert.equal(retried?.attempts, 2);
+    assert.equal(await webhookDeliveries.complete(retried!.deliveryRowId, 'pg-worker-c', '2026-11-04T00:12:30.000Z'), true);
+    assert.equal((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1'))?.status, 'processed');
+
     const event = { kind: 'manual' as const, source: 'forge:manual', eventId: 'pg-integration-once' };
     const first = await service.trigger({
       workspaceId: 'pg-workspace', pipelineId: 'postgres-build', actorId: 'integration-test', event,
