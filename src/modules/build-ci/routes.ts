@@ -42,6 +42,23 @@ function id(value: unknown, field: string): string {
   return value;
 }
 
+function webhookProvider(value: unknown): 'github' | 'gitlab' {
+  if (value !== 'github' && value !== 'gitlab') throw new AppError(400, 'invalid_request', 'provider must be github or gitlab.');
+  return value;
+}
+function providerSecretReference(value: unknown): string {
+  const reference = textField(value, 'secretRef', 512);
+  if (!/^(secret|vault|kms):\/\/[A-Za-z0-9._:/-]{1,500}$/.test(reference)) {
+    throw new AppError(400, 'invalid_request', 'secretRef must be an opaque secret://, vault:// or kms:// reference.');
+  }
+  return reference;
+}
+function providerRepository(value: unknown): string {
+  const repository = textField(value, 'repository', 256);
+  if (/[\r\n\0]/.test(repository)) throw new AppError(400, 'invalid_request', 'repository contains invalid characters.');
+  return repository;
+}
+
 function jsonValue(value: unknown, depth = 0): value is JsonValue {
   if (depth > 16) return false;
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -241,10 +258,10 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               workspaceId: id(body.workspaceId, 'workspaceId'),
               actorId,
               connectionId: id(body.connectionId, 'connectionId'),
-              provider: body.provider as 'github' | 'gitlab',
+              provider: webhookProvider(body.provider),
               deliveryActorId: id(body.deliveryActorId, 'deliveryActorId'),
-              repository: textField(body.repository, 'repository', 256),
-              secretRef: textField(body.secretRef, 'secretRef', 512),
+              repository: providerRepository(body.repository),
+              secretRef: providerSecretReference(body.secretRef),
             });
             return { status: 201, body: { connection } };
           } catch (err) { return mapError(err); }
@@ -261,8 +278,8 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               workspaceId: id(body.workspaceId, 'workspaceId'),
               actorId,
               connectionId: id(body.connectionId, 'connectionId'),
-              provider: body.provider as 'github' | 'gitlab',
-              nextSecretRef: textField(body.nextSecretRef, 'nextSecretRef', 512),
+              provider: webhookProvider(body.provider),
+              nextSecretRef: providerSecretReference(body.nextSecretRef),
             });
             return { status: 200, body: { connection } };
           } catch (err) { return mapError(err); }
@@ -278,7 +295,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               workspaceId: id(body.workspaceId, 'workspaceId'),
               actorId,
               connectionId: id(body.connectionId, 'connectionId'),
-              provider: body.provider as 'github' | 'gitlab',
+              provider: webhookProvider(body.provider),
             });
             return { status: 200, body: result };
           } catch (err) { return mapError(err); }
@@ -292,7 +309,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
               actorId,
               connectionId: id(ctx.query('connectionId'), 'connectionId'),
-              provider: ctx.query('provider') as 'github' | 'gitlab',
+              provider: webhookProvider(ctx.query('provider')),
             });
             return { status: 200, body: { events } };
           } catch (err) { return mapError(err); }
