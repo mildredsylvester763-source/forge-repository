@@ -226,16 +226,49 @@ Every replay writes an append-only audit event containing the actor, timestamp a
 
 A 202 replay response means the delivery has been re-queued. The optional worker must be running for it to be processed, and any resulting pipeline run remains queued until a separate task-execution worker is implemented.
 
+### Provider connection management
+
+These authenticated workspace routes are enabled only when the application is configured with the external `providerSecrets` resolver. That adapter must be able to resolve the supplied opaque reference; Build & CI never accepts a raw signing secret or returns one in an API response.
+
+- `GET /v1/build-ci/provider-connections?workspaceId=<workspace-id>`
+- `POST /v1/build-ci/provider-connections`
+- `POST /v1/build-ci/provider-connections/rotate-secret-reference`
+- `POST /v1/build-ci/provider-connections/revoke`
+- `GET /v1/build-ci/provider-connections/events?workspaceId=<workspace-id>&provider=github&connectionId=<connection-id>`
+
+Create body:
+```json
+{
+  "workspaceId": "workspace-alpha",
+  "connectionId": "github-app-installation-123",
+  "provider": "github",
+  "deliveryActorId": "workspace-user-id",
+  "repository": "organisation/private-repository",
+  "secretRef": "vault://forge/workspace-alpha/github/webhook-signing-key"
+}
+```
+
+Rotation body contains `workspaceId`, `connectionId`, `provider` and `nextSecretRef`. The next secret must already exist and resolve successfully before the metadata pointer is changed. Rotation uses compare-and-swap against the current reference, records an audit event, and never writes secret material to the database. The external secrets system remains responsible for provisioning the new value and retiring the old value after rotation.
+
+Revoke body contains `workspaceId`, `connectionId` and `provider`. Revocation is one-way and idempotent. It records the authenticated actor and prevents subsequent ingress and delivery resolution. Audit history records creation, reference rotation and revocation without storing reference values or signing secrets.
+
+Connection listing and management are restricted to workspace owners, admins and maintainers. Creation requires a separately selected `deliveryActorId` with current permission to trigger pipelines; the authenticated creator is recorded independently in the audit trail. The selected delivery actor is re-authorized when a webhook is processed, so a suspended or removed member cannot continue to trigger runs.
+
+References must be workspace-namespaced using `secret://forge/<workspace-id>/<path>`, `vault://forge/<workspace-id>/<path>` or `kms://forge/<workspace-id>/<path>` (an optional `workspaces/` segment is accepted). Empty path segments, traversal-like segments and references for another workspace are rejected before the vault adapter is called. The concrete vault/KMS vendor and provisioning workflow are not selected or implemented here.
+
+The management routes are intentionally absent from the default app unless `providerSecrets` is injected. Supplying both a custom `webhookConnections` resolver and `providerSecrets` is rejected because it would split management state from the resolver used by ingress. The external integration must also supply a trusted service/delivery identity strategy; the current implementation uses an explicitly selected active workspace member, which remains a product/identity decision before production rollout.
+
+
 ## Role matrix
 
-| Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates | Deprecate/revoke template | Replay webhook dead letters |
+| Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates | Deprecate/revoke template | Replay webhook dead letters | Manage provider connections |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| Member | Yes | No | No | Yes | Yes | Yes | No | No | No | No |
-| Viewer | Yes | No | No | Yes | No | Yes | No | No | No | No |
-| Suspended / no membership | No | No | No | No | No | No | No | No | No | No |
+| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
+| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
+| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
+| Member | Yes | No | No | Yes | Yes | Yes | No | No | No | No  No |
+| Viewer | Yes | No | No | Yes | No | Yes | No | No | No | No  No |
+| Suspended / no membership | No | No | No | No | No | No | No | No | No | No  No |
 
 The matrix is a conservative initial Build & CI policy. Workspace membership creation, invitation, role changes and revocation are owned by the workspace/permissions catalogue area, not these endpoints.
 
