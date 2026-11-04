@@ -36,6 +36,7 @@ import {
   BuildCiWorkerHost,
   type ScheduleWorkspaceSource,
   buildCiRoutes,
+  WebhookDeliveryOperations,
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
@@ -189,10 +190,16 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const storage = buildStorage(config, clock, logger, overrides);
   const { events } = storage;
   // Workspace permissions are read from persisted membership records; identity alone grants no access.
+  const authorizeBuildCi = overrides.buildCiAuthorize ?? createWorkspacePipelineAuthorizer(storage.workspaceMemberships);
   const buildCi = new BuildCiService({
     store: storage.buildCiStore,
     templates: storage.buildCiTemplates,
-    authorize: overrides.buildCiAuthorize ?? createWorkspacePipelineAuthorizer(storage.workspaceMemberships),
+    authorize: authorizeBuildCi,
+  });
+  const webhookDeliveryOperations = new WebhookDeliveryOperations({
+    deliveries: storage.webhookDeliveries,
+    authorize: authorizeBuildCi,
+    now: clock,
   });
 
   const hasher = new PasswordHasher({
@@ -271,7 +278,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
-    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress),
+    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress, webhookDeliveryOperations),
   };
 
   const handler = createHttpHandler({
