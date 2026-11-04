@@ -123,20 +123,19 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest CI-verified commit: `307c3c140fb2880fa736e741aaaeacc5f2b0414e`
-Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41812055280
+Latest implementation CI run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41814529813
 
 - Typecheck: passed.
 - Production build: passed.
-- Complete test suite against real PostgreSQL: 173 tests, 173 passed, 0 failed, 0 skipped.
-- This run includes the candidate dry-run service test added in commit `cc000ed1c6062184928864f402f93a4b0d998d4d`.
+- Complete test suite against real PostgreSQL: 184 tests, 184 passed, 0 failed, 0 skipped.
+- This run verifies the initial durable schedule dispatcher, SQLite scheduler tests and PostgreSQL concurrent schedule claims. Follow-up cron-step and paused-schedule tests are being added in the next verification batch.
 
 ### Feature status
 
 | ID | Current status | Remaining catalogue scope / integration |
 |---|---|---|
 | BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance and append-only lifecycle audit implemented | Runtime task-registry compatibility, structured template diff/upgrade flow and any public/global catalogue policy |
-| BD-016 | Trigger model, matching, schedule identity, idempotent run persistence, authenticated manual/API trigger, verified GitHub/GitLab ingress, durable receipt queue, atomic leases/recovery, bounded retries/terminal failure, and a processor that re-resolves a trusted workspace actor and creates authorized idempotent queued runs implemented | DB-backed scheduler dispatcher, timezone/DST occurrence handling, autonomous worker hosting/operations and execution of registered pipeline tasks |
+| BD-016 | Trigger model, per-trigger pause/resume, matching, schedule identity, durable per-workspace schedule cursors, version-bound occurrence records, timezone/DST-aware cron, lease-based claims, retry/recovery, verified GitHub/GitLab ingress, and authorized idempotent queued-run creation implemented | Autonomous worker hosting/polling, production secret/integration resolver wiring, event-bus publication, operational replay/monitoring and execution of registered pipeline tasks |
 | BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
 | BD-029 | Saved and unsaved candidate dry-run service/API implemented; candidate definitions are validated and planned without persisting versions or runs. A service-level test now asserts no version/run writes, authorization denial and invalid-definition rejection. | Candidate-vs-current structured diff, scenario fixtures and dedicated HTTP route-level side-effect tests |
 | BD-030 | Immutable content-hashed versions, authenticated version reads/listing and append-only rollback implemented | Structured version diff, concurrency/tamper verification hardening and complete audit evidence |
@@ -156,7 +155,7 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 ### Still outstanding before these features can be accepted
 
 1. Complete BD-001 task-registry compatibility, structured definition/template diff and upgrade flow; decide whether a public/global catalogue is in scope.
-2. Complete DB-backed scheduled trigger dispatch, timezone/DST occurrence identities and catch-up/recovery policy for BD-016; the provider webhook processor now creates authorized idempotent queued runs.
+2. Complete autonomous worker hosting/polling, production provider secret/integration resolver wiring, event-bus publication and operational replay/monitoring for BD-016; both webhook and schedule processors now create authorized idempotent queued runs.
 3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
 4. Add candidate diff/scenario reporting to BD-029.
 5. Add version comparison, hash verification and concurrent save/rollback tests to BD-030.
@@ -192,3 +191,13 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - SQLite processor tests cover successful run creation/idempotent receipt completion and unavailable-connection retry. The real PostgreSQL integration suite also exercises workspace pipeline enumeration, processor dispatch, and queued run persistence.
 - Verified commit: `9af476fb31e0abd5a1f3d07a9404bcf13d35e704`. GitHub Actions run `41813260566` passed typecheck, production build, and all 176 tests with 0 failures and 0 skips, including the real PostgreSQL integration suite: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41813260566
 - This is not pipeline execution. The processor creates queued run records only; no registered task handler is invoked. It is exposed by app composition when a trusted resolver is supplied, but an autonomous worker host/polling loop and production secret/integration resolver are still outstanding. Scheduler dispatch remains outstanding.
+
+### 2026-11-04 durable schedule dispatcher implementation
+
+- Added migration v6 to SQLite and PostgreSQL: durable schedule occurrences with deterministic IDs, per-workspace scan cursors, lease metadata, attempts, retry time, terminal failure, skipped state and dispatch timestamp.
+- Added numeric five-field cron parsing and IANA timezone occurrence calculation. Day-of-month/day-of-week use standard cron OR semantics when both are restricted; weekday 0 and 7 mean Sunday. Spring-forward nonexistent local times are skipped; fall-back repeated local times create two distinct UTC occurrences.
+- Added per-trigger enabled state (defaults to enabled). Pausing/resuming is an immutable pipeline-version change. New versions do not retroactively generate occurrences before their creation time; pending occurrences from superseded versions are marked skipped.
+- Schedule scans use a durable monotonic UTC-minute cursor. Initial lookback defaults to five minutes; subsequent catch-up scans default to 1,440-minute batches. Occurrences are persisted before cursor advancement, so a crash causes safe re-scanning and deterministic deduplication.
+- Workers claim occurrences using SQLite immediate transactions or PostgreSQL row locks with SKIP LOCKED. Dispatch calls BuildCiService.trigger, preserving workspace authorization and the run idempotency key. Failures receive bounded exponential retries. This creates queued runs only; it does not execute pipeline steps.
+- The scheduler is exposed from app composition as a workspace-scoped worker service. There is no autonomous polling/worker host yet; the caller must provide a trusted workspace actor. Overlapping occurrences are independently queued; no concurrency-group serialization is implemented.
+- Implementation CI run `41814529813` passed typecheck, production build and all 184 tests against real PostgreSQL. Follow-up cron-step and pause/resume tests plus documentation require the next full CI run.
