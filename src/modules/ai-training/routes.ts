@@ -310,5 +310,300 @@ export function aiTrainingRoutes(service: AiTrainingService, identity: IdentityS
         return { status: 201, body: batch };
       },
     },
+    '/v1/ai-training/models/versions': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const record = await service.registerModelVersion(user.id, await ctx.json());
+        return { status: 201, body: record };
+      },
+    },
+    '/v1/ai-training/models/versions/list': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['modelId', 'limit']);
+        const result = await service.listModelVersions(user.id, body);
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/models/cards': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const card = await service.buildModelCard(user.id, await ctx.json());
+        return { status: 201, body: card };
+      },
+    },
+    '/v1/ai-training/models/promote': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.promoteModel(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/serving/scale': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const plan = await service.planScale(user.id, await ctx.json());
+        return { status: 201, body: plan };
+      },
+    },
+    '/v1/ai-training/serving/quantize': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const plan = await service.planQuantization(user.id, await ctx.json());
+        return { status: 201, body: plan };
+      },
+    },
+    '/v1/ai-training/serving/bundle': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const plan = await service.planDeviceBundle(user.id, await ctx.json());
+        return { status: 201, body: plan };
+      },
+    },
+    '/v1/ai-training/serving/route': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const plan = await service.routeCascade(user.id, await ctx.json());
+        return { status: 201, body: plan };
+      },
+    },
+    '/v1/ai-training/serving/plans/list': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['kind', 'limit']);
+        const result = await service.listServingPlans(user.id, body);
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/cache/lookup': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.cacheLookup(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/cache/admit': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.cacheAdmit(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/streams/start': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const state = await service.streamStart(user.id, await ctx.json());
+        return { status: 201, body: state };
+      },
+    },
+    '/v1/ai-training/ops/streams/event': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const state = await service.streamEvent(user.id, await ctx.json());
+        return { status: 200, body: state };
+      },
+    },
+    '/v1/ai-training/ops/streams/resume': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.streamResume(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/metrics': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.recordServingMetrics(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/shadow': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.evaluateShadowDeployment(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/ops/rollback': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.planInstantRollback(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/providers': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const provider = await service.upsertGatewayProvider(user.id, await ctx.json());
+        return { status: 201, body: provider };
+      },
+    },
+    '/v1/ai-training/gateway/providers/list': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['limit']);
+        const result = await service.listGatewayProviders(user.id, body);
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/call': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.recordProviderCall(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/route': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.planGatewayRoute(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/failover': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.planFailoverChain(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/byok': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.registerByokKey(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/policy': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const result = await service.enforceDataPolicy(await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/accounting': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.providerAccounting(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/logs': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.recordGatewayLog(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/logs/list': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const body = (await ctx.json()) as Record<string, unknown>;
+        rejectUnknownFields(body, ['providerId', 'limit']);
+        const result = await service.listGatewayLogs(user.id, body);
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/retention': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const result = await service.retentionDecision(await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/retention/route': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.planRetentionRoute(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/capabilities': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.upsertCapabilities(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/capabilities/match': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.matchCapabilities(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/toolcall': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const result = await service.normalizeToolCall(await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/schemas': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.registerOutputSchema(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/gateway/schemas/validate': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.validateOutput(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/pin': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.pinVersion(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/unpin': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.unpinVersion(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/resolve': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.resolveVersion(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/reserve': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.reserveSlots(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/release': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.releaseSlots(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/access/packages': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.buildPackage(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/ai-training/access/packages/verify': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.verifyPackage(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
   };
 }
