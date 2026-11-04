@@ -71,6 +71,7 @@ async function createFailedDelivery(
 test('webhook dead letters are workspace-scoped, paginated, role-gated and replay-audited', async () => {
   const db = new DatabaseSync(':memory:');
   try {
+    db.exec('PRAGMA foreign_keys = ON');
     migrateBuildCiSqlite(db);
     migrate(db, 'workspace_access', workspaceAccessMigrations);
     addMembership(db, 'workspace-ops', 'workspace-owner', 'owner', '2026-11-04T10:00:00.000Z');
