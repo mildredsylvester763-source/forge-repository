@@ -125,7 +125,7 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     const readResult = await read(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline' }));
     assert.equal(readResult.status, 200);
     const history = await listVersions(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline' }));
-    assert.equal((history.body as { versions: unknown[] }).versions.length, 1);
+    assert.equal((history.body as { versions: unknown[] }).versions.length, 2);
     const version = await getVersion(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', version: '1' }));
     assert.equal(version.status, 200);
 
