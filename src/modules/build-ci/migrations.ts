@@ -173,6 +173,38 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
     `,
   },
 
+
+  {
+    version: 6,
+    name: 'durable_scheduled_pipeline_occurrences',
+    sql: `
+      CREATE TABLE build_ci_schedule_occurrences (
+        occurrence_id TEXT PRIMARY KEY CHECK (length(occurrence_id) = 64),
+        workspace_id TEXT NOT NULL,
+        pipeline_id TEXT NOT NULL,
+        trigger_id TEXT NOT NULL,
+        pipeline_version INTEGER NOT NULL CHECK (pipeline_version >= 1),
+        schedule_id TEXT NOT NULL,
+        scheduled_for TEXT NOT NULL,
+        event_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        next_attempt_at TEXT,
+        lease_owner TEXT,
+        lease_expires_at TEXT,
+        dispatched_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (workspace_id, pipeline_id, trigger_id, pipeline_version, scheduled_for),
+        FOREIGN KEY (workspace_id, pipeline_id, pipeline_version)
+          REFERENCES build_pipeline_versions (workspace_id, pipeline_id, version)
+      );
+      CREATE INDEX build_ci_schedule_occurrence_queue_idx
+        ON build_ci_schedule_occurrences (workspace_id, status, next_attempt_at, lease_expires_at, scheduled_for);
+      CREATE INDEX build_ci_schedule_occurrence_history_idx
+        ON build_ci_schedule_occurrences (workspace_id, pipeline_id, scheduled_for);
+    `,
+  },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
   {
     version: 1,
@@ -360,6 +392,38 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
     `,
   },
 
+
+  {
+    version: 6,
+    name: 'durable_scheduled_pipeline_occurrences',
+    sql: `
+      CREATE TABLE build_ci_schedule_occurrences (
+        occurrence_id TEXT PRIMARY KEY CHECK (length(occurrence_id) = 64),
+        workspace_id TEXT NOT NULL,
+        pipeline_id TEXT NOT NULL,
+        trigger_id TEXT NOT NULL,
+        pipeline_version INTEGER NOT NULL CHECK (pipeline_version >= 1),
+        schedule_id TEXT NOT NULL,
+        scheduled_for TEXT NOT NULL,
+        event_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'dispatched', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        next_attempt_at TEXT,
+        lease_owner TEXT,
+        lease_expires_at TEXT,
+        dispatched_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (workspace_id, pipeline_id, trigger_id, pipeline_version, scheduled_for),
+        FOREIGN KEY (workspace_id, pipeline_id, pipeline_version)
+          REFERENCES build_pipeline_versions (workspace_id, pipeline_id, version)
+      );
+      CREATE INDEX build_ci_schedule_occurrence_queue_idx
+        ON build_ci_schedule_occurrences (workspace_id, status, next_attempt_at, lease_expires_at, scheduled_for);
+      CREATE INDEX build_ci_schedule_occurrence_history_idx
+        ON build_ci_schedule_occurrences (workspace_id, pipeline_id, scheduled_for);
+    `,
+  },
 ]; 
 
 export function migrateBuildCiSqlite(db: Database): number[] {
