@@ -49,7 +49,10 @@ test('webhook processor re-resolves trusted connection and queues matching pipel
     assert.equal(result.duplicateRuns, 0);
     assert.equal((await processor.processNext('worker-2')).claimed, false);
     const runs = db.prepare('SELECT pipeline_id, event_id, status FROM build_pipeline_runs').all();
-    assert.deepEqual(runs, [{ pipeline_id: 'ci', event_id: 'delivery-1', status: 'queued' }]);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.pipeline_id, 'ci');
+    assert.equal(runs[0]?.event_id, 'delivery-1');
+    assert.equal(runs[0]?.status, 'queued');
     assert.equal((await deliveries.find('connection-1', 'delivery-1'))?.status, 'processed');
   } finally { db.close(); }
 });
