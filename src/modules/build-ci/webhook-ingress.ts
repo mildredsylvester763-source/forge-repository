@@ -14,6 +14,8 @@ export interface WebhookConnection {
   readonly connectionId: string;
   readonly provider: WebhookProvider;
   readonly workspaceId: string;
+  /** Trusted workspace service principal used for asynchronous pipeline authorization. */
+  readonly actorId: string;
   readonly repository: string;
   /** Resolved by the dedicated secret/integration subsystem; never persisted by Build & CI. */
   readonly signingSecret: string;
