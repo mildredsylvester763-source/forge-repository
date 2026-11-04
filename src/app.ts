@@ -197,8 +197,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     allowedOrigins: config.allowedOrigins,
     trustProxyHops: config.trustProxyHops,
     hsts: config.env === 'production',
-    // Pipeline definitions are capped at 256 KiB by the domain validator.
-    maxBodyBytes: 300 * 1024,
+    // Only pipeline-definition creation needs a larger body budget; all other routes keep the 16 KiB default.
+    maxBodyBytes: { '/v1/build-ci/pipelines': 300 * 1024 },
   });
 
   const close = async (): Promise<void> => {

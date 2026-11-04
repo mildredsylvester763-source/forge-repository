@@ -32,7 +32,7 @@ export interface HttpOptions {
   allowedOrigins: readonly string[];
   trustProxyHops: number;
   hsts: boolean;
-  maxBodyBytes?: number;
+  maxBodyBytes?: number | Readonly<Record<string, number>>;
 }
 
 const DEFAULT_MAX_BODY = 16 * 1024;
@@ -126,7 +126,7 @@ function send(res: ServerResponse, status: number, body: unknown, headers?: Reco
 }
 
 export function createHttpHandler(options: HttpOptions) {
-  const maxBody = options.maxBodyBytes ?? DEFAULT_MAX_BODY;
+  const defaultMaxBody = typeof options.maxBodyBytes === 'number' ? options.maxBodyBytes : DEFAULT_MAX_BODY;
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = process.hrtime.bigint();
@@ -174,7 +174,10 @@ export function createHttpHandler(options: HttpOptions) {
             if (type !== 'application/json') {
               throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json.');
             }
-            const raw = await readBody(req, maxBody);
+            const routeMaxBody = typeof options.maxBodyBytes === 'number'
+              ? options.maxBodyBytes
+              : options.maxBodyBytes?.[url.pathname] ?? defaultMaxBody;
+            const raw = await readBody(req, routeMaxBody);
             if (raw.length === 0) throw new AppError(400, 'invalid_request', 'A JSON body is required.');
             let parsed: unknown;
             try {

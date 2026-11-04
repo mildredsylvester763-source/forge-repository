@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { RouteTable, RequestContext } from '../../kernel/http.ts';
@@ -55,6 +56,36 @@ function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent 
     ...(value.branch !== undefined ? { branch: id(value.branch, 'event.branch') } : {}),
     ...(value.baseBranch !== undefined ? { baseBranch: id(value.baseBranch, 'event.baseBranch') } : {}),
     ...(value.scheduleId !== undefined ? { scheduleId: id(value.scheduleId, 'event.scheduleId') } : {}),
+    ...(value.commitSha !== undefined ? { commitSha: id(value.commitSha, 'event.commitSha') } : {}),
+    ...(value.pullRequestNumber !== undefined ? { pullRequestNumber: value.pullRequestNumber as number } : {}),
+    ...(value.changedFiles !== undefined ? { changedFiles: value.changedFiles as string[] } : {}),
+    ...(value.payload !== undefined ? { payload: value.payload as { readonly [key: string]: JsonValue } } : {}),
+  };
+  if (event.pullRequestNumber !== undefined && (!Number.isSafeInteger(event.pullRequestNumber) || event.pullRequestNumber < 1)) {
+    throw new AppError(400, 'invalid_request', 'event.pullRequestNumber must be a positive integer.');
+  }
+  if (event.changedFiles !== undefined && (!Array.isArray(event.changedFiles) || event.changedFiles.length > 10000 || !event.changedFiles.every((p) => typeof p === 'string' && p.length <= 1024))) {
+    throw new AppError(400, 'invalid_request', 'event.changedFiles must be an array of bounded paths.');
+  }
+  if (event.payload !== undefined && (!isRecord(event.payload) || !jsonValue(event.payload))) {
+    throw new AppError(400, 'invalid_request', 'event.payload must be bounded JSON.');
+  }
+  return event;
+}
+
+function authenticatedTriggerEvent(value: unknown, idempotencyKey: string | undefined): TriggerEvent {
+  if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
+  exact(value, ['kind', 'branch', 'baseBranch', 'changedFiles', 'commitSha', 'pullRequestNumber', 'payload'], ['kind']);
+  if (value.kind !== 'manual' && value.kind !== 'api') {
+    throw new AppError(400, 'invalid_request', 'Only manual and API trigger kinds are accepted here.');
+  }
+  const eventId = idempotencyKey === undefined ? randomUUID() : id(idempotencyKey, 'Idempotency-Key');
+  const event: TriggerEvent = {
+    kind: value.kind,
+    source: value.kind === 'manual' ? 'forge.manual' : 'forge.api',
+    eventId,
+    ...(value.branch !== undefined ? { branch: id(value.branch, 'event.branch') } : {}),
+    ...(value.baseBranch !== undefined ? { baseBranch: id(value.baseBranch, 'event.baseBranch') } : {}),
     ...(value.commitSha !== undefined ? { commitSha: id(value.commitSha, 'event.commitSha') } : {}),
     ...(value.pullRequestNumber !== undefined ? { pullRequestNumber: value.pullRequestNumber as number } : {}),
     ...(value.changedFiles !== undefined ? { changedFiles: value.changedFiles as string[] } : {}),
@@ -154,7 +185,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
             workspaceId: id(body.workspaceId, 'workspaceId'),
             pipelineId: id(body.pipelineId, 'pipelineId'),
             actorId,
-            event: triggerEvent(body.event),
+            event: authenticatedTriggerEvent(body.event, ctx.header('idempotency-key')),
             createdAt: new Date(clock()).toISOString(),
           });
           return { status: result.queued ? 202 : 200, body: result };

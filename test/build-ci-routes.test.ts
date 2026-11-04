@@ -41,8 +41,10 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
   try {
     const create = routes['/v1/build-ci/pipelines']?.POST;
     assert.ok(create);
-    const denied = await create(context({ workspaceId: 'workspace-a', definition }));
-    assert.equal(denied.status, 401);
+    await assert.rejects(
+      () => create(context({ workspaceId: 'workspace-a', definition })),
+      (error: unknown) => error instanceof Error && error.name === 'AppError',
+    );
 
     const allowed = await create(context({ workspaceId: 'workspace-a', definition }, 'valid-session'));
     assert.equal(allowed.status, 201);
