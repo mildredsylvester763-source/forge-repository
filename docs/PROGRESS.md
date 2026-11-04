@@ -138,8 +138,8 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 | BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance and append-only lifecycle audit implemented | Runtime task-registry compatibility, structured template diff/upgrade flow and any public/global catalogue policy |
 | BD-016 | Trigger model, pause/resume, branch/path matching, durable timezone-aware schedules, verified GitHub/GitLab ingress, leased delivery processing, bounded retry, redacted failure persistence, dead-letter inspection/replay, append-only replay audit, workspace-authorized provider connection create/list/rotate/revoke APIs and immutable lifecycle audit implemented on GPT branch | Concrete vault/KMS adapter and provisioning/retirement workflow, production delivery identity/service-principal policy, event-bus publication, production worker/workspace-inventory wiring, per-pipeline concurrency controls and execution of registered pipeline tasks; continuation changes await CI verification |
 | BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
-| BD-029 | Saved and unsaved candidate dry-run service/API implemented; candidate definitions are validated and planned without persisting versions or runs. A service-level test now asserts no version/run writes, authorization denial and invalid-definition rejection. | Candidate-vs-current structured diff, scenario fixtures and dedicated HTTP route-level side-effect tests |
-| BD-030 | Immutable content-hashed versions, authenticated version reads/listing and append-only rollback implemented | Structured version diff, concurrency/tamper verification hardening and complete audit evidence |
+| BD-029 | Saved and unsaved candidate dry-run service/API; candidate definitions remain unpersisted. Candidate responses now include baseline/candidate hashes and a value-free structural diff. Saved-version diff service and authenticated HTTP endpoint report added/removed/changed triggers and steps, root fields and ordering. Unit, service and route regression coverage added. | Richer scenario fixtures/reporting and full CI verification; owner acceptance remains outstanding |
+| BD-030 | Immutable content-hashed versions, authenticated version reads/listing, append-only rollback and saved-version diff implemented. Both adapters recompute hashes on reads; SQLite/PostgreSQL corruption tests and PostgreSQL concurrent save/rollback allocation tests added. | Full CI verification, independent verification and owner acceptance remain outstanding |
 
 ### Supporting security and integration work
 
@@ -158,8 +158,8 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 1. Complete BD-001 task-registry compatibility, structured definition/template diff and upgrade flow; decide whether a public/global catalogue is in scope.
 2. Supply and integrate a concrete vault/KMS adapter plus provisioning/retirement workflow; decide the production service-principal/delivery-actor strategy; complete event-bus publication, production worker/workspace-inventory configuration, per-pipeline concurrency controls and registered task execution for BD-016. Provider connection lifecycle APIs and dead-letter operations are implemented on the GPT branch but await full CI verification.
 3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
-4. Add candidate diff/scenario reporting to BD-029.
-5. Add version comparison, hash verification and concurrent save/rollback tests to BD-030.
+4. Add richer representative scenario fixtures/reporting to BD-029 and verify candidate diffs remain side-effect-free under the complete CI suite.
+5. Run full CI for the new version-diff, hash-integrity and concurrent PostgreSQL save/rollback coverage; independently inspect the results before acceptance of BD-030.
 6. Integrate registered tasks with the existing Task Runtime/Orchestrator without duplicating those modules.
 7. Add worker isolation, scoped secret delivery, execution state transitions, cancellation/retries, logs and artifacts only where they map to approved catalogue requirements.
 8. Run the full real-PostgreSQL CI suite after every integration batch; inspect logs and security tests rather than treating a green badge as acceptance.
@@ -256,3 +256,16 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - One more CI run exposed a third schedule test with a fixed synthetic clock but a wall-clock-created pipeline. The fixture now pins its pipeline creation timestamp, removing the runner-time dependency.
 - Verified code/test head `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; Actions run `41826209940` passed typecheck, production build and 195 tests against real PostgreSQL (0 failures, 0 skipped).
 - Vault-side provisioning/retirement is not performed by the compare-and-swap method. A concrete vault adapter and an authorized connection-management lifecycle remain outstanding.
+
+### 2026-11-05 continuation — version comparison and integrity evidence (GPT branch, CI pending)
+
+- Added a value-free pipeline definition diff. It reports root metadata fields, added/removed/changed triggers and steps, changed field names and relative ordering changes without returning old/new parameter values or secret references.
+- Added authenticated `GET /v1/build-ci/pipelines/versions/diff` with read authorization and version existence checks.
+- Unsaved candidate dry-run now returns baseline version/hash (when one exists), candidate hash and the structural diff. It performs no save or run write.
+- Added pure diff edge-case tests, service-level saved/candidate comparison and authorization tests, and HTTP route tests for saved diff, candidate baseline comparison and invalid/unauthenticated requests.
+- Added SQLite tamper regression coverage: after deliberately removing the test database's immutable trigger and changing stored definition JSON without updating its hash, `getVersion`, `getLatestVersion` and `listVersions` reject the row.
+- Added real-PostgreSQL tamper regression coverage for `getVersion` and `getLatestVersion`, plus concurrent version allocation and concurrent rollback allocation tests. The PostgreSQL tests intentionally manipulate/disable the immutability trigger only inside the isolated test database to simulate out-of-band tampering.
+- Removed a duplicated trailing fragment from `src/modules/build-ci/routes.ts` discovered during review; the file now contains one `buildCiRoutes` definition and one copy of each helper. This was a source corruption from an earlier route edit and must be confirmed by typecheck/build.
+- **Verification: NOT YET VERIFIED.** The latest historical green Actions run remains `41826209940` on commit `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; it predates all 2026-11-05 continuation commits. The GitHub connector did not expose push-run details or commit statuses, so no current test/build result is claimed.
+- The current branch continues to be isolated; no merge, deploy, or modification of `main`, `mistral` or `claude` was performed.
+
