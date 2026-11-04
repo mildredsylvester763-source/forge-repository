@@ -72,10 +72,11 @@ export class ProviderConnectionOperations {
     }
   }
 
-  private async requireSecretReference(secretRef: string): Promise<void> {
-    if (typeof secretRef !== 'string' || !new RegExp('^(secret|vault|kms):[/][/][A-Za-z0-9._:/-]{1,500}) {
-      throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
-    }
+  private async requireSecretReference(secretRef: string, workspaceId: string): Promise<void> {
+    if (typeof secretRef !== 'string' || secretRef.length > 512) throw new TypeError('secretRef is invalid');
+    const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9._/-]{1,400}$').exec(secretRef);
+    if (!match) throw new TypeError('secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+    if (match[2] !== workspaceId) throw new TypeError('secretRef belongs to a different workspace');
     let secret: string | null;
     try { secret = await this.secrets.resolve(secretRef); } catch { secret = null; }
     if (typeof secret !== 'string' || secret.length === 0) throw new ProviderSecretReferenceUnavailableError();
@@ -99,7 +100,7 @@ export class ProviderConnectionOperations {
     }
     if (typeof input.repository !== 'string' || !input.repository.trim() || input.repository.length > 256 ||
         /[\r\n\0]/.test(input.repository)) throw new TypeError('repository is invalid');
-    await this.requireSecretReference(input.secretRef);
+    await this.requireSecretReference(input.secretRef, input.workspaceId);
     const record = await this.connections.create({
       connectionId: input.connectionId,
       provider: input.provider,
@@ -121,7 +122,7 @@ export class ProviderConnectionOperations {
     validateProvider(input.provider);
     const current = await this.connections.find(input.provider, input.connectionId);
     if (!current || current.workspaceId !== input.workspaceId || !current.active) throw new ProviderConnectionNotFoundError();
-    await this.requireSecretReference(input.nextSecretRef);
+    await this.requireSecretReference(input.nextSecretRef, input.workspaceId);
     const updatedAt = new Date(this.now()).toISOString();
     const changed = await this.connections.rotateSecretReference(
       input.provider, input.connectionId, current.secretRef, input.nextSecretRef, updatedAt, input.actorId,
