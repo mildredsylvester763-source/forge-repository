@@ -43,13 +43,13 @@ test('provider connection operations are workspace-authorized, secret-safe and a
 
     await assert.rejects(
       () => operations.create({
-        workspaceId: 'workspace-a', actorId: 'member-a', connectionId: 'forbidden',
+        workspaceId: 'workspace-a', actorId: 'member-a', deliveryActorId: 'member-a', connectionId: 'forbidden',
         provider: 'github', repository: 'team/repo', secretRef: 'vault://forge/a/github/first',
       }),
       (error: unknown) => error instanceof Error && error.name === 'PipelineAuthorizationError',
     );
     const created = await operations.create({
-      workspaceId: 'workspace-a', actorId: 'owner-a', connectionId: 'github-app-1',
+      workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a', connectionId: 'github-app-1',
       provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/a/github/first',
     });
     assert.equal(created.active, true);
