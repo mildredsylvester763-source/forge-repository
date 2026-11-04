@@ -48,7 +48,8 @@ function fromRow(row: ConnectionRow): ProviderConnectionRecord {
 const COLUMNS = 'connection_id, provider, workspace_id, actor_id, repository, secret_ref, status, created_at, updated_at, revoked_at';
 
 export class SqliteProviderConnectionStore implements ProviderConnectionStore {
-  constructor(private readonly db: Database) {}
+  private readonly db: Database;
+  constructor(db: Database) { this.db = db; }
   async create(input: CreateProviderConnectionInput): Promise<ProviderConnectionRecord> {
     validateCreate(input); const now = input.createdAt ?? new Date().toISOString();
     const row = transaction(this.db, () => {
@@ -75,7 +76,8 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
   }
 }
 export class PostgresProviderConnectionStore implements ProviderConnectionStore {
-  constructor(private readonly pool: SqlPool) {}
+  private readonly pool: SqlPool;
+  constructor(pool: SqlPool) { this.pool = pool; }
   async create(input: CreateProviderConnectionInput): Promise<ProviderConnectionRecord> {
     validateCreate(input); const now = input.createdAt ?? new Date().toISOString();
     const result = await this.pool.query<ConnectionRow>(`INSERT INTO build_ci_provider_connections
@@ -100,7 +102,12 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
 
 /** Build & CI stores metadata; a separately managed vault supplies signing material. */
 export class StoredWebhookConnectionResolver implements WebhookConnectionResolver {
-  constructor(private readonly connections: ProviderConnectionStore, private readonly secrets: ProviderSecretResolver) {}
+  private readonly connections: ProviderConnectionStore;
+  private readonly secrets: ProviderSecretResolver;
+  constructor(connections: ProviderConnectionStore, secrets: ProviderSecretResolver) {
+    this.connections = connections;
+    this.secrets = secrets;
+  }
   async resolveForIngress(provider: WebhookProvider, connectionId: string): Promise<WebhookIngressConnection | null> {
     const record = await this.connections.find(provider, connectionId);
     if (!record || !record.active) return null;
