@@ -149,3 +149,17 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - A third fixed-clock scheduler test also depended on wall-clock pipeline creation time. The fixture was pinned to a deterministic timestamp; no scheduler runtime behavior was changed.
 - Verified code/test commit `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; Actions run `41826209940` passed typecheck, production build and all 195 tests against real PostgreSQL (0 failures, 0 skipped).
 - Metadata rotation does not provision or delete vault secrets. The external management workflow must provision the new secret before swapping references and retire the old one afterward. Concrete vault/KMS integration and authorized management routes remain unimplemented.
+
+
+## Continuation checkpoint — provider lookup race regression coverage
+
+- Latest code commit: `216b88ca610aec688038ebdbf5b787a2c50cb416` (`test(build-ci): cover provider secret lookup races`).
+- Added a SQLite regression test that mutates provider connection state from inside the injected vault resolver, exercising the precise asynchronous race window:
+  - If the connection is revoked while secret resolution is in progress, ingress returns `null`.
+  - If the opaque secret reference is rotated while the old secret is being resolved, ingress returns `null` and does not accept the stale secret.
+- Previous verified baseline remains commit `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`, Actions run `41826209940`: typecheck, production build and 195 PostgreSQL-backed tests passed. That run predates the new regression test and does not verify commit `216b88c`.
+- The GitHub connector did not expose a push-triggered run for `216b88c` in this inspection; do not mark the new test or commit CI-verified until its Actions result is inspected.
+- Immediate next work: obtain CI evidence for `216b88c`; inspect any failure and correct it; add equivalent real-PostgreSQL race coverage if practical; then update this checkpoint with the verified run and current test count.
+- After verification, inspect the existing workspace membership and authorization contract before designing provider-connection management routes. Membership writes belong to the workspace-management domain; do not invent an owner/admin policy or expose connection create/rotate/revoke endpoints until the existing identity and audit contract is mapped.
+- External dependency remains: a concrete vault/KMS implementation and its provisioning/retirement workflow. Build & CI stores opaque references only; it must not persist provider signing secrets.
+- Branch rules remain unchanged: GPT work only on `gpt-part2-build-ci`; `main`, `mistral`, and `claude` remain untouched. No merge or deployment.
