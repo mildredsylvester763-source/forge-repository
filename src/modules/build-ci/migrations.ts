@@ -134,6 +134,32 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
     `,
   },
 
+
+  {
+    version: 4,
+    name: 'durable_provider_webhook_delivery_queue',
+    sql: `
+      CREATE TABLE build_ci_webhook_deliveries (
+        delivery_row_id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        workspace_id TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        delivery_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_json TEXT NOT NULL,
+        body_sha256 TEXT NOT NULL CHECK (length(body_sha256) = 64),
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'processed', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        received_at TEXT NOT NULL,
+        last_error TEXT,
+        UNIQUE (connection_id, delivery_id)
+      ) STRICT;
+      CREATE INDEX build_ci_webhook_delivery_queue_idx ON build_ci_webhook_deliveries (status, received_at);
+      CREATE INDEX build_ci_webhook_delivery_workspace_idx ON build_ci_webhook_deliveries (workspace_id, received_at);
+    `,
+  },
+
 ]; 
 
 export const buildCiPostgresMigrations: readonly Migration[] = [
@@ -280,6 +306,32 @@ export const buildCiPostgresMigrations: readonly Migration[] = [
         FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_events_block_change();
       CREATE TRIGGER build_pipeline_template_events_block_truncate BEFORE TRUNCATE ON build_pipeline_template_events
         FOR EACH STATEMENT EXECUTE FUNCTION build_pipeline_template_events_block_change();
+    `,
+  },
+
+
+  {
+    version: 4,
+    name: 'durable_provider_webhook_delivery_queue',
+    sql: `
+      CREATE TABLE build_ci_webhook_deliveries (
+        delivery_row_id TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        workspace_id TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        delivery_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_json TEXT NOT NULL,
+        body_sha256 TEXT NOT NULL CHECK (length(body_sha256) = 64),
+        status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'processed', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        received_at TEXT NOT NULL,
+        last_error TEXT,
+        UNIQUE (connection_id, delivery_id)
+      );
+      CREATE INDEX build_ci_webhook_delivery_queue_idx ON build_ci_webhook_deliveries (status, received_at);
+      CREATE INDEX build_ci_webhook_delivery_workspace_idx ON build_ci_webhook_deliveries (workspace_id, received_at);
     `,
   },
 
