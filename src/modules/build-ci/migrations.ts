@@ -254,6 +254,31 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         BEGIN SELECT RAISE(ABORT, 'webhook delivery events are append-only'); END;
     `,
   },
+
+  {
+    version: 9,
+    name: 'audited_provider_connection_lifecycle',
+    sql: `
+      CREATE TABLE build_ci_provider_connection_events (
+        event_id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        connection_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'secret_reference_rotated', 'revoked')),
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY (provider, connection_id)
+          REFERENCES build_ci_provider_connections (provider, connection_id)
+      ) STRICT;
+      CREATE INDEX build_ci_provider_connection_events_scope_idx
+        ON build_ci_provider_connection_events (workspace_id, provider, connection_id, occurred_at);
+      CREATE TRIGGER build_ci_provider_connection_events_block_update BEFORE UPDATE ON build_ci_provider_connection_events
+        BEGIN SELECT RAISE(ABORT, 'provider connection events are append-only'); END;
+      CREATE TRIGGER build_ci_provider_connection_events_block_delete BEFORE DELETE ON build_ci_provider_connection_events
+        BEGIN SELECT RAISE(ABORT, 'provider connection events are append-only'); END;
+    `,
+  },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
   {
     version: 1,
@@ -524,6 +549,36 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         FOR EACH ROW EXECUTE FUNCTION build_ci_webhook_delivery_events_block_change();
       CREATE TRIGGER build_ci_webhook_delivery_events_block_truncate BEFORE TRUNCATE ON build_ci_webhook_delivery_events
         FOR EACH STATEMENT EXECUTE FUNCTION build_ci_webhook_delivery_events_block_change();
+    `,
+  },
+
+  {
+    version: 9,
+    name: 'audited_provider_connection_lifecycle',
+    sql: `
+      CREATE TABLE build_ci_provider_connection_events (
+        event_id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        connection_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('created', 'secret_reference_rotated', 'revoked')),
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY (provider, connection_id)
+          REFERENCES build_ci_provider_connections (provider, connection_id)
+      );
+      CREATE INDEX build_ci_provider_connection_events_scope_idx
+        ON build_ci_provider_connection_events (workspace_id, provider, connection_id, occurred_at);
+      CREATE FUNCTION build_ci_provider_connection_events_block_change() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'provider connection events are append-only'; END;
+      $$;
+      CREATE TRIGGER build_ci_provider_connection_events_block_update BEFORE UPDATE ON build_ci_provider_connection_events
+        FOR EACH ROW EXECUTE FUNCTION build_ci_provider_connection_events_block_change();
+      CREATE TRIGGER build_ci_provider_connection_events_block_delete BEFORE DELETE ON build_ci_provider_connection_events
+        FOR EACH ROW EXECUTE FUNCTION build_ci_provider_connection_events_block_change();
+      CREATE TRIGGER build_ci_provider_connection_events_block_truncate BEFORE TRUNCATE ON build_ci_provider_connection_events
+        FOR EACH STATEMENT EXECUTE FUNCTION build_ci_provider_connection_events_block_change();
     `,
   },
 ]; 
