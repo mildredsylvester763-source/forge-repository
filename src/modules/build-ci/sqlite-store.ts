@@ -180,6 +180,14 @@ export class SqliteBuildCiStore implements PipelineStore {
     return row ? versionFromRow(row) : null;
   }
 
+  async listLatestVersions(workspaceId: string): Promise<readonly PipelineVersion[]> {
+    if (!workspaceId.trim() || workspaceId.length > 128) throw new TypeError('workspaceId is required');
+    const rows = this.db.prepare(`SELECT v.* FROM build_pipelines p
+      JOIN build_pipeline_versions v ON v.workspace_id = p.workspace_id AND v.pipeline_id = p.pipeline_id AND v.version = p.current_version
+      WHERE p.workspace_id = ? ORDER BY p.pipeline_id`).all(workspaceId) as unknown as VersionRow[];
+    return Object.freeze(rows.map(versionFromRow));
+  }
+
   async listVersions(workspaceId: string, pipelineId: string): Promise<readonly PipelineVersion[]> {
     ensureScope(workspaceId, pipelineId);
     const rows = this.db.prepare(`SELECT * FROM build_pipeline_versions
