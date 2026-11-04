@@ -318,3 +318,45 @@ test('service authorizes creation, rollback and dry-run independently of trigger
   );
   db.close();
 });
+
+test('candidate dry-run validates and plans an unsaved definition without persisting versions or runs', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  migrateBuildCiSqlite(db);
+  const service = new BuildCiService({
+    store: new SqliteBuildCiStore(db),
+    templates: new SqlitePipelineTemplateStore(db),
+    authorize: async ({ actorId, action }) => actorId === 'owner' && action === 'dry_run',
+  });
+  const candidate = definition({ id: 'unsaved-candidate', name: 'Unsaved candidate' });
+  const count = (table: string) => Number((db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
+  const versionsBefore = count('build_pipeline_versions');
+  const runsBefore = count('build_pipeline_runs');
+
+  try {
+    const plan = await service.dryRunDefinition({
+      workspaceId: 'ws-a',
+      definition: candidate,
+      actorId: 'owner',
+      event: pushEvent,
+    });
+    assert.equal(plan.pipelineId, 'unsaved-candidate');
+    assert.equal(plan.dryRun, true);
+    assert.equal(plan.sideEffects, false);
+    assert.equal(plan.triggered, true);
+    assert.equal(count('build_pipeline_versions'), versionsBefore);
+    assert.equal(count('build_pipeline_runs'), runsBefore);
+    await assert.rejects(
+      () => service.dryRunDefinition({ workspaceId: 'ws-a', definition: candidate, actorId: 'attacker' }),
+      PipelineAuthorizationError,
+    );
+    await assert.rejects(
+      () => service.dryRunDefinition({ workspaceId: 'ws-a', definition: { ...candidate, shell: 'unsafe' }, actorId: 'owner' }),
+      PipelineDefinitionError,
+    );
+    assert.equal(count('build_pipeline_versions'), versionsBefore);
+    assert.equal(count('build_pipeline_runs'), runsBefore);
+  } finally {
+    db.close();
+  }
+});
