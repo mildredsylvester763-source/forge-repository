@@ -154,6 +154,9 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
           if ((beforeReceivedAt === undefined) !== (beforeDeliveryRowId === undefined)) {
             throw new AppError(400, 'invalid_request', 'Both pagination cursor fields are required together.');
           }
+          if (beforeReceivedAt !== undefined && !Number.isFinite(Date.parse(beforeReceivedAt))) {
+            throw new AppError(400, 'invalid_request', 'beforeReceivedAt must be a valid timestamp.');
+          }
           try {
             const page = await webhookOperations.listDeadLetters({
               workspaceId, actorId, limit,
