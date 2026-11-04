@@ -8,6 +8,8 @@ export type TriggerKind = 'push' | 'pull_request' | 'schedule' | 'event' | 'manu
 export interface PipelineTrigger {
   readonly id: string;
   readonly kind: TriggerKind;
+  /** Disable a trigger without deleting its immutable definition; omitted means enabled. */
+  readonly enabled?: boolean;
   /** Exact FORGE event type required when kind is 'event'. */
   readonly eventType?: string;
   readonly branches?: readonly string[];
@@ -360,13 +362,14 @@ export function validatePipelineDefinition(input: unknown): PipelineDefinition {
     input.triggers.forEach((raw, index) => {
       const path = `triggers[${index}]`;
       if (!isRecord(raw)) { issues.push(`${path}: expected an object`); return; }
-      exactKeys(raw, ['id', 'kind', 'eventType', 'branches', 'paths', 'scheduleId', 'cron', 'timeZone'], ['id', 'kind'], path, issues);
+      exactKeys(raw, ['id', 'kind', 'enabled', 'eventType', 'branches', 'paths', 'scheduleId', 'cron', 'timeZone'], ['id', 'kind'], path, issues);
       const triggerId = text(raw.id, `${path}.id`, issues, 64);
       if (triggerId && !ID.test(triggerId)) issues.push(`${path}.id: invalid identifier`);
       if (triggerId && seenTriggerIds.has(triggerId)) issues.push(`${path}.id: duplicate trigger identifier`);
       if (triggerId) seenTriggerIds.add(triggerId);
       if (typeof raw.kind !== 'string' || !TRIGGER_KINDS.has(raw.kind as TriggerKind)) issues.push(`${path}.kind: unsupported trigger kind`);
       const kind = raw.kind as TriggerKind;
+      if (raw.enabled !== undefined && typeof raw.enabled !== 'boolean') issues.push(`${path}.enabled: expected a boolean`);
       const eventType = kind === 'event' ? text(raw.eventType, `${path}.eventType`, issues, 128) : undefined;
       if (kind === 'event' && eventType && !/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test(eventType)) issues.push(`${path}.eventType: expected a dotted FORGE event type`);
       if (kind !== 'event' && raw.eventType !== undefined) issues.push(`${path}.eventType: only valid for event triggers`);
@@ -389,7 +392,7 @@ export function validatePipelineDefinition(input: unknown): PipelineDefinition {
       }
       if (triggerId && TRIGGER_KINDS.has(kind) && (kind !== 'schedule' || (scheduleId && cron))) {
         triggers.push({
-          id: triggerId, kind,
+          id: triggerId, kind, enabled: raw.enabled !== false,
           ...(branches ? { branches } : {}), ...(paths ? { paths } : {}),
           ...(eventType ? { eventType } : {}), ...(scheduleId ? { scheduleId } : {}), ...(cron ? { cron } : {}), ...(timeZone ? { timeZone } : {}),
         });
@@ -587,6 +590,7 @@ export interface TriggerEvaluation {
 
 export function evaluateTrigger(trigger: PipelineTrigger, event: TriggerEvent): TriggerEvaluation {
   const reasons: string[] = [];
+  if (trigger.enabled === false) return { triggerId: trigger.id, matched: false, degraded: false, reasons: ['trigger_disabled'] };
   if (trigger.kind !== event.kind) return { triggerId: trigger.id, matched: false, degraded: false, reasons: ['event_kind_mismatch'] };
   if (trigger.kind === 'schedule' && trigger.scheduleId !== event.scheduleId) {
     return { triggerId: trigger.id, matched: false, degraded: false, reasons: ['schedule_id_mismatch'] };
