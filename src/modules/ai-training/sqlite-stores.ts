@@ -4,27 +4,55 @@ import type {
   AgentEventRecord,
   AiTrainingStore,
   BlindBallotRecord,
+  ByokKeyRecord,
+  CapabilityMatrixRecord,
   DatasetSnapshotRecord,
   EvalSuiteRecord,
   ExperimentRecord,
   ExperimentSubjectRecord,
+  GatewayLogRecord,
+  GatewayProviderRecord,
+  GatewayUsageRecord,
+  InstanceReservationRecord,
   MiningBatchRecord,
+  ModelCardRecord,
+  ModelOpsRecord,
+  ModelPinRecord,
+  ModelPromotionRecord,
+  ModelVersionRecord,
   NewAgentEvent,
   NewBlindBallot,
+  NewByokKey,
+  NewCapabilityMatrix,
   NewDatasetSnapshot,
   NewEvalSuite,
   NewExperiment,
   NewExperimentSubject,
+  NewGatewayLog,
+  NewGatewayProvider,
+  NewGatewayUsage,
+  NewInstanceReservation,
   NewMiningBatch,
+  NewModelCard,
+  NewModelOpsRecord,
+  NewModelPin,
+  NewModelPromotion,
+  NewModelVersion,
+  NewOnPremPackage,
+  NewOutputSchema,
   NewPanelVote,
   NewSafetyBattery,
   NewSafetyGrade,
+  NewServingPlan,
   NewTrainingAsset,
   NewTrainingRun,
   NewTrendSample,
+  OnPremPackageRecord,
+  OutputSchemaRecord,
   PanelVoteRecord,
   SafetyBatteryRecord,
   SafetyGradeRecord,
+  ServingPlanRecord,
   TrainingAssetRecord,
   TrainingRunRecord,
   TrendSampleRecord,
@@ -175,6 +203,162 @@ interface MiningRow {
   created_at: number;
 }
 
+interface ModelVersionRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: number;
+  stage: string;
+  owners: string;
+  lineage: string;
+  weights_fingerprint: string;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface ModelCardRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: number;
+  card: string;
+  card_fingerprint: string;
+  created_at: number;
+}
+
+interface ModelPromotionRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: number;
+  from_stage: string;
+  to_stage: string;
+  promotion_fingerprint: string;
+  created_at: number;
+}
+
+interface ServingPlanRow {
+  id: string;
+  user_id: string;
+  model_id: string | null;
+  kind: string;
+  plan: string;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface ModelOpsRow {
+  id: string;
+  user_id: string;
+  kind: string;
+  model_id: string | null;
+  record: string;
+  created_at: number;
+}
+
+interface ModelPinRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: number;
+  model_tier: string;
+  switched_from: number | null;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface ReservationRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  slots: number;
+  pool_total: number;
+  free_after: number;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface OnPremRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: number;
+  format: string;
+  weights_fingerprint: string;
+  quantized: number;
+  license_terms: string;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface ProviderRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  cost_per_1k_in: number;
+  cost_per_1k_out: number;
+  max_tokens: number;
+  retention_days: number;
+  active: number;
+  consecutive_failures: number;
+  created_at: number;
+}
+
+interface ByokRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  key_fingerprint: string;
+  key_length: number;
+  created_at: number;
+}
+
+interface GatewayUsageRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  tokens_in: number;
+  tokens_out: number;
+  latency_ms: number;
+  ok: number;
+  created_at: number;
+}
+
+interface GatewayLogRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  model_id: string;
+  prompt: string;
+  response: string;
+  redaction_count: number;
+  findings: string;
+  content_omitted: number;
+  logged_at: number;
+}
+
+interface CapabilityRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  capabilities: string;
+  max_context_tokens: number;
+  cost_per_1k_in: number;
+  cost_per_1k_out: number;
+  active: number;
+  fingerprint: string;
+  created_at: number;
+}
+
+interface OutputSchemaRow {
+  id: string;
+  user_id: string;
+  schema_id: string;
+  fields: string;
+  fingerprint: string;
+  created_at: number;
+}
+
 const toAssetRecord = (r: AssetRow): TrainingAssetRecord => ({
   id: r.id,
   userId: r.user_id,
@@ -315,6 +499,162 @@ const toMiningRecord = (r: MiningRow): MiningBatchRecord => ({
   count: r.count,
   duplicatesDropped: r.duplicates_dropped,
   createdAt: r.created_at,
+
+const toModelVersionRecord = (r: ModelVersionRow): ModelVersionRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: r.version,
+  stage: r.stage,
+  owners: JSON.parse(r.owners) as string[],
+  lineage: JSON.parse(r.lineage) as unknown,
+  weightsFingerprint: r.weights_fingerprint,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toModelCardRecord = (r: ModelCardRow): ModelCardRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: r.version,
+  card: JSON.parse(r.card) as unknown,
+  cardFingerprint: r.card_fingerprint,
+  createdAt: r.created_at,
+});
+
+const toModelPromotionRecord = (r: ModelPromotionRow): ModelPromotionRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: r.version,
+  fromStage: r.from_stage,
+  toStage: r.to_stage,
+  promotionFingerprint: r.promotion_fingerprint,
+  createdAt: r.created_at,
+});
+
+const toServingPlanRecord = (r: ServingPlanRow): ServingPlanRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  kind: r.kind,
+  plan: JSON.parse(r.plan) as unknown,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toModelOpsRecord = (r: ModelOpsRow): ModelOpsRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  kind: r.kind,
+  modelId: r.model_id,
+  record: JSON.parse(r.record) as unknown,
+  createdAt: r.created_at,
+});
+
+const toModelPinRecord = (r: ModelPinRow): ModelPinRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: r.version,
+  modelTier: r.model_tier,
+  switchedFrom: r.switched_from,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toReservationRecord = (r: ReservationRow): InstanceReservationRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  slots: r.slots,
+  poolTotal: r.pool_total,
+  freeAfter: r.free_after,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toOnPremRecord = (r: OnPremRow): OnPremPackageRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: r.version,
+  format: r.format,
+  weightsFingerprint: r.weights_fingerprint,
+  quantized: intToBool(r.quantized),
+  licenseTerms: r.license_terms,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toProviderRecord = (r: ProviderRow): GatewayProviderRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  costPer1kIn: r.cost_per_1k_in,
+  costPer1kOut: r.cost_per_1k_out,
+  maxTokens: r.max_tokens,
+  retentionDays: r.retention_days,
+  active: intToBool(r.active),
+  consecutiveFailures: r.consecutive_failures,
+  createdAt: r.created_at,
+});
+
+const toByokRecord = (r: ByokRow): ByokKeyRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  keyFingerprint: r.key_fingerprint,
+  keyLength: r.key_length,
+  createdAt: r.created_at,
+});
+
+const toGatewayUsageRecord = (r: GatewayUsageRow): GatewayUsageRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  tokensIn: r.tokens_in,
+  tokensOut: r.tokens_out,
+  latencyMs: r.latency_ms,
+  ok: intToBool(r.ok),
+  createdAt: r.created_at,
+});
+
+const toGatewayLogRecord = (r: GatewayLogRow): GatewayLogRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  modelId: r.model_id,
+  prompt: r.prompt,
+  response: r.response,
+  redactionCount: r.redaction_count,
+  findings: JSON.parse(r.findings) as unknown,
+  contentOmitted: intToBool(r.content_omitted),
+  loggedAt: r.logged_at,
+});
+
+const toCapabilityRecord = (r: CapabilityRow): CapabilityMatrixRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  capabilities: JSON.parse(r.capabilities) as string[],
+  maxContextTokens: r.max_context_tokens,
+  costPer1kIn: r.cost_per_1k_in,
+  costPer1kOut: r.cost_per_1k_out,
+  active: intToBool(r.active),
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
+
+const toOutputSchemaRecord = (r: OutputSchemaRow): OutputSchemaRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  schemaId: r.schema_id,
+  fields: JSON.parse(r.fields) as unknown,
+  fingerprint: r.fingerprint,
+  createdAt: r.created_at,
+});
 });
 
 export class SqliteAiTrainingStore implements AiTrainingStore {
@@ -355,6 +695,47 @@ export class SqliteAiTrainingStore implements AiTrainingStore {
   private readonly trendByMetric;
   private readonly insertMining;
   private readonly findMiningStmt;
+  private readonly insertModelVersion;
+  private readonly modelVersionsByModel;
+  private readonly findModelVersionStmt;
+  private readonly updateModelVersionStage;
+  private readonly insertModelCard;
+  private readonly findModelCardStmt;
+  private readonly insertModelPromotion;
+  private readonly promotionsByModel;
+  private readonly insertServingPlan;
+  private readonly servingPlansByUser;
+  private readonly insertModelOpsRecord;
+  private readonly opsRecordsByKind;
+  private readonly insertModelPin;
+  private readonly findModelPinStmt;
+  private readonly updateModelPin;
+  private readonly deleteModelPinStmt;
+  private readonly insertReservation;
+  private readonly findReservationStmt;
+  private readonly updateReservation;
+  private readonly deleteReservationStmt;
+  private readonly insertOnPremPackage;
+  private readonly findOnPremByFingerprint;
+  private readonly insertProvider;
+  private readonly findProviderStmt;
+  private readonly providersByUser;
+  private readonly updateProvider;
+  private readonly updateProviderHealth;
+  private readonly insertByokKey;
+  private readonly findByokStmt;
+  private readonly updateByokKey;
+  private readonly insertGatewayUsage;
+  private readonly usageByProvider;
+  private readonly insertGatewayLog;
+  private readonly logsByProvider;
+  private readonly insertCapability;
+  private readonly capabilitiesByUser;
+  private readonly updateCapability;
+  private readonly insertOutputSchema;
+  private readonly findOutputSchemaStmt;
+  private readonly outputSchemasByUser;
+  private readonly updateOutputSchema;
 
   constructor(db: Database) {
     this.db = db;
@@ -394,6 +775,47 @@ export class SqliteAiTrainingStore implements AiTrainingStore {
     this.trendByMetric = db.prepare('SELECT * FROM eval_trend_samples WHERE user_id = ? AND metric_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
     this.insertMining = db.prepare('INSERT INTO mining_batches (id, user_id, batch_id, cases, count, duplicates_dropped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.findMiningStmt = db.prepare('SELECT * FROM mining_batches WHERE user_id = ? AND batch_id = ?');
+    this.insertModelVersion = db.prepare('INSERT INTO model_versions (id, user_id, model_id, version, stage, owners, lineage, weights_fingerprint, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.modelVersionsByModel = db.prepare('SELECT * FROM model_versions WHERE user_id = ? AND model_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.findModelVersionStmt = db.prepare('SELECT * FROM model_versions WHERE user_id = ? AND model_id = ? AND version = ?');
+    this.updateModelVersionStage = db.prepare('UPDATE model_versions SET stage = ? WHERE id = ?');
+    this.insertModelCard = db.prepare('INSERT INTO model_cards (id, user_id, model_id, version, card, card_fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    this.findModelCardStmt = db.prepare('SELECT * FROM model_cards WHERE user_id = ? AND model_id = ? AND version = ?');
+    this.insertModelPromotion = db.prepare('INSERT INTO model_promotions (id, user_id, model_id, version, from_stage, to_stage, promotion_fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    this.promotionsByModel = db.prepare('SELECT * FROM model_promotions WHERE user_id = ? AND model_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.insertServingPlan = db.prepare('INSERT INTO serving_plans (id, user_id, model_id, kind, plan, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    this.servingPlansByUser = db.prepare('SELECT * FROM serving_plans WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.insertModelOpsRecord = db.prepare('INSERT INTO model_ops_records (id, user_id, kind, model_id, record, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    this.opsRecordsByKind = db.prepare('SELECT * FROM model_ops_records WHERE user_id = ? AND kind = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.insertModelPin = db.prepare('INSERT INTO model_pins (id, user_id, model_id, version, model_tier, switched_from, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    this.findModelPinStmt = db.prepare('SELECT * FROM model_pins WHERE user_id = ? AND model_id = ?');
+    this.updateModelPin = db.prepare('UPDATE model_pins SET version = ?, model_tier = ?, switched_from = ?, fingerprint = ?, created_at = ? WHERE id = ?');
+    this.deleteModelPinStmt = db.prepare('DELETE FROM model_pins WHERE user_id = ? AND model_id = ?');
+    this.insertReservation = db.prepare('INSERT INTO instance_reservations (id, user_id, model_id, slots, pool_total, free_after, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    this.findReservationStmt = db.prepare('SELECT * FROM instance_reservations WHERE user_id = ? AND model_id = ?');
+    this.updateReservation = db.prepare('UPDATE instance_reservations SET slots = ?, pool_total = ?, free_after = ?, fingerprint = ?, created_at = ? WHERE id = ?');
+    this.deleteReservationStmt = db.prepare('DELETE FROM instance_reservations WHERE user_id = ? AND model_id = ?');
+    this.insertOnPremPackage = db.prepare('INSERT INTO onprem_packages (id, user_id, model_id, version, format, weights_fingerprint, quantized, license_terms, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.findOnPremByFingerprint = db.prepare('SELECT * FROM onprem_packages WHERE user_id = ? AND fingerprint = ?');
+    this.insertProvider = db.prepare('INSERT INTO gateway_providers (id, user_id, provider_id, cost_per_1k_in, cost_per_1k_out, max_tokens, retention_days, active, consecutive_failures, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.findProviderStmt = db.prepare('SELECT * FROM gateway_providers WHERE user_id = ? AND provider_id = ?');
+    this.providersByUser = db.prepare('SELECT * FROM gateway_providers WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.updateProvider = db.prepare('UPDATE gateway_providers SET cost_per_1k_in = ?, cost_per_1k_out = ?, max_tokens = ?, retention_days = ?, active = ?, created_at = ? WHERE id = ?');
+    this.updateProviderHealth = db.prepare('UPDATE gateway_providers SET consecutive_failures = ? WHERE user_id = ? AND provider_id = ?');
+    this.insertByokKey = db.prepare('INSERT INTO byok_keys (id, user_id, provider_id, key_fingerprint, key_length, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    this.findByokStmt = db.prepare('SELECT * FROM byok_keys WHERE user_id = ? AND provider_id = ?');
+    this.updateByokKey = db.prepare('UPDATE byok_keys SET key_fingerprint = ?, key_length = ?, created_at = ? WHERE id = ?');
+    this.insertGatewayUsage = db.prepare('INSERT INTO gateway_usage (id, user_id, provider_id, tokens_in, tokens_out, latency_ms, ok, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    this.usageByProvider = db.prepare('SELECT * FROM gateway_usage WHERE user_id = ? AND provider_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.insertGatewayLog = db.prepare('INSERT INTO gateway_logs (id, user_id, provider_id, model_id, prompt, response, redaction_count, findings, content_omitted, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.logsByProvider = db.prepare('SELECT * FROM gateway_logs WHERE user_id = ? AND provider_id = ? ORDER BY logged_at DESC, id DESC LIMIT ?');
+    this.insertCapability = db.prepare('INSERT INTO capability_matrices (id, user_id, model_id, capabilities, max_context_tokens, cost_per_1k_in, cost_per_1k_out, active, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.capabilitiesByUser = db.prepare('SELECT * FROM capability_matrices WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.updateCapability = db.prepare('UPDATE capability_matrices SET model_id = ?, capabilities = ?, max_context_tokens = ?, cost_per_1k_in = ?, cost_per_1k_out = ?, active = ?, created_at = ? WHERE id = ?');
+    this.insertOutputSchema = db.prepare('INSERT INTO output_schemas (id, user_id, schema_id, fields, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    this.findOutputSchemaStmt = db.prepare('SELECT * FROM output_schemas WHERE user_id = ? AND schema_id = ? ORDER BY created_at DESC, id DESC LIMIT 1');
+    this.outputSchemasByUser = db.prepare('SELECT * FROM output_schemas WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
+    this.updateOutputSchema = db.prepare('UPDATE output_schemas SET schema_id = ?, fields = ?, fingerprint = ?, created_at = ? WHERE id = ?');
   }
 
   async createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord> {
@@ -628,5 +1050,262 @@ export class SqliteAiTrainingStore implements AiTrainingStore {
   async findMiningBatch(userId: string, batchId: string): Promise<MiningBatchRecord | null> {
     const row = this.findMiningStmt.get(userId, batchId) as unknown as MiningRow | undefined;
     return row ? toMiningRecord(row) : null;
+  }
+
+  async createModelVersion(version: NewModelVersion): Promise<ModelVersionRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertModelVersion.run(id, version.userId, version.modelId, version.version, version.stage, JSON.stringify(version.owners), JSON.stringify(version.lineage), version.weightsFingerprint, version.fingerprint, version.now);
+      return { id, userId: version.userId, modelId: version.modelId, version: version.version, stage: version.stage, owners: [...version.owners], lineage: version.lineage, weightsFingerprint: version.weightsFingerprint, fingerprint: version.fingerprint, createdAt: version.now };
+    });
+  }
+
+  async listModelVersions(userId: string, modelId: string, take: number): Promise<ModelVersionRecord[]> {
+    const rows = this.modelVersionsByModel.all(userId, modelId, take) as unknown as ModelVersionRow[];
+    return rows.map(toModelVersionRecord);
+  }
+
+  async findModelVersion(userId: string, modelId: string, version: number): Promise<ModelVersionRecord | null> {
+    const row = this.findModelVersionStmt.get(userId, modelId, version) as unknown as ModelVersionRow | undefined;
+    return row ? toModelVersionRecord(row) : null;
+  }
+
+  async saveModelVersion(version: ModelVersionRecord): Promise<ModelVersionRecord> {
+    return transaction(this.db, () => {
+      this.updateModelVersionStage.run(version.stage, version.id);
+      return version;
+    });
+  }
+
+  async createModelCard(card: NewModelCard): Promise<ModelCardRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertModelCard.run(id, card.userId, card.modelId, card.version, JSON.stringify(card.card), card.cardFingerprint, card.now);
+      return { id, userId: card.userId, modelId: card.modelId, version: card.version, card: card.card, cardFingerprint: card.cardFingerprint, createdAt: card.now };
+    });
+  }
+
+  async findModelCard(userId: string, modelId: string, version: number): Promise<ModelCardRecord | null> {
+    const row = this.findModelCardStmt.get(userId, modelId, version) as unknown as ModelCardRow | undefined;
+    return row ? toModelCardRecord(row) : null;
+  }
+
+  async createModelPromotion(promotion: NewModelPromotion): Promise<ModelPromotionRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertModelPromotion.run(id, promotion.userId, promotion.modelId, promotion.version, promotion.fromStage, promotion.toStage, promotion.promotionFingerprint, promotion.now);
+      return { id, userId: promotion.userId, modelId: promotion.modelId, version: promotion.version, fromStage: promotion.fromStage, toStage: promotion.toStage, promotionFingerprint: promotion.promotionFingerprint, createdAt: promotion.now };
+    });
+  }
+
+  async listModelPromotions(userId: string, modelId: string, take: number): Promise<ModelPromotionRecord[]> {
+    const rows = this.promotionsByModel.all(userId, modelId, take) as unknown as ModelPromotionRow[];
+    return rows.map(toModelPromotionRecord);
+  }
+
+  async createServingPlan(plan: NewServingPlan): Promise<ServingPlanRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertServingPlan.run(id, plan.userId, plan.modelId, plan.kind, JSON.stringify(plan.plan), plan.fingerprint, plan.now);
+      return { id, userId: plan.userId, modelId: plan.modelId, kind: plan.kind, plan: plan.plan, fingerprint: plan.fingerprint, createdAt: plan.now };
+    });
+  }
+
+  async listServingPlans(userId: string, take: number): Promise<ServingPlanRecord[]> {
+    const rows = this.servingPlansByUser.all(userId, take) as unknown as ServingPlanRow[];
+    return rows.map(toServingPlanRecord);
+  }
+
+  async createModelOpsRecord(entry: NewModelOpsRecord): Promise<ModelOpsRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertModelOpsRecord.run(id, entry.userId, entry.kind, entry.modelId, JSON.stringify(entry.record), entry.now);
+      return { id, userId: entry.userId, kind: entry.kind, modelId: entry.modelId, record: entry.record, createdAt: entry.now };
+    });
+  }
+
+  async listModelOpsRecords(userId: string, kind: string, take: number): Promise<ModelOpsRecord[]> {
+    const rows = this.opsRecordsByKind.all(userId, kind, take) as unknown as ModelOpsRow[];
+    return rows.map(toModelOpsRecord);
+  }
+
+  async saveModelPin(pin: NewModelPin): Promise<ModelPinRecord> {
+    return transaction(this.db, () => {
+      const existing = this.findModelPinStmt.get(pin.userId, pin.modelId) as unknown as ModelPinRow | undefined;
+      if (existing) {
+        this.updateModelPin.run(pin.version, pin.modelTier, pin.switchedFrom, pin.fingerprint, pin.now, existing.id);
+        return { id: existing.id, userId: pin.userId, modelId: pin.modelId, version: pin.version, modelTier: pin.modelTier, switchedFrom: pin.switchedFrom, fingerprint: pin.fingerprint, createdAt: pin.now };
+      }
+      const id = randomUUID();
+      this.insertModelPin.run(id, pin.userId, pin.modelId, pin.version, pin.modelTier, pin.switchedFrom, pin.fingerprint, pin.now);
+      return { id, userId: pin.userId, modelId: pin.modelId, version: pin.version, modelTier: pin.modelTier, switchedFrom: pin.switchedFrom, fingerprint: pin.fingerprint, createdAt: pin.now };
+    });
+  }
+
+  async findModelPin(userId: string, modelId: string): Promise<ModelPinRecord | null> {
+    const row = this.findModelPinStmt.get(userId, modelId) as unknown as ModelPinRow | undefined;
+    return row ? toModelPinRecord(row) : null;
+  }
+
+  async deleteModelPin(userId: string, modelId: string): Promise<boolean> {
+    return transaction(this.db, () => {
+      const res = this.deleteModelPinStmt.run(userId, modelId) as unknown as { changes: number };
+      return (res.changes ?? 0) > 0;
+    });
+  }
+
+  async saveInstanceReservation(reservation: NewInstanceReservation): Promise<InstanceReservationRecord> {
+    return transaction(this.db, () => {
+      const existing = this.findReservationStmt.get(reservation.userId, reservation.modelId) as unknown as ReservationRow | undefined;
+      if (existing) {
+        this.updateReservation.run(reservation.slots, reservation.poolTotal, reservation.freeAfter, reservation.fingerprint, reservation.now, existing.id);
+        return { id: existing.id, userId: reservation.userId, modelId: reservation.modelId, slots: reservation.slots, poolTotal: reservation.poolTotal, freeAfter: reservation.freeAfter, fingerprint: reservation.fingerprint, createdAt: reservation.now };
+      }
+      const id = randomUUID();
+      this.insertReservation.run(id, reservation.userId, reservation.modelId, reservation.slots, reservation.poolTotal, reservation.freeAfter, reservation.fingerprint, reservation.now);
+      return { id, userId: reservation.userId, modelId: reservation.modelId, slots: reservation.slots, poolTotal: reservation.poolTotal, freeAfter: reservation.freeAfter, fingerprint: reservation.fingerprint, createdAt: reservation.now };
+    });
+  }
+
+  async findInstanceReservation(userId: string, modelId: string): Promise<InstanceReservationRecord | null> {
+    const row = this.findReservationStmt.get(userId, modelId) as unknown as ReservationRow | undefined;
+    return row ? toReservationRecord(row) : null;
+  }
+
+  async deleteInstanceReservation(userId: string, modelId: string): Promise<boolean> {
+    return transaction(this.db, () => {
+      const res = this.deleteReservationStmt.run(userId, modelId) as unknown as { changes: number };
+      return (res.changes ?? 0) > 0;
+    });
+  }
+
+  async createOnPremPackage(pkg: NewOnPremPackage): Promise<OnPremPackageRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertOnPremPackage.run(id, pkg.userId, pkg.modelId, pkg.version, pkg.format, pkg.weightsFingerprint, boolToInt(pkg.quantized), pkg.licenseTerms, pkg.fingerprint, pkg.now);
+      return { id, userId: pkg.userId, modelId: pkg.modelId, version: pkg.version, format: pkg.format, weightsFingerprint: pkg.weightsFingerprint, quantized: pkg.quantized, licenseTerms: pkg.licenseTerms, fingerprint: pkg.fingerprint, createdAt: pkg.now };
+    });
+  }
+
+  async findOnPremPackageByFingerprint(userId: string, fingerprint: string): Promise<OnPremPackageRecord | null> {
+    const row = this.findOnPremByFingerprint.get(userId, fingerprint) as unknown as OnPremRow | undefined;
+    return row ? toOnPremRecord(row) : null;
+  }
+
+  async saveGatewayProvider(provider: NewGatewayProvider): Promise<GatewayProviderRecord> {
+    return transaction(this.db, () => {
+      const existing = this.findProviderStmt.get(provider.userId, provider.providerId) as unknown as ProviderRow | undefined;
+      if (existing) {
+        this.updateProvider.run(provider.costPer1kIn, provider.costPer1kOut, provider.maxTokens, provider.retentionDays, boolToInt(provider.active), provider.now, existing.id);
+        return { id: existing.id, userId: provider.userId, providerId: provider.providerId, costPer1kIn: provider.costPer1kIn, costPer1kOut: provider.costPer1kOut, maxTokens: provider.maxTokens, retentionDays: provider.retentionDays, active: provider.active, consecutiveFailures: existing.consecutive_failures, createdAt: provider.now };
+      }
+      const id = randomUUID();
+      this.insertProvider.run(id, provider.userId, provider.providerId, provider.costPer1kIn, provider.costPer1kOut, provider.maxTokens, provider.retentionDays, boolToInt(provider.active), 0, provider.now);
+      return { id, userId: provider.userId, providerId: provider.providerId, costPer1kIn: provider.costPer1kIn, costPer1kOut: provider.costPer1kOut, maxTokens: provider.maxTokens, retentionDays: provider.retentionDays, active: provider.active, consecutiveFailures: 0, createdAt: provider.now };
+    });
+  }
+
+  async findGatewayProvider(userId: string, providerId: string): Promise<GatewayProviderRecord | null> {
+    const row = this.findProviderStmt.get(userId, providerId) as unknown as ProviderRow | undefined;
+    return row ? toProviderRecord(row) : null;
+  }
+
+  async listGatewayProviders(userId: string, take: number): Promise<GatewayProviderRecord[]> {
+    const rows = this.providersByUser.all(userId, take) as unknown as ProviderRow[];
+    return rows.map(toProviderRecord);
+  }
+
+  async saveGatewayProviderHealth(userId: string, providerId: string, consecutiveFailures: number): Promise<GatewayProviderRecord | null> {
+    return transaction(this.db, () => {
+      this.updateProviderHealth.run(consecutiveFailures, userId, providerId);
+      const row = this.findProviderStmt.get(userId, providerId) as unknown as ProviderRow | undefined;
+      return row ? toProviderRecord(row) : null;
+    });
+  }
+
+  async saveByokKey(key: NewByokKey): Promise<ByokKeyRecord> {
+    return transaction(this.db, () => {
+      const existing = this.findByokStmt.get(key.userId, key.providerId) as unknown as ByokRow | undefined;
+      if (existing) {
+        this.updateByokKey.run(key.keyFingerprint, key.keyLength, key.now, existing.id);
+        return { id: existing.id, userId: key.userId, providerId: key.providerId, keyFingerprint: key.keyFingerprint, keyLength: key.keyLength, createdAt: key.now };
+      }
+      const id = randomUUID();
+      this.insertByokKey.run(id, key.userId, key.providerId, key.keyFingerprint, key.keyLength, key.now);
+      return { id, userId: key.userId, providerId: key.providerId, keyFingerprint: key.keyFingerprint, keyLength: key.keyLength, createdAt: key.now };
+    });
+  }
+
+  async findByokKey(userId: string, providerId: string): Promise<ByokKeyRecord | null> {
+    const row = this.findByokStmt.get(userId, providerId) as unknown as ByokRow | undefined;
+    return row ? toByokRecord(row) : null;
+  }
+
+  async createGatewayUsage(usage: NewGatewayUsage): Promise<GatewayUsageRecord> {
+    return transaction(this.db, () => {
+      const id = randomUUID();
+      this.insertGatewayUsage.run(id, usage.userId, usage.providerId, usage.tokensIn, usage.tokensOut, usage.latencyMs, boolToInt(usage.ok), usage.now);
+      return { id, userId: usage.userId, providerId: usage.providerId, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, latencyMs: usage.latencyMs, ok: usage.ok, createdAt: usage.now };
+    });
+  }
+
+  async listGatewayUsage(userId: string, providerId: string, take: number): Promise<GatewayUsageRecord[]> {
+    const rows = this.usageByProvider.all(userId, providerId, take) as unknown as GatewayUsageRow[];
+    return rows.map(toGatewayUsageRecord);
+  }
+
+  async createGatewayLog(log: NewGatewayLog): Promise<GatewayLogRecord> {
+    return transaction(this.db, () => {
+      this.insertGatewayLog.run(log.id, log.userId, log.providerId, log.modelId, log.prompt, log.response, log.redactionCount, JSON.stringify(log.findings), boolToInt(log.contentOmitted), log.loggedAt);
+      return { id: log.id, userId: log.userId, providerId: log.providerId, modelId: log.modelId, prompt: log.prompt, response: log.response, redactionCount: log.redactionCount, findings: log.findings, contentOmitted: log.contentOmitted, loggedAt: log.loggedAt };
+    });
+  }
+
+  async listGatewayLogs(userId: string, providerId: string, take: number): Promise<GatewayLogRecord[]> {
+    const rows = this.logsByProvider.all(userId, providerId, take) as unknown as GatewayLogRow[];
+    return rows.map(toGatewayLogRecord);
+  }
+
+  async saveCapabilityMatrix(matrix: NewCapabilityMatrix): Promise<CapabilityMatrixRecord> {
+    return transaction(this.db, () => {
+      const rows = this.capabilitiesByUser.all(matrix.userId, 1000) as unknown as CapabilityRow[];
+      const existing = rows.find((r) => r.fingerprint === matrix.fingerprint);
+      if (existing) {
+        this.updateCapability.run(matrix.modelId, JSON.stringify(matrix.capabilities), matrix.maxContextTokens, matrix.costPer1kIn, matrix.costPer1kOut, boolToInt(matrix.active), matrix.now, existing.id);
+        return { id: existing.id, userId: matrix.userId, modelId: matrix.modelId, capabilities: [...matrix.capabilities], maxContextTokens: matrix.maxContextTokens, costPer1kIn: matrix.costPer1kIn, costPer1kOut: matrix.costPer1kOut, active: matrix.active, fingerprint: matrix.fingerprint, createdAt: matrix.now };
+      }
+      const id = randomUUID();
+      this.insertCapability.run(id, matrix.userId, matrix.modelId, JSON.stringify(matrix.capabilities), matrix.maxContextTokens, matrix.costPer1kIn, matrix.costPer1kOut, boolToInt(matrix.active), matrix.fingerprint, matrix.now);
+      return { id, userId: matrix.userId, modelId: matrix.modelId, capabilities: [...matrix.capabilities], maxContextTokens: matrix.maxContextTokens, costPer1kIn: matrix.costPer1kIn, costPer1kOut: matrix.costPer1kOut, active: matrix.active, fingerprint: matrix.fingerprint, createdAt: matrix.now };
+    });
+  }
+
+  async listCapabilityMatrices(userId: string, take: number): Promise<CapabilityMatrixRecord[]> {
+    const rows = this.capabilitiesByUser.all(userId, take) as unknown as CapabilityRow[];
+    return rows.map(toCapabilityRecord);
+  }
+
+  async saveOutputSchema(schema: NewOutputSchema): Promise<OutputSchemaRecord> {
+    return transaction(this.db, () => {
+      const rows = this.outputSchemasByUser.all(schema.userId, 1000) as unknown as OutputSchemaRow[];
+      const existing = rows.find((r) => r.fingerprint === schema.fingerprint);
+      if (existing) {
+        this.updateOutputSchema.run(schema.schemaId, JSON.stringify(schema.fields), schema.fingerprint, schema.now, existing.id);
+        return { id: existing.id, userId: schema.userId, schemaId: schema.schemaId, fields: schema.fields, fingerprint: schema.fingerprint, createdAt: schema.now };
+      }
+      const id = randomUUID();
+      this.insertOutputSchema.run(id, schema.userId, schema.schemaId, JSON.stringify(schema.fields), schema.fingerprint, schema.now);
+      return { id, userId: schema.userId, schemaId: schema.schemaId, fields: schema.fields, fingerprint: schema.fingerprint, createdAt: schema.now };
+    });
+  }
+
+  async findOutputSchema(userId: string, schemaId: string): Promise<OutputSchemaRecord | null> {
+    const rows = this.findOutputSchemaStmt.all(userId, schemaId) as unknown as OutputSchemaRow[];
+    return rows.length > 0 ? toOutputSchemaRecord(rows[0]) : null;
+  }
+
+  async listOutputSchemas(userId: string, take: number): Promise<OutputSchemaRecord[]> {
+    const rows = this.outputSchemasByUser.all(userId, take) as unknown as OutputSchemaRow[];
+    return rows.map(toOutputSchemaRecord);
   }
 }
