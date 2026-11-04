@@ -36,10 +36,23 @@ export interface PipelineStep {
   readonly params?: { readonly [key: string]: JsonValue };
 }
 
+export type PipelineInputType = 'string' | 'number' | 'boolean' | 'secret_ref';
+export type PipelineInputValue = string | number | boolean;
+
+export interface PipelineInputDefinition {
+  readonly name: string;
+  readonly type: PipelineInputType;
+  readonly description?: string;
+  readonly required?: boolean;
+  readonly default?: PipelineInputValue;
+  readonly options?: readonly PipelineInputValue[];
+}
+
 export interface PipelineDefinition {
   readonly id: string;
   readonly name: string;
   readonly description?: string;
+  readonly inputs?: readonly PipelineInputDefinition[];
   readonly triggers: readonly PipelineTrigger[];
   readonly steps: readonly PipelineStep[];
 }
@@ -79,6 +92,8 @@ export class PipelineGraphError extends Error {
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const TASK = /^[a-z][a-z0-9_.-]{0,127}$/;
+const INPUT_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+const SECRET_REF = /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/;
 const FIELD = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$/;
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const TRIGGER_KINDS = new Set<TriggerKind>(['push', 'pull_request', 'schedule', 'event', 'manual', 'api']);
@@ -273,11 +288,68 @@ function validateCron(value: unknown, path: string, issues: string[]): string | 
 export function validatePipelineDefinition(input: unknown): PipelineDefinition {
   const issues: string[] = [];
   if (!isRecord(input)) throw new PipelineDefinitionError(['root: expected an object']);
-  exactKeys(input, ['id', 'name', 'description', 'triggers', 'steps'], ['id', 'name', 'triggers', 'steps'], 'root', issues);
+  exactKeys(input, ['id', 'name', 'description', 'inputs', 'triggers', 'steps'], ['id', 'name', 'triggers', 'steps'], 'root', issues);
   const id = text(input.id, 'id', issues, 64);
   if (id && !ID.test(id)) issues.push('id: must start with a lowercase letter and contain only lowercase letters, digits or hyphens');
   const name = text(input.name, 'name', issues, 100);
   const description = input.description === undefined ? undefined : text(input.description, 'description', issues, 1000);
+
+  const inputs: PipelineInputDefinition[] = [];
+  if (input.inputs !== undefined) {
+    if (!Array.isArray(input.inputs) || input.inputs.length > 50) {
+      issues.push('inputs: expected at most 50 input definitions');
+    } else {
+      const seenInputNames = new Set<string>();
+      input.inputs.forEach((raw, index) => {
+        const path = `inputs[${index}]`;
+        if (!isRecord(raw)) { issues.push(`${path}: expected an object`); return; }
+        exactKeys(raw, ['name', 'type', 'description', 'required', 'default', 'options'], ['name', 'type'], path, issues);
+        const name = text(raw.name, `${path}.name`, issues, 64);
+        if (name && !INPUT_NAME.test(name)) issues.push(`${path}.name: use lowercase letters, digits and underscores; start with a letter`);
+        if (name && seenInputNames.has(name)) issues.push(`${path}.name: duplicate input name`);
+        if (name) seenInputNames.add(name);
+        const type = raw.type;
+        if (type !== 'string' && type !== 'number' && type !== 'boolean' && type !== 'secret_ref') {
+          issues.push(`${path}.type: expected string, number, boolean or secret_ref`);
+        }
+        const description = raw.description === undefined ? undefined : text(raw.description, `${path}.description`, issues, 500);
+        if (raw.required !== undefined && typeof raw.required !== 'boolean') issues.push(`${path}.required: expected a boolean`);
+        const required = raw.required === undefined ? raw.default === undefined : raw.required as boolean;
+        const matchesType = (value: unknown): value is PipelineInputValue => {
+          if (type === 'string') return typeof value === 'string' && value.length <= 4096;
+          if (type === 'secret_ref') return typeof value === 'string' && SECRET_REF.test(value);
+          if (type === 'number') return typeof value === 'number' && Number.isFinite(value);
+          if (type === 'boolean') return typeof value === 'boolean';
+          return false;
+        };
+        if (raw.default !== undefined && !matchesType(raw.default)) issues.push(`${path}.default: value does not match input type`);
+        if (required && raw.default !== undefined) issues.push(`${path}: required inputs cannot also define a default`);
+        let options: PipelineInputValue[] | undefined;
+        if (raw.options !== undefined) {
+          if (!Array.isArray(raw.options) || raw.options.length === 0 || raw.options.length > 100) {
+            issues.push(`${path}.options: expected 1..100 allowed values`);
+          } else {
+            options = [];
+            raw.options.forEach((option, optionIndex) => {
+              if (!matchesType(option)) issues.push(`${path}.options[${optionIndex}]: value does not match input type`);
+              else options?.push(option);
+            });
+            if (new Set(options.map((value) => JSON.stringify(value))).size !== options.length) issues.push(`${path}.options: duplicate allowed value`);
+            if (raw.default !== undefined && !options.some((value) => Object.is(value, raw.default))) issues.push(`${path}.default: value must be included in options`);
+          }
+        }
+        if (name && (type === 'string' || type === 'number' || type === 'boolean' || type === 'secret_ref')) {
+          inputs.push({
+            name, type,
+            ...(description !== undefined ? { description } : {}),
+            required,
+            ...(raw.default !== undefined && matchesType(raw.default) ? { default: raw.default } : {}),
+            ...(options ? { options } : {}),
+          });
+        }
+      });
+    }
+  }
 
   const triggers: PipelineTrigger[] = [];
   if (!Array.isArray(input.triggers) || input.triggers.length === 0 || input.triggers.length > 20) {
@@ -357,6 +429,7 @@ export function validatePipelineDefinition(input: unknown): PipelineDefinition {
     id: id as string,
     name: name as string,
     ...(description !== undefined ? { description } : {}),
+    ...(inputs.length > 0 ? { inputs } : {}),
     triggers,
     steps,
   };
@@ -366,6 +439,46 @@ export function validatePipelineDefinition(input: unknown): PipelineDefinition {
   }
   orderPipelineSteps(definition);
   return deepFreeze(JSON.parse(serialized) as PipelineDefinition);
+}
+
+/** Resolve and validate invocation inputs without resolving secret references into secret material. */
+export function resolvePipelineInputs(
+  definition: PipelineDefinition,
+  supplied: unknown = {},
+): Readonly<Record<string, PipelineInputValue>> {
+  if (!isRecord(supplied)) throw new PipelineDefinitionError(['inputs: expected an object']);
+  const declarations = definition.inputs ?? [];
+  const byName = new Map(declarations.map((item) => [item.name, item]));
+  const issues: string[] = [];
+  for (const key of Object.keys(supplied)) {
+    if (!byName.has(key)) issues.push(`inputs.${key}: undeclared input`);
+    if (DANGEROUS_KEYS.has(key)) issues.push(`inputs.${key}: unsafe property name`);
+  }
+  const resolved: Record<string, PipelineInputValue> = {};
+  for (const declaration of declarations) {
+    const provided = Object.hasOwn(supplied, declaration.name);
+    const value = provided ? supplied[declaration.name] : declaration.default;
+    if (value === undefined) {
+      if (declaration.required) issues.push(`inputs.${declaration.name}: required value is missing`);
+      continue;
+    }
+    const valid =
+      declaration.type === 'string' ? typeof value === 'string' && value.length <= 4096 :
+      declaration.type === 'secret_ref' ? typeof value === 'string' && SECRET_REF.test(value) :
+      declaration.type === 'number' ? typeof value === 'number' && Number.isFinite(value) :
+      declaration.type === 'boolean' ? typeof value === 'boolean' : false;
+    if (!valid) {
+      issues.push(`inputs.${declaration.name}: value does not match declared type ${declaration.type}`);
+      continue;
+    }
+    if (declaration.options && !declaration.options.some((option) => Object.is(option, value))) {
+      issues.push(`inputs.${declaration.name}: value is not in the allowed options`);
+      continue;
+    }
+    resolved[declaration.name] = value as PipelineInputValue;
+  }
+  if (issues.length > 0) throw new PipelineDefinitionError(issues);
+  return deepFreeze(resolved);
 }
 
 function deepFreeze<T>(value: T): T {
@@ -515,11 +628,13 @@ export interface DryRunPlan {
   readonly parallelGroups: readonly (readonly string[])[];
   readonly steps: readonly DryRunStep[];
   readonly sideEffects: false;
+  readonly resolvedInputs: Readonly<Record<string, PipelineInputValue>>;
 }
 
 /** Pure planning only: no task execution, run creation, secret resolution, queue writes or deployments. */
-export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerEvent): DryRunPlan {
+export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerEvent, suppliedInputs?: unknown): DryRunPlan {
   const groups = orderPipelineSteps(definition);
+  const resolvedInputs = resolvePipelineInputs(definition, suppliedInputs);
   const triggerEvaluations = event ? evaluatePipelineTriggers(definition.triggers, event) : [];
   const triggered = event ? triggerEvaluations.some((item) => item.matched) : null;
   const context = event ? {
@@ -566,7 +681,7 @@ export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerE
       steps.push({ stepId: step.id, task: step.task, status, reasons, needs: step.needs ?? [] });
     }
   }
-  return deepFreeze({ dryRun: true as const, pipelineId: definition.id, triggered, triggerEvaluations, parallelGroups: groups, steps, sideEffects: false as const });
+  return deepFreeze({ dryRun: true as const, pipelineId: definition.id, triggered, triggerEvaluations, parallelGroups: groups, steps, sideEffects: false as const, resolvedInputs });
 }
 
 export interface PipelineVersion {

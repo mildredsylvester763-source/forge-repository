@@ -204,7 +204,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
       POST: async (ctx) => {
         const actorId = await actor(ctx);
         const body = await ctx.json();
-        exact(body, ['workspaceId', 'pipelineId', 'definition', 'event'], ['workspaceId']);
+        exact(body, ['workspaceId', 'pipelineId', 'definition', 'event', 'inputs'], ['workspaceId']);
         if ((body.pipelineId === undefined) === (body.definition === undefined)) {
           throw new AppError(400, 'invalid_request', 'Provide exactly one of pipelineId or definition.');
         }
@@ -213,10 +213,10 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
           const workspaceId = id(body.workspaceId, 'workspaceId');
           if (body.definition !== undefined) {
             if (!isRecord(body.definition)) throw new AppError(400, 'invalid_request', 'definition must be an object.');
-            const plan = await buildCi.dryRunDefinition({ workspaceId, definition: body.definition, actorId, ...(event ? { event } : {}) });
+            const plan = await buildCi.dryRunDefinition({ workspaceId, definition: body.definition, actorId, ...(event ? { event } : {}), ...(body.inputs !== undefined ? { inputs: body.inputs } : {}) });
             return { status: 200, body: { source: 'candidate', plan } };
           }
-          const plan = await buildCi.dryRun({ workspaceId, pipelineId: id(body.pipelineId, 'pipelineId'), actorId, ...(event ? { event } : {}) });
+          const plan = await buildCi.dryRun({ workspaceId, pipelineId: id(body.pipelineId, 'pipelineId'), actorId, ...(event ? { event } : {}), ...(body.inputs !== undefined ? { inputs: body.inputs } : {}) });
           return { status: 200, body: { source: 'saved', plan } };
         } catch (err) { return mapError(err); }
       },
@@ -225,13 +225,14 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
       POST: async (ctx) => {
         const actorId = await actor(ctx);
         const body = await ctx.json();
-        exact(body, ['workspaceId', 'pipelineId', 'event'], ['workspaceId', 'pipelineId', 'event']);
+        exact(body, ['workspaceId', 'pipelineId', 'event', 'inputs'], ['workspaceId', 'pipelineId', 'event']);
         try {
           const result = await buildCi.trigger({
             workspaceId: id(body.workspaceId, 'workspaceId'),
             pipelineId: id(body.pipelineId, 'pipelineId'),
             actorId,
             event: authenticatedTriggerEvent(body.event, ctx.header('idempotency-key')),
+            ...(body.inputs !== undefined ? { inputs: body.inputs } : {}),
             createdAt: new Date(clock()).toISOString(),
           });
           return { status: result.queued ? 202 : 200, body: result };

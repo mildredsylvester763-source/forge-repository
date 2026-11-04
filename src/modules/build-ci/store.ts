@@ -10,6 +10,8 @@ import {
   type PipelineVersion,
   type TriggerEvent,
   type TriggerEvaluation,
+  resolvePipelineInputs,
+  type PipelineInputValue,
 } from './pipeline.ts';
 
 export interface PipelineRunContext {
@@ -18,6 +20,7 @@ export interface PipelineRunContext {
   readonly eventType?: string;
   readonly commitSha?: string;
   readonly pullRequestNumber?: number;
+  readonly inputs?: Readonly<Record<string, PipelineInputValue>>;
 }
 
 export interface PipelineRun {
@@ -158,14 +161,14 @@ export class BuildCiService {
     });
   }
 
-  async dryRun(input: { workspaceId: string; pipelineId: string; actorId: string; event?: TriggerEvent }) {
+  async dryRun(input: { workspaceId: string; pipelineId: string; actorId: string; event?: TriggerEvent; inputs?: unknown }) {
     requiredId(input.workspaceId, 'workspaceId');
     requiredId(input.pipelineId, 'pipelineId');
     requiredId(input.actorId, 'actorId');
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'dry_run' });
     const latest = await this.store.getLatestVersion(input.workspaceId, input.pipelineId);
     if (!latest) throw new PipelineNotFoundError();
-    return buildDryRunPlan(latest.definition, input.event);
+    return buildDryRunPlan(latest.definition, input.event, input.inputs);
   }
 
   async getPipeline(input: { workspaceId: string; pipelineId: string; actorId: string }): Promise<PipelineVersion> {
@@ -199,15 +202,15 @@ export class BuildCiService {
     return versions;
   }
 
-  async dryRunDefinition(input: { workspaceId: string; definition: unknown; actorId: string; event?: TriggerEvent }) {
+  async dryRunDefinition(input: { workspaceId: string; definition: unknown; actorId: string; event?: TriggerEvent; inputs?: unknown }) {
     requiredId(input.workspaceId, 'workspaceId');
     requiredId(input.actorId, 'actorId');
     const definition = validatePipelineDefinition(input.definition);
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: definition.id, actorId: input.actorId, action: 'dry_run' });
-    return buildDryRunPlan(definition, input.event);
+    return buildDryRunPlan(definition, input.event, input.inputs);
   }
 
-  async trigger(input: { workspaceId: string; pipelineId: string; actorId: string; event: TriggerEvent; createdAt?: string }): Promise<TriggerPipelineResult> {
+  async trigger(input: { workspaceId: string; pipelineId: string; actorId: string; event: TriggerEvent; inputs?: unknown; createdAt?: string }): Promise<TriggerPipelineResult> {
     requiredId(input.workspaceId, 'workspaceId');
     requiredId(input.pipelineId, 'pipelineId');
     requiredId(input.actorId, 'actorId');
@@ -226,7 +229,9 @@ export class BuildCiService {
     const evaluations = evaluatePipelineTriggers(latest.definition.triggers, input.event);
     const matched = evaluations.filter((item) => item.matched);
     if (matched.length === 0) return { queued: false, duplicate: false, run: null, evaluations };
+    const resolvedInputs = resolvePipelineInputs(latest.definition, input.inputs);
     const context: PipelineRunContext = {
+      ...(Object.keys(resolvedInputs).length > 0 ? { inputs: resolvedInputs } : {}),
       ...(input.event.branch ? { branch: input.event.branch } : {}),
       ...(input.event.baseBranch ? { baseBranch: input.event.baseBranch } : {}),
       ...(input.event.eventType ? { eventType: input.event.eventType } : {}),
