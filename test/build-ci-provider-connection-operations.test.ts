@@ -57,6 +57,21 @@ test('provider connection operations are workspace-authorized, secret-safe and a
       /different workspace/,
     );
     assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'cross-workspace references must be rejected before vault lookup');
+    for (const unsafeRef of [
+      'vault://forge/workspace-a/../secret',
+      'vault://forge/workspace-a//secret',
+      'vault://forge/workspace-a/.',
+    ]) {
+      await assert.rejects(
+        () => operations.create({
+          workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a',
+          connectionId: 'unsafe-reference', provider: 'github', repository: 'team/repo', secretRef: unsafeRef,
+        }),
+        /workspace-scoped/,
+      );
+    }
+    assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'malformed path references must be rejected before vault lookup');
+
 
     const created = await operations.create({
       workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a', connectionId: 'github-app-1',
