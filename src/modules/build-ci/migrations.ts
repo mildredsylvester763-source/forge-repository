@@ -203,9 +203,9 @@ export const buildCiPostgresMigrations: readonly Migration[] = [
         PRIMARY KEY (template_id, version),
         FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
       );
-      CREATE FUNCTION build_pipeline_template_versions_block_change() RETURNS trigger LANGUAGE plpgsql AS $
+      CREATE FUNCTION build_pipeline_template_versions_block_change() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN RAISE EXCEPTION 'pipeline template versions are immutable'; END;
-      $;
+      $$;
       CREATE TRIGGER build_pipeline_template_versions_block_update BEFORE UPDATE ON build_pipeline_template_versions
         FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_versions_block_change();
       CREATE TRIGGER build_pipeline_template_versions_block_delete BEFORE DELETE ON build_pipeline_template_versions
