@@ -18,6 +18,7 @@ export interface ProviderConnectionStore {
   create(input: CreateProviderConnectionInput): Promise<ProviderConnectionRecord>;
   find(provider: WebhookProvider, connectionId: string): Promise<ProviderConnectionRecord | null>;
   revoke(provider: WebhookProvider, connectionId: string, revokedAt?: string): Promise<boolean>;
+  rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt?: string): Promise<boolean>;
 }
 export interface ProviderSecretResolver { resolve(secretRef: string): Promise<string | null>; }
 interface ConnectionRow {
@@ -29,6 +30,10 @@ function required(value: string, field: string, max: number): void {
 }
 function timestamp(value: string, field: string): void {
   if (!Number.isFinite(Date.parse(value))) throw new TypeError(field + ' must be a valid timestamp');
+}
+function validateSecretRef(value: string): void {
+  required(value, 'secretRef', 512);
+  if (!/^(secret|vault|kms):\\/\\/[A-Za-z0-9._:/-]+$/.test(value)) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
@@ -74,6 +79,16 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
       WHERE provider = ? AND connection_id = ? AND status = 'active'`).run(revokedAt, revokedAt, provider, connectionId);
     return Number(result.changes) === 1;
   }
+
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString()): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
+    timestamp(updatedAt, 'updatedAt');
+    if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
+    const result = this.db.prepare(`UPDATE build_ci_provider_connections SET secret_ref = ?, updated_at = ?
+      WHERE provider = ? AND connection_id = ? AND status = 'active' AND secret_ref = ?`)
+      .run(nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef);
+    return Number(result.changes) === 1;
+  }
 }
 export class PostgresProviderConnectionStore implements ProviderConnectionStore {
   private readonly pool: SqlPool;
@@ -96,6 +111,16 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
     required(connectionId, 'connectionId', 128); timestamp(revokedAt, 'revokedAt');
     const result = await this.pool.query(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = $1, updated_at = $1
       WHERE provider = $2 AND connection_id = $3 AND status = 'active'`, [revokedAt, provider, connectionId]);
+    return result.rowCount === 1;
+  }
+
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString()): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
+    timestamp(updatedAt, 'updatedAt');
+    if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
+    const result = await this.pool.query(`UPDATE build_ci_provider_connections SET secret_ref = $1, updated_at = $2
+      WHERE provider = $3 AND connection_id = $4 AND status = 'active' AND secret_ref = $5`,
+    [nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef]);
     return result.rowCount === 1;
   }
 }
