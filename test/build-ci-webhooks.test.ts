@@ -1,0 +1,123 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import {
+  normalizeGitHubWebhook,
+  normalizeGitLabWebhook,
+  verifyGitHubWebhookSignature,
+  verifyGitLabWebhookSignature,
+  WebhookPayloadError,
+} from '../src/modules/build-ci/webhooks.ts';
+
+test('GitHub webhook HMAC-SHA256 verification matches the official validation vector', () => {
+  const secret = "It's a Secret to Everybody";
+  const body = Buffer.from('Hello, World!', 'utf8');
+  const signature = 'sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17';
+  assert.equal(verifyGitHubWebhookSignature(body, signature, secret), true);
+  assert.equal(verifyGitHubWebhookSignature(body, signature, 'wrong-secret'), false);
+  assert.equal(verifyGitHubWebhookSignature(Buffer.from('Hello, forged!'), signature, secret), false);
+  assert.equal(verifyGitHubWebhookSignature(body, 'sha1=not-supported', secret), false);
+  assert.equal(verifyGitHubWebhookSignature(body, undefined, secret), false);
+});
+
+test('GitLab Standard Webhooks signature verifies raw bytes and enforces timestamp freshness', () => {
+  const key = Buffer.alloc(32, 0x42);
+  const signingToken = `whsec_${key.toString('base64')}`;
+  const raw = Buffer.from('{"project":{"path_with_namespace":"team/api"},"ref":"refs/heads/main"}', 'utf8');
+  const id = 'delivery-123';
+  const timestamp = '1000';
+  const message = Buffer.concat([Buffer.from(`${id}.${timestamp}.`, 'utf8'), raw]);
+  const signature = `v1,${createHmac('sha256', key).update(message).digest('base64')}`;
+  const headers = { 'webhook-id': id, 'webhook-timestamp': timestamp, 'webhook-signature': `v1,invalid ${signature}` };
+  assert.equal(verifyGitLabWebhookSignature(raw, headers, signingToken, 1000), true);
+  assert.equal(verifyGitLabWebhookSignature(raw, headers, signingToken, 1400), false);
+  assert.equal(verifyGitLabWebhookSignature(Buffer.from('{"tampered":true}'), headers, signingToken, 1000), false);
+  assert.equal(verifyGitLabWebhookSignature(raw, headers, 'not-a-signing-token', 1000), false);
+  assert.equal(verifyGitLabWebhookSignature(raw, { ...headers, 'webhook-id': 'different-id' }, signingToken, 1000), false);
+});
+
+test('GitHub push normalization preserves branch, commit and changed paths', () => {
+  const raw = Buffer.from(JSON.stringify({
+    repository: { full_name: 'team/api' },
+    ref: 'refs/heads/main',
+    after: '0123456789abcdef',
+    commits: [
+      { added: ['src/new.ts'], modified: ['src/app.ts'], removed: ['old.txt'] },
+      { modified: ['src/app.ts'] },
+    ],
+    sender: { login: 'maintainer' },
+  }));
+  const normalized = normalizeGitHubWebhook(raw, {
+    'X-GitHub-Event': 'push',
+    'X-GitHub-Delivery': 'gh-delivery-1',
+  });
+  assert.equal(normalized.provider, 'github');
+  assert.equal(normalized.repository, 'team/api');
+  assert.equal(normalized.event.kind, 'push');
+  assert.equal(normalized.event.branch, 'main');
+  assert.equal(normalized.event.commitSha, '0123456789abcdef');
+  assert.deepEqual(normalized.event.changedFiles, ['src/new.ts', 'src/app.ts', 'old.txt']);
+  assert.equal(normalized.event.eventId, 'gh-delivery-1');
+});
+
+test('GitHub pull request normalization uses the target branch and does not invent changed paths', () => {
+  const raw = Buffer.from(JSON.stringify({
+    repository: { full_name: 'team/api' },
+    action: 'opened',
+    number: 42,
+    pull_request: {
+      base: { ref: 'main' },
+      head: { ref: 'feature/secure-build', sha: 'abcdef123' },
+      draft: true,
+    },
+  }));
+  const normalized = normalizeGitHubWebhook(raw, {
+    'x-github-event': 'pull_request',
+    'x-github-delivery': 'gh-delivery-2',
+  });
+  assert.equal(normalized.event.kind, 'pull_request');
+  assert.equal(normalized.event.baseBranch, 'main');
+  assert.equal(normalized.event.branch, 'feature/secure-build');
+  assert.equal(normalized.event.pullRequestNumber, 42);
+  assert.equal(normalized.event.commitSha, 'abcdef123');
+  assert.equal(normalized.event.changedFiles, undefined);
+});
+
+test('GitLab push and merge-request hooks normalize into FORGE trigger events', () => {
+  const push = normalizeGitLabWebhook(Buffer.from(JSON.stringify({
+    project: { path_with_namespace: 'team/api' },
+    ref: 'refs/heads/release',
+    checkout_sha: 'deadbeef',
+    commits: [{ added: ['dist/app.js'], modified: [], removed: [] }],
+  })), {
+    'X-Gitlab-Event': 'Push Hook',
+    'Idempotency-Key': 'gl-push-1',
+  });
+  assert.equal(push.event.kind, 'push');
+  assert.equal(push.event.branch, 'release');
+  assert.deepEqual(push.event.changedFiles, ['dist/app.js']);
+
+  const mergeRequest = normalizeGitLabWebhook(Buffer.from(JSON.stringify({
+    project: { path_with_namespace: 'team/api' },
+    object_attributes: {
+      action: 'open',
+      target_branch: 'main',
+      source_branch: 'feature/cache',
+      iid: 9,
+      last_commit: { id: 'cafebabe' },
+    },
+  })), {
+    'X-Gitlab-Event': 'Merge Request Hook',
+    'webhook-id': 'gl-mr-9',
+  });
+  assert.equal(mergeRequest.event.kind, 'pull_request');
+  assert.equal(mergeRequest.event.baseBranch, 'main');
+  assert.equal(mergeRequest.event.branch, 'feature/cache');
+  assert.equal(mergeRequest.event.pullRequestNumber, 9);
+  assert.equal(mergeRequest.event.commitSha, 'cafebabe');
+});
+
+test('provider normalizers reject missing delivery identity and malformed JSON', () => {
+  assert.throws(() => normalizeGitHubWebhook(Buffer.from('{}'), { 'x-github-event': 'push' }), WebhookPayloadError);
+  assert.throws(() => normalizeGitLabWebhook(Buffer.from('{'), { 'x-gitlab-event': 'Push Hook', 'webhook-id': 'id' }), WebhookPayloadError);
+});
