@@ -161,7 +161,19 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
                 ? { before: { receivedAt: beforeReceivedAt, deliveryRowId: id(beforeDeliveryRowId, 'beforeDeliveryRowId') } }
                 : {}),
             });
-            return { status: 200, body: page };
+            const items = page.items.map((delivery) => ({
+              deliveryRowId: delivery.deliveryRowId,
+              connectionId: delivery.connectionId,
+              provider: delivery.provider,
+              repository: delivery.repository,
+              deliveryId: delivery.deliveryId,
+              eventType: delivery.eventType,
+              status: delivery.status,
+              attempts: delivery.attempts,
+              receivedAt: delivery.receivedAt,
+              ...(delivery.lastError ? { lastError: delivery.lastError } : {}),
+            }));
+            return { status: 200, body: { items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) } };
           } catch (err) { return mapError(err); }
         },
       },
