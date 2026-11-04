@@ -197,6 +197,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
  * Adding a module means adding its routes here and (if it reacts to others) subscribing to events.
  */
 export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): ForgeApp {
+  if (overrides.webhookConnections && overrides.providerSecrets) {
+    throw new Error('Configure either webhookConnections or providerSecrets, not both; provider connection management requires the stored resolver.');
+  }
   const clock = overrides.clock ?? systemClock;
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
   const storage = buildStorage(config, clock, logger, overrides);
