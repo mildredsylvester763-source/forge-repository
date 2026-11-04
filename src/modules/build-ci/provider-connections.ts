@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Database } from '../../kernel/sqlite.ts';
 import { transaction } from '../../kernel/sqlite.ts';
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
@@ -212,7 +213,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
   }
   async revoke(provider: WebhookProvider, connectionId: string, revokedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); timestamp(revokedAt, 'revokedAt');
-    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    required(actorId, 'actorId', 128);
     return withTransaction(this.pool, async (conn) => {
       const updated = await conn.query(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = $1, updated_at = $1
         WHERE provider = $2 AND connection_id = $3 AND status = 'active' RETURNING workspace_id`, [revokedAt, provider, connectionId]);
