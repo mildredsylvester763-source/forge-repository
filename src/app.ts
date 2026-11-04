@@ -30,6 +30,12 @@ import {
   PostgresScheduleOccurrenceStore,
   SqliteWebhookDeliveryStore,
   PostgresWebhookDeliveryStore,
+  SqliteProviderConnectionStore,
+  PostgresProviderConnectionStore,
+  ProviderConnectionOperations,
+  StoredWebhookConnectionResolver,
+  type ProviderConnectionStore,
+  type ProviderSecretResolver,
   type WebhookDeliveryStore,
   type ScheduleOccurrenceStore,
   type WebhookConnectionResolver,
@@ -78,6 +84,8 @@ export interface AppOverrides {
   buildCiAuthorize?: PipelineAuthorizer;
   /** Supplied by the secrets/integrations subsystem; no webhook is accepted without a trusted binding and secret. */
   webhookConnections?: WebhookConnectionResolver;
+  /** External secret/vault adapter. Enables authorized provider-connection management and stored resolver composition. */
+  providerSecrets?: ProviderSecretResolver;
   /** Optional worker host; it is not started unless autoStart is explicitly true. */
   buildCiWorker?: {
     workerId: string;
@@ -118,6 +126,7 @@ interface Storage {
   buildCiStore: PipelineStore;
   buildCiTemplates: PipelineTemplateStore;
   webhookDeliveries: WebhookDeliveryStore;
+  providerConnections: ProviderConnectionStore;
   scheduleOccurrences: ScheduleOccurrenceStore;
   workspaceMemberships: WorkspaceMembershipReader;
 }
@@ -136,6 +145,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiStore: new PostgresBuildCiStore(pool),
       buildCiTemplates: new PostgresPipelineTemplateStore(pool),
       webhookDeliveries: new PostgresWebhookDeliveryStore(pool),
+      providerConnections: new PostgresProviderConnectionStore(pool),
       scheduleOccurrences: new PostgresScheduleOccurrenceStore(pool),
       workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
     };
@@ -157,6 +167,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiStore: new SqliteBuildCiStore(db),
       buildCiTemplates: new SqlitePipelineTemplateStore(db),
       webhookDeliveries: new SqliteWebhookDeliveryStore(db),
+      providerConnections: new SqliteProviderConnectionStore(db),
       scheduleOccurrences: new SqliteScheduleOccurrenceStore(db),
       workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
     };
@@ -175,6 +186,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     buildCiStore: new SqliteBuildCiStore(buildCiDb),
     buildCiTemplates: new SqlitePipelineTemplateStore(buildCiDb),
     webhookDeliveries: new SqliteWebhookDeliveryStore(buildCiDb),
+    providerConnections: new SqliteProviderConnectionStore(buildCiDb),
     scheduleOccurrences: new SqliteScheduleOccurrenceStore(buildCiDb),
     workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
   };
@@ -232,12 +244,23 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     checkBreachOnSignIn: config.breach.checkOnSignIn,
   });
 
-  const webhookIngress = overrides.webhookConnections
-    ? new WebhookIngressService({ connections: overrides.webhookConnections, deliveries: storage.webhookDeliveries })
+  const webhookConnections = overrides.webhookConnections ??
+    (overrides.providerSecrets ? new StoredWebhookConnectionResolver(storage.providerConnections, overrides.providerSecrets) : undefined);
+  const webhookIngress = webhookConnections
+    ? new WebhookIngressService({ connections: webhookConnections, deliveries: storage.webhookDeliveries })
     : undefined;
 
-  const webhookProcessor = overrides.webhookConnections
-    ? new WebhookDeliveryProcessor({ deliveries: storage.webhookDeliveries, connections: overrides.webhookConnections, buildCi, now: clock })
+  const webhookProcessor = webhookConnections
+    ? new WebhookDeliveryProcessor({ deliveries: storage.webhookDeliveries, connections: webhookConnections, buildCi, now: clock })
+    : undefined;
+
+  const providerConnectionOperations = overrides.providerSecrets
+    ? new ProviderConnectionOperations({
+        connections: storage.providerConnections,
+        secrets: overrides.providerSecrets,
+        authorize: authorizeBuildCi,
+        now: clock,
+      })
     : undefined;
 
   const scheduleDispatcher = new ScheduleDispatcher({
@@ -278,7 +301,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
-    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress, webhookDeliveryOperations),
+    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress, webhookDeliveryOperations, providerConnectionOperations),
   };
 
   const handler = createHttpHandler({
