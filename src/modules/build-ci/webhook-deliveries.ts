@@ -273,7 +273,7 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
         WHERE (status = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= $1))
            OR (status = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at <= $1)
         ORDER BY received_at, delivery_row_id
-        FOR UPDATE SKIP LOCKED LIMIT 1`, [input.now]);
+        LIMIT 1 FOR UPDATE SKIP LOCKED`, [input.now]);
       const row = result.rows[0];
       if (!row) return null;
       const updated = await conn.query(`UPDATE build_ci_webhook_deliveries
