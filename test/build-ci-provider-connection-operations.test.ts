@@ -160,20 +160,20 @@ test('provider connection HTTP routes require an authorized session and never di
     const eventsRoute = routes['/v1/build-ci/provider-connections/events']?.GET;
     assert.ok(createRoute && listRoute && rotateRoute && revokeRoute && eventsRoute);
     const unauthenticated = await createRoute(providerRouteContext({
-      method: 'POST', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github',
+      method: 'POST', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github', deliveryActorId: 'route-owner',
         repository: 'team/repo', secretRef: 'vault://forge/route/github/secret' },
     })).catch((error: unknown) => error);
     assert.ok(unauthenticated instanceof Error && unauthenticated.name === 'AppError');
 
     const denied = await createRoute(providerRouteContext({
-      method: 'POST', token: 'member', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github',
+      method: 'POST', token: 'member', body: { workspaceId: 'workspace-route', connectionId: 'x', provider: 'github', deliveryActorId: 'route-owner',
         repository: 'team/repo', secretRef: 'vault://forge/route/github/secret' },
     })).catch((error: unknown) => error);
     assert.ok(denied instanceof Error && denied.name === 'AppError');
 
     const created = await createRoute(providerRouteContext({
       method: 'POST', token: 'owner', body: { workspaceId: 'workspace-route', connectionId: 'route-connection',
-        provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/route/github/secret' },
+        provider: 'github', deliveryActorId: 'route-member', repository: 'team/private-repo', secretRef: 'vault://forge/route/github/secret' },
     }));
     assert.equal(created.status, 201);
     assert.equal(JSON.stringify(created.body).includes('vault://'), false);
