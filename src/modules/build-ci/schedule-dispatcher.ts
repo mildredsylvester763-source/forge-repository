@@ -94,7 +94,10 @@ export class ScheduleDispatcher {
       for (const trigger of scheduleTriggers(pipeline.definition.triggers)) {
         if (!trigger.cron || !trigger.scheduleId) continue;
         const times = findCronOccurrences(trigger.cron, trigger.timeZone ?? 'UTC', fromMs, throughMs, this.scanBatchMinutes);
+        const versionCreatedAt = Date.parse(pipeline.createdAt);
         for (const time of times) {
+          // A new pipeline version must not retroactively inherit schedule ticks from before it existed.
+          if (Number.isFinite(versionCreatedAt) && time < versionCreatedAt) continue;
           occurrencesFound += 1;
           const result = await this.occurrences.enqueue({
             workspaceId,
