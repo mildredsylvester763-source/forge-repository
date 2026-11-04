@@ -44,6 +44,11 @@ test('typed inputs reject unknown, missing, mistyped and out-of-range values', (
   assert.throws(() => resolvePipelineInputs(definition, { region: 'us-east', signing_key: 'workspace.key', injected: true }), /undeclared input/);
 });
 
+test('secret references cannot embed publisher-workspace defaults or option lists', () => {
+  assert.throws(() => validatePipelineDefinition({ ...base, inputs: [{ name: 'deploy_key', type: 'secret_ref', default: 'workspace.deploy_key' }] }), /secret_ref inputs cannot define defaults/);
+  assert.throws(() => validatePipelineDefinition({ ...base, inputs: [{ name: 'deploy_key', type: 'secret_ref', options: ['workspace.deploy_key'] }] }), /secret_ref inputs cannot define defaults/);
+});
+
 test('definition schema rejects duplicate inputs and required inputs with defaults', () => {
   assert.throws(() => validatePipelineDefinition({
     ...base,

@@ -92,7 +92,8 @@ function versionFromRow(row: TemplateVersionRow): PipelineTemplateVersion {
 
 function validateInput(input: { templateId: string; publisherWorkspaceId: string; name?: string; changelog?: string; createdBy: string; createdAt: string }): void {
   for (const [field, value] of Object.entries(input)) {
-    if (typeof value === 'string' && (value.trim().length === 0 || value.length > (field === 'changelog' ? 2000 : 128))) throw new TypeError(`${field} is invalid`);
+    const max = field === 'changelog' ? 2000 : field === 'description' ? 1000 : field === 'name' ? 100 : 128;
+    if (typeof value === 'string' && (value.trim().length === 0 || value.length > max)) throw new TypeError(`${field} is invalid`);
   }
 }
 

@@ -323,6 +323,7 @@ export function validatePipelineDefinition(input: unknown): PipelineDefinition {
           return false;
         };
         if (raw.default !== undefined && !matchesType(raw.default)) issues.push(`${path}.default: value does not match input type`);
+        if (type === 'secret_ref' && (raw.default !== undefined || raw.options !== undefined)) issues.push(`${path}: secret_ref inputs cannot define defaults or allowed-value lists; the consuming workspace must supply its own reference`);
         if (required && raw.default !== undefined) issues.push(`${path}: required inputs cannot also define a default`);
         let options: PipelineInputValue[] | undefined;
         if (raw.options !== undefined) {

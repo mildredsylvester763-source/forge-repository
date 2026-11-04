@@ -40,6 +40,10 @@ interface RunRow {
 }
 
 function versionFromRow(row: VersionRow): PipelineVersion {
+  const templateColumns = [row.template_id, row.template_version, row.template_hash, row.template_publisher_workspace_id];
+  if (templateColumns.some((value) => value !== null) && templateColumns.some((value) => value === null)) {
+    throw new Error(`Stored pipeline version ${row.pipeline_id}@${row.version} has incomplete template provenance.`);
+  }
   const definition = JSON.parse(row.definition_json) as unknown;
   const version = createPipelineVersion(
     definition,
