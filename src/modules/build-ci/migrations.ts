@@ -454,6 +454,7 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         updated_at TEXT NOT NULL
       );
     `,
+  },
   {
     version: 7,
     name: 'provider_connection_metadata_and_revocation',
