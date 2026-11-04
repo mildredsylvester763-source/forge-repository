@@ -88,3 +88,29 @@ test('ingress rejects a secret lookup raced by revocation or secret-reference ro
     assert.equal((await store.find('github', 'race-rotation'))?.secretRef, rotatedRef);
   } finally { db.close(); }
 });
+
+test('ingress rejects a persisted secret reference outside the connection workspace before vault access', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateBuildCiSqlite(db);
+    const store = new SqliteProviderConnectionStore(db);
+    await store.create({
+      connectionId: 'scope-check',
+      provider: 'github',
+      workspaceId: 'workspace-alpha',
+      actorId: 'workspace-service-1',
+      repository: 'team/private-api',
+      secretRef: 'vault://forge/workspace-alpha/github/webhook',
+    });
+    db.prepare(`UPDATE build_ci_provider_connections SET secret_ref = ? WHERE provider = ? AND connection_id = ?`)
+      .run('vault://forge/workspace-other/github/webhook', 'github', 'scope-check');
+    let vaultCalls = 0;
+    const resolver = new StoredWebhookConnectionResolver(store, {
+      resolve: async () => { vaultCalls += 1; return 'must-not-be-read'; },
+    });
+    assert.equal(await resolver.resolveForIngress('github', 'scope-check'), null);
+    assert.equal(vaultCalls, 0);
+  } finally {
+    db.close();
+  }
+});
