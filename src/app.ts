@@ -25,9 +25,13 @@ import {
   type WorkspaceMembershipReader,
   WebhookIngressService,
   WebhookDeliveryProcessor,
+  ScheduleDispatcher,
+  SqliteScheduleOccurrenceStore,
+  PostgresScheduleOccurrenceStore,
   SqliteWebhookDeliveryStore,
   PostgresWebhookDeliveryStore,
   type WebhookDeliveryStore,
+  type ScheduleOccurrenceStore,
   type WebhookConnectionResolver,
   buildCiRoutes,
 } from './modules/build-ci/index.ts';
@@ -83,6 +87,8 @@ export interface ForgeApp {
   db: Database | null;
   /** Available only when a trusted webhook connection resolver is configured. */
   webhookProcessor?: WebhookDeliveryProcessor;
+  /** Workspace-scoped durable schedule scanner and dispatcher; workers provide their trusted actor. */
+  scheduleDispatcher: ScheduleDispatcher;
   close(): Promise<void>;
 }
 
@@ -97,6 +103,7 @@ interface Storage {
   buildCiStore: PipelineStore;
   buildCiTemplates: PipelineTemplateStore;
   webhookDeliveries: WebhookDeliveryStore;
+  scheduleOccurrences: ScheduleOccurrenceStore;
   workspaceMemberships: WorkspaceMembershipReader;
 }
 
@@ -114,6 +121,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiStore: new PostgresBuildCiStore(pool),
       buildCiTemplates: new PostgresPipelineTemplateStore(pool),
       webhookDeliveries: new PostgresWebhookDeliveryStore(pool),
+      scheduleOccurrences: new PostgresScheduleOccurrenceStore(pool),
       workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
     };
   }
@@ -134,6 +142,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiStore: new SqliteBuildCiStore(db),
       buildCiTemplates: new SqlitePipelineTemplateStore(db),
       webhookDeliveries: new SqliteWebhookDeliveryStore(db),
+      scheduleOccurrences: new SqliteScheduleOccurrenceStore(db),
       workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
     };
   }
@@ -151,6 +160,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     buildCiStore: new SqliteBuildCiStore(buildCiDb),
     buildCiTemplates: new SqlitePipelineTemplateStore(buildCiDb),
     webhookDeliveries: new SqliteWebhookDeliveryStore(buildCiDb),
+    scheduleOccurrences: new SqliteScheduleOccurrenceStore(buildCiDb),
     workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
   };
 }
@@ -209,6 +219,13 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ? new WebhookDeliveryProcessor({ deliveries: storage.webhookDeliveries, connections: overrides.webhookConnections, buildCi, now: clock })
     : undefined;
 
+  const scheduleDispatcher = new ScheduleDispatcher({
+    occurrences: storage.scheduleOccurrences,
+    pipelines: storage.buildCiStore,
+    buildCi,
+    now: clock,
+  });
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -237,5 +254,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), close };
+  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), scheduleDispatcher, close };
 }
