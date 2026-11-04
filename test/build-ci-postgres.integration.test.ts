@@ -223,10 +223,15 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(claimed.status, 'processing');
     assert.equal(claimed.attempts, 1);
     const claimOwner = claimed.leaseOwner!;
+    const failureCredential = 'ghp_POSTGRES_STORAGE_BOUNDARY_SECRET_MUST_NOT_PERSIST';
     assert.deepEqual(await webhookDeliveries.fail({
-      deliveryRowId: claimed.deliveryRowId, workerId: claimOwner, error: 'retry integration test',
+      deliveryRowId: claimed.deliveryRowId, workerId: claimOwner,
+      error: 'provider error with credential ' + failureCredential,
       failedAt: '2026-11-04T00:11:30.000Z', retryAt: '2026-11-04T00:12:00.000Z', maxAttempts: 2,
     }), { updated: true, terminal: false });
+    const retriableFailure = await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1');
+    assert.equal(retriableFailure?.lastError, 'Webhook delivery processing failed.');
+    assert.equal(retriableFailure?.lastError?.includes(failureCredential), false);
     assert.equal(await webhookDeliveries.claimNext({
       workerId: 'pg-worker-c', now: '2026-11-04T00:11:59.000Z', leaseExpiresAt: '2026-11-04T00:13:00.000Z',
     }), null);
