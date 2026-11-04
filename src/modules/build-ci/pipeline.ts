@@ -714,6 +714,12 @@ function canonicalJson(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
 }
 
+/** Hashes the normalized, validated definition used by immutable pipeline versions. */
+export function hashPipelineDefinition(definitionInput: unknown): string {
+  const definition = validatePipelineDefinition(definitionInput);
+  return createHash('sha256').update(canonicalJson(definition)).digest('hex');
+}
+
 export function createPipelineVersion(definitionInput: unknown, version: number, createdBy: string, createdAt = new Date().toISOString(), rollbackOfVersion?: number, templateSource?: PipelineTemplateSource): PipelineVersion {
   if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('version must be a positive safe integer');
   if (!createdBy.trim()) throw new TypeError('createdBy is required');
@@ -748,6 +754,82 @@ export function createRollbackVersion(history: readonly PipelineVersion[], targe
   const latest = Math.max(...history.map((item) => item.version));
   if (!Number.isSafeInteger(latest) || latest < 1) throw new TypeError('invalid version history');
   return createPipelineVersion(target.definition, latest + 1, createdBy, createdAt, targetVersion, target.templateSource);
+}
+
+
+export interface PipelineDefinitionElementSummary {
+  readonly id: string;
+  readonly kind?: string;
+  readonly task?: string;
+}
+export interface PipelineDefinitionElementDiff {
+  readonly added: readonly PipelineDefinitionElementSummary[];
+  readonly removed: readonly PipelineDefinitionElementSummary[];
+  readonly changed: readonly { readonly id: string; readonly changedFields: readonly string[] }[];
+  readonly orderChanged: boolean;
+}
+export interface PipelineDefinitionDiff {
+  readonly pipelineId: string;
+  /** Root-level fields changed, excluding IDs and nested trigger/step details. */
+  readonly changedFields: readonly string[];
+  readonly triggers: PipelineDefinitionElementDiff;
+  readonly steps: PipelineDefinitionElementDiff;
+  readonly hasChanges: boolean;
+}
+
+function compareEntityLists<T extends { readonly id: string }>(
+  before: readonly T[],
+  after: readonly T[],
+  summarize: (item: T) => PipelineDefinitionElementSummary,
+): PipelineDefinitionElementDiff {
+  const beforeById = new Map(before.map((item) => [item.id, item]));
+  const afterById = new Map(after.map((item) => [item.id, item]));
+  const added = after.filter((item) => !beforeById.has(item.id)).map(summarize);
+  const removed = before.filter((item) => !afterById.has(item.id)).map(summarize);
+  const changed: { id: string; changedFields: readonly string[] }[] = [];
+  for (const item of before) {
+    const next = afterById.get(item.id);
+    if (!next) continue;
+    const beforeRecord = item as unknown as Record<string, unknown>;
+    const afterRecord = next as unknown as Record<string, unknown>;
+    const fields = [...new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)])]
+      .filter((field) => field !== 'id')
+      .filter((field) => canonicalJson(beforeRecord[field]) !== canonicalJson(afterRecord[field]))
+      .sort();
+    if (fields.length > 0) changed.push(Object.freeze({ id: item.id, changedFields: Object.freeze(fields) }));
+  }
+  const shared = new Set([...beforeById.keys()].filter((id) => afterById.has(id)));
+  const beforeOrder = before.filter((item) => shared.has(item.id)).map((item) => item.id);
+  const afterOrder = after.filter((item) => shared.has(item.id)).map((item) => item.id);
+  return Object.freeze({
+    added: Object.freeze(added),
+    removed: Object.freeze(removed),
+    changed: Object.freeze(changed),
+    orderChanged: beforeOrder.some((id, index) => id !== afterOrder[index]),
+  });
+}
+
+/** Produces a value-free structural diff for saved versions and candidate dry-runs. */
+export function comparePipelineDefinitions(beforeInput: unknown, afterInput: unknown): PipelineDefinitionDiff {
+  const before = validatePipelineDefinition(beforeInput);
+  const after = validatePipelineDefinition(afterInput);
+  if (before.id !== after.id) throw new TypeError('Pipeline definitions must have the same ID to compare.');
+  const beforeRecord = before as unknown as Record<string, unknown>;
+  const afterRecord = after as unknown as Record<string, unknown>;
+  const changedFields = ['name', 'description', 'inputs']
+    .filter((field) => canonicalJson(beforeRecord[field]) !== canonicalJson(afterRecord[field]));
+  const triggers = compareEntityLists(before.triggers, after.triggers, (item) => Object.freeze({ id: item.id, kind: item.kind }));
+  const steps = compareEntityLists(before.steps, after.steps, (item) => Object.freeze({ id: item.id, task: item.task }));
+  const hasChanges = changedFields.length > 0 ||
+    triggers.added.length > 0 || triggers.removed.length > 0 || triggers.changed.length > 0 || triggers.orderChanged ||
+    steps.added.length > 0 || steps.removed.length > 0 || steps.changed.length > 0 || steps.orderChanged;
+  return Object.freeze({
+    pipelineId: before.id,
+    changedFields: Object.freeze(changedFields),
+    triggers,
+    steps,
+    hasChanges,
+  });
 }
 
 export function newPipelineId(): string {
