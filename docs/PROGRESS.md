@@ -123,12 +123,13 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest implementation CI run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41814529813
+Latest verified commit: `d9ee14b8f9d19dfec68547950a28dbcb1f629da1`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41814811720
 
 - Typecheck: passed.
 - Production build: passed.
-- Complete test suite against real PostgreSQL: 184 tests, 184 passed, 0 failed, 0 skipped.
-- This run verifies the initial durable schedule dispatcher, SQLite scheduler tests and PostgreSQL concurrent schedule claims. Follow-up cron-step and paused-schedule tests are being added in the next verification batch.
+- Complete test suite against real PostgreSQL: 186 tests, 186 passed, 0 failed, 0 skipped.
+- This run includes numeric cron-step expansion, paused/resumed schedule behaviour, SQLite scheduler tests and real PostgreSQL concurrent schedule claims/dispatch.
 
 ### Feature status
 
