@@ -74,7 +74,7 @@ export class ProviderConnectionOperations {
 
   private async requireSecretReference(secretRef: string, workspaceId: string): Promise<void> {
     if (typeof secretRef !== 'string' || secretRef.length > 512) throw new TypeError('secretRef is invalid');
-    const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}
+    const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}$').exec(secretRef);
     if (!match) throw new TypeError('secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
     if (match[2] !== workspaceId) throw new TypeError('secretRef belongs to a different workspace');
     let secret: string | null;
