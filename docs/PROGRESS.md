@@ -155,15 +155,28 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 
 ### Still outstanding before these features can be accepted
 
-1. Complete BD-001 task-registry compatibility, structured definition/template diff and upgrade flow; decide whether a public/global catalogue is in scope.
+1. Complete BD-001 task-registry compatibility and structured template diff/upgrade flow. Pipeline definition/version diff is now implemented separately; the template upgrade workflow remains distinct.
 2. Supply and integrate a concrete vault/KMS adapter plus provisioning/retirement workflow; decide the production service-principal/delivery-actor strategy; complete event-bus publication, production worker/workspace-inventory configuration, per-pipeline concurrency controls and registered task execution for BD-016. Provider connection lifecycle APIs and dead-letter operations are implemented on the GPT branch but await full CI verification.
 3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
 4. Add richer representative scenario fixtures/reporting to BD-029 and verify candidate diffs remain side-effect-free under the complete CI suite.
 5. Run full CI for the new version-diff, hash-integrity and concurrent PostgreSQL save/rollback coverage; independently inspect the results before acceptance of BD-030.
-6. Integrate registered tasks with the existing Task Runtime/Orchestrator without duplicating those modules.
+6. Implement the approved workspace-scoped execution adapter only after the Task Runtime contract/identity decision is made; do not encode CI jobs as free-text task goals or duplicate Mistral engines.
 7. Add worker isolation, scoped secret delivery, execution state transitions, cancellation/retries, logs and artifacts only where they map to approved catalogue requirements.
 8. Run the full real-PostgreSQL CI suite after every integration batch; inspect logs and security tests rather than treating a green badge as acceptance.
 9. Independent verification and owner acceptance remain outstanding for all five IDs.
+
+
+### Decisions awaiting owner approval (do not block independent work)
+
+1. **Webhook delivery identity:** the current provider connection requires an explicitly selected active workspace member with trigger permission. Confirm the production model should instead use a first-class non-human workspace service principal, including creation, revocation, key rotation and audit semantics. No service-principal lifecycle has been invented.
+2. **Vault/KMS integration:** choose the supported external secret manager and its provisioning/rotation/retirement contract. The code currently requires an injected resolver and stores opaque workspace-scoped references only; it does not choose a vendor or create secret material.
+3. **Provider changed-file retrieval:** confirm which provider integration permissions may be granted to retrieve pull-request/merge-request changed files (GitHub App installation permissions and GitLab API scopes). Webhook signing secrets are not sufficient for authenticated diff retrieval.
+4. **Task execution integration:** approve the future adapter boundary between workspace-scoped Build & CI runs and the Mistral-owned Task Runtime. The current Task Runtime accepts user-owned free-text goals and journals task events; it has no pipeline ID/version, registered CI task handler or workspace-scoped execution identity. Its Orchestrator tool registry is not a CI task registry. Do not modify or duplicate the Mistral branch.
+5. **Dead-letter replay role:** current policy permits owners, admins and maintainers to replay a failed provider delivery. Confirm whether maintainers should retain replay authority or whether replay should be limited to owner/admin.
+6. **Template discovery policy:** public/community or organization-wide template catalogue remains disabled. Workspace-private and explicitly shared templates are implemented; wider discovery needs a separate visibility/moderation policy.
+
+These are recorded for the final approval review. Continue work that does not depend on them.
+
 
 Detailed market and product requirements: `docs/BUILD_CI_MARKET_RESEARCH.md`.
 API contracts: `docs/BUILD_CI_API.md`.
