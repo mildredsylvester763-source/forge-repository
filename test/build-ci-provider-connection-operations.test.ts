@@ -53,6 +53,7 @@ test('provider connection operations are workspace-authorized, secret-safe and a
       provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/a/github/first',
     });
     assert.equal(created.active, true);
+    assert.equal((await store.find('github', 'github-app-1'))?.actorId, 'member-a');
     assert.equal('secretRef' in created, false);
     assert.equal(JSON.stringify(created).includes('secret-material-never-returned'), false);
 
