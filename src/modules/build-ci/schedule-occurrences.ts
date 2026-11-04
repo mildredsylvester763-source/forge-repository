@@ -3,7 +3,7 @@ import type { Database } from '../../kernel/sqlite.ts';
 import { transaction } from '../../kernel/sqlite.ts';
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 
-export type ScheduleOccurrenceStatus = 'queued' | 'processing' | 'dispatched' | 'failed';
+export type ScheduleOccurrenceStatus = 'queued' | 'processing' | 'dispatched' | 'skipped' | 'failed';
 
 export interface ScheduleOccurrence {
   readonly occurrenceId: string;
@@ -54,6 +54,9 @@ export interface ScheduleOccurrenceStore {
   complete(occurrenceId: string, workerId: string, dispatchedAt: string): Promise<boolean>;
   fail(input: FailScheduleOccurrenceInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }>;
   list(workspaceId: string, limit?: number): Promise<readonly ScheduleOccurrence[]>;
+  getOrCreateCursor(workspaceId: string, initialCursor: string): Promise<string>;
+  advanceCursor(workspaceId: string, scannedThrough: string): Promise<void>;
+  skip(occurrenceId: string, workerId: string, skippedAt: string): Promise<boolean>;
 }
 
 interface OccurrenceRow {
@@ -172,6 +175,33 @@ export class SqliteScheduleOccurrenceStore implements ScheduleOccurrenceStore {
       .all(workspaceId, limit) as unknown as OccurrenceRow[];
     return Object.freeze(rows.map(fromRow));
   }
+
+  async getOrCreateCursor(workspaceId: string, initialCursor: string): Promise<string> {
+    if (!workspaceId.trim() || !Number.isFinite(Date.parse(initialCursor))) throw new TypeError('cursor input is invalid');
+    return transaction(this.db, () => {
+      this.db.prepare(`INSERT INTO build_ci_schedule_scan_cursors (workspace_id, cursor_at, updated_at)
+        VALUES (?, ?, ?) ON CONFLICT (workspace_id) DO NOTHING`).run(workspaceId, initialCursor, new Date().toISOString());
+      const row = this.db.prepare('SELECT cursor_at FROM build_ci_schedule_scan_cursors WHERE workspace_id = ?')
+        .get(workspaceId) as { cursor_at: string } | undefined;
+      if (!row) throw new Error('Schedule cursor was not persisted.');
+      return row.cursor_at;
+    });
+  }
+
+  async advanceCursor(workspaceId: string, scannedThrough: string): Promise<void> {
+    if (!workspaceId.trim() || !Number.isFinite(Date.parse(scannedThrough))) throw new TypeError('cursor input is invalid');
+    this.db.prepare(`UPDATE build_ci_schedule_scan_cursors SET cursor_at = ?, updated_at = ?
+      WHERE workspace_id = ? AND cursor_at < ?`).run(scannedThrough, new Date().toISOString(), workspaceId, scannedThrough);
+  }
+
+  async skip(occurrenceId: string, workerId: string, skippedAt: string): Promise<boolean> {
+    if (!Number.isFinite(Date.parse(skippedAt))) throw new TypeError('skippedAt is invalid');
+    const result = this.db.prepare(`UPDATE build_ci_schedule_occurrences SET status = 'skipped',
+      lease_owner = NULL, lease_expires_at = NULL, last_error = NULL
+      WHERE occurrence_id = ? AND status = 'processing' AND lease_owner = ? AND lease_expires_at > ?`)
+      .run(occurrenceId, workerId, skippedAt);
+    return Number(result.changes) === 1;
+  }
 }
 
 export class PostgresScheduleOccurrenceStore implements ScheduleOccurrenceStore {
@@ -236,5 +266,29 @@ export class PostgresScheduleOccurrenceStore implements ScheduleOccurrenceStore 
     if (!workspaceId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new TypeError('list scope is invalid');
     const result = await this.pool.query<OccurrenceRow>('SELECT * FROM build_ci_schedule_occurrences WHERE workspace_id = $1 ORDER BY scheduled_for DESC LIMIT $2', [workspaceId, limit]);
     return Object.freeze(result.rows.map(fromRow));
+  }
+
+  async getOrCreateCursor(workspaceId: string, initialCursor: string): Promise<string> {
+    if (!workspaceId.trim() || !Number.isFinite(Date.parse(initialCursor))) throw new TypeError('cursor input is invalid');
+    await this.pool.query(`INSERT INTO build_ci_schedule_scan_cursors (workspace_id, cursor_at, updated_at)
+      VALUES ($1, $2, $2) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId, initialCursor]);
+    const row = await this.pool.query<{ cursor_at: string }>('SELECT cursor_at FROM build_ci_schedule_scan_cursors WHERE workspace_id = $1', [workspaceId]);
+    if (!row.rows[0]) throw new Error('Schedule cursor was not persisted.');
+    return row.rows[0].cursor_at;
+  }
+
+  async advanceCursor(workspaceId: string, scannedThrough: string): Promise<void> {
+    if (!workspaceId.trim() || !Number.isFinite(Date.parse(scannedThrough))) throw new TypeError('cursor input is invalid');
+    await this.pool.query(`UPDATE build_ci_schedule_scan_cursors SET cursor_at = $1, updated_at = $1
+      WHERE workspace_id = $2 AND cursor_at < $1`, [scannedThrough, workspaceId]);
+  }
+
+  async skip(occurrenceId: string, workerId: string, skippedAt: string): Promise<boolean> {
+    if (!Number.isFinite(Date.parse(skippedAt))) throw new TypeError('skippedAt is invalid');
+    const result = await this.pool.query(`UPDATE build_ci_schedule_occurrences SET status = 'skipped',
+      lease_owner = NULL, lease_expires_at = NULL, last_error = NULL
+      WHERE occurrence_id = $1 AND status = 'processing' AND lease_owner = $2 AND lease_expires_at > $3`,
+      [occurrenceId, workerId, skippedAt]);
+    return result.rowCount === 1;
   }
 }
