@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { BuildCiService } from '../src/modules/build-ci/store.ts';
 import { PostgresBuildCiStore } from '../src/modules/build-ci/postgres-store.ts';
 import { PostgresPipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
+import { PostgresWebhookDeliveryStore } from '../src/modules/build-ci/webhook-deliveries.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
@@ -101,6 +102,33 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       "UPDATE build_pipeline_template_versions SET changelog = 'tampered' WHERE template_id = $1 AND version = 1",
       ['template-pg-quality'],
     ));
+
+    const webhookDeliveries = new PostgresWebhookDeliveryStore(testPool.pool);
+    const webhookEvent = {
+      kind: 'push' as const,
+      source: 'github:push',
+      eventType: 'push',
+      eventId: 'pg-webhook-delivery-1',
+      branch: 'main',
+      commitSha: 'feedface',
+      changedFiles: ['src/index.ts'],
+    };
+    const webhookInput = {
+      connectionId: 'pg-webhook-connection',
+      provider: 'github' as const,
+      workspaceId: 'pg-workspace',
+      repository: 'team/forge',
+      deliveryId: 'pg-webhook-delivery-1',
+      event: webhookEvent,
+      bodySha256: 'a'.repeat(64),
+      receivedAt: '2026-11-04T00:10:00.000Z',
+    };
+    const webhookFirst = await webhookDeliveries.enqueue(webhookInput);
+    const webhookDuplicate = await webhookDeliveries.enqueue(webhookInput);
+    assert.equal(webhookFirst.inserted, true);
+    assert.equal(webhookDuplicate.inserted, false);
+    assert.equal(webhookDuplicate.deliveryRowId, webhookFirst.deliveryRowId);
+    assert.deepEqual((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1'))?.event, webhookEvent);
 
     const event = { kind: 'manual' as const, source: 'forge:manual', eventId: 'pg-integration-once' };
     const first = await service.trigger({

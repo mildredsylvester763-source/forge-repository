@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { migrateBuildCiSqlite } from '../src/modules/build-ci/migrations.ts';
+import { SqliteWebhookDeliveryStore } from '../src/modules/build-ci/webhook-deliveries.ts';
+import { WebhookIngressError, WebhookIngressService } from '../src/modules/build-ci/webhook-ingress.ts';
 import {
   normalizeGitHubWebhook,
   normalizeGitLabWebhook,
@@ -120,4 +124,65 @@ test('GitLab push and merge-request hooks normalize into FORGE trigger events', 
 test('provider normalizers reject missing delivery identity and malformed JSON', () => {
   assert.throws(() => normalizeGitHubWebhook(Buffer.from('{}'), { 'x-github-event': 'push' }), WebhookPayloadError);
   assert.throws(() => normalizeGitLabWebhook(Buffer.from('{'), { 'x-gitlab-event': 'Push Hook', 'webhook-id': 'id' }), WebhookPayloadError);
+});
+
+test('verified webhook ingress enqueues once and rejects repository-binding mismatch', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  try {
+    migrateBuildCiSqlite(db);
+    const deliveries = new SqliteWebhookDeliveryStore(db);
+    const secret = 'github-webhook-test-secret';
+    const connection = {
+      connectionId: 'connection-123',
+      provider: 'github' as const,
+      workspaceId: 'workspace-web',
+      repository: 'team/api',
+      signingSecret: secret,
+      active: true,
+    };
+    const ingress = new WebhookIngressService({
+      connections: { resolve: async () => connection },
+      deliveries,
+      now: () => 1_800_000_000_000,
+    });
+    const rawBody = Buffer.from(JSON.stringify({
+      repository: { full_name: 'team/api' },
+      ref: 'refs/heads/main',
+      after: 'abc123',
+      commits: [{ added: ['src/new.ts'], modified: [], removed: [] }],
+    }));
+    const signature = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+    const headers = {
+      'x-hub-signature-256': signature,
+      'x-github-event': 'push',
+      'x-github-delivery': 'delivery-001',
+    };
+    const first = await ingress.ingest('github', 'connection-123', rawBody, headers);
+    assert.equal(first.accepted, true);
+    assert.equal(first.duplicate, false);
+    assert.equal(first.workspaceId, 'workspace-web');
+    const second = await ingress.ingest('github', 'connection-123', rawBody, headers);
+    assert.equal(second.duplicate, true);
+    const stored = await deliveries.find('connection-123', 'delivery-001');
+    assert.equal(stored?.status, 'queued');
+    assert.equal(stored?.event.branch, 'main');
+    assert.deepEqual(stored?.event.changedFiles, ['src/new.ts']);
+    assert.equal(stored?.bodySha256.length, 64);
+
+    const wrongBinding = new WebhookIngressService({
+      connections: { resolve: async () => ({ ...connection, repository: 'team/other' }) },
+      deliveries,
+      now: () => 1_800_000_000_000,
+    });
+    await assert.rejects(() => wrongBinding.ingest('github', 'connection-123', rawBody, headers), WebhookIngressError);
+    const invalidSignature = new WebhookIngressService({
+      connections: { resolve: async () => connection },
+      deliveries,
+      now: () => 1_800_000_000_000,
+    });
+    await assert.rejects(() => invalidSignature.ingest('github', 'connection-123', rawBody, { ...headers, 'x-hub-signature-256': 'sha256=' + '0'.repeat(64) }), WebhookIngressError);
+  } finally {
+    db.close();
+  }
 });
