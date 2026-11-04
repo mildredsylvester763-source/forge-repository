@@ -188,3 +188,24 @@ A feature is not accepted because its type definitions or unit tests exist. Requ
 ## Scope control
 
 The following are implementation dependencies or future work, not silently completed features: workspace membership lifecycle (owned by workspace/permissions catalogue area), webhook-provider setup, scheduler delivery, event bus, task worker execution, worker isolation, secret broker, logs/artifacts, cancellation/retry execution and deployment. Each must be mapped to its owning catalogue ID before implementation.
+
+### BD-016 — webhook delivery benchmark update (2026-11-04)
+
+Current provider-ingress implementation was checked against current official provider and security guidance:
+
+- GitHub requires validating the HMAC-SHA256 signature against the unmodified request body, keeping the secret server-side, using the delivery identifier to deduplicate, and recommends responding quickly while processing asynchronously. GitHub redelivery retains the same delivery ID. FORGE verifies the raw body and deduplicates by connection plus provider delivery ID; the durable worker/retry/replay lifecycle is still absent.
+- GitLab CI/CD supports push, merge-request, scheduled and manual pipeline sources, ordered job rules, and dependency-driven execution. FORGE's current safe condition AST and trigger model intentionally avoid arbitrary expression evaluation, but still need a real scheduler and trusted changed-file provider adapter.
+- Buildkite's incoming pipeline triggers accept signed GitHub events and generic webhook requests, expose delivery inspection, and document credential rotation constraints. This reinforces the need for FORGE to provide delivery observability and a rotation/revocation path through the integration/secret subsystem rather than storing signing secrets in Build & CI.
+- OWASP webhook guidance recommends constant-time HMAC verification, one secret per webhook, timestamp freshness where the provider supports it, event-ID deduplication, idempotent processing, payload limits, rate limiting, structured logs without full bodies/secrets, and asynchronous queueing. The current ingress covers raw-body signature verification, repository binding, bounded body size, deduplication and durable receipt insertion; freshness/replay controls for provider-specific timestamped signatures, throttling, operational logs/alerts, worker processing and retry/dead-letter controls remain verification or implementation work.
+
+This is a product/security benchmark, not evidence that all listed controls are implemented. Do not mark BD-016 accepted until the outstanding controls are mapped to catalogue scope, implemented where required, and tested.
+
+Additional primary references:
+- GitHub webhook signature validation: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+- GitHub webhook best practices, delivery IDs and asynchronous processing: https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks
+- GitHub webhook redelivery: https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks
+- GitLab pipeline sources: https://docs.gitlab.com/ci/pipelines/
+- GitLab ordered job rules: https://docs.gitlab.com/ci/jobs/job_rules/
+- Buildkite incoming pipeline triggers and delivery model: https://buildkite.com/docs/apis/webhooks/incoming/pipeline-triggers
+- OWASP Webhook Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Webhook_Security_Cheat_Sheet.html
+- OWASP CI/CD Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/CI_CD_Security_Cheat_Sheet.html
