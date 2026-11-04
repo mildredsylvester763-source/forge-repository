@@ -73,6 +73,18 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     assert.equal(published.status, 201);
     const template = (published.body as { template: { templateId: string; version: number; definitionHash: string } }).template;
     assert.equal(template.version, 1);
+    await app.buildCi.createPipeline({
+      workspaceId: 'workspace-a',
+      definition: { ...definition, name: 'HTTP pipeline version 2' },
+      actorId: 'session-user',
+      createdAt: '2026-11-04T00:01:00.000Z',
+    });
+    const publishTemplateVersion = routes['/v1/build-ci/templates/publish-version']?.POST;
+    assert.ok(publishTemplateVersion);
+    const publishedV2 = await publishTemplateVersion(context({
+      workspaceId: 'workspace-a', templateId: template.templateId, changelog: 'Updated validation workflow',
+    }, 'valid-session'));
+    assert.equal((publishedV2.body as { template: { version: number } }).template.version, 2);
 
     const beforeShare = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
     assert.equal((beforeShare.body as { templates: unknown[] }).templates.length, 0);
@@ -83,7 +95,7 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     const afterShare = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
     assert.equal((afterShare.body as { templates: unknown[] }).templates.length, 1);
     const templateVersion = await readTemplateVersion(context({}, 'valid-session', {
-      workspaceId: 'workspace-b', templateId: template.templateId, version: '1',
+      workspaceId: 'workspace-b', templateId: template.templateId, version: '2',
     }));
     assert.equal(templateVersion.status, 200);
 
