@@ -48,6 +48,16 @@ test('provider connection operations are workspace-authorized, secret-safe and a
       }),
       (error: unknown) => error instanceof Error && error.name === 'PipelineAuthorizationError',
     );
+    const callsBeforeCrossWorkspace = resolveCalls.length;
+    await assert.rejects(
+      () => operations.create({
+        workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a', connectionId: 'cross-workspace-ref',
+        provider: 'github', repository: 'team/repo', secretRef: 'vault://forge/workspace-b/github/first',
+      }),
+      /different workspace/,
+    );
+    assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'cross-workspace references must be rejected before vault lookup');
+
     const created = await operations.create({
       workspaceId: 'workspace-a', actorId: 'owner-a', deliveryActorId: 'member-a', connectionId: 'github-app-1',
       provider: 'github', repository: 'team/private-repo', secretRef: 'vault://forge/workspace-a/github/first',
