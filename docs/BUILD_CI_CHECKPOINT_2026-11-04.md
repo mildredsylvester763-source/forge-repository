@@ -163,3 +163,22 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - After verification, inspect the existing workspace membership and authorization contract before designing provider-connection management routes. Membership writes belong to the workspace-management domain; do not invent an owner/admin policy or expose connection create/rotate/revoke endpoints until the existing identity and audit contract is mapped.
 - External dependency remains: a concrete vault/KMS implementation and its provisioning/retirement workflow. Build & CI stores opaque references only; it must not persist provider signing secrets.
 - Branch rules remain unchanged: GPT work only on `gpt-part2-build-ci`; `main`, `mistral`, and `claude` remain untouched. No merge or deployment.
+
+## Continuation checkpoint — webhook dead-letter operations (implementation pending CI verification)
+
+- Provider lookup race coverage was extended to PostgreSQL in commit `9886e4a24c812058a806b0a90cd80a7fa0ea135d`, matching the SQLite revocation/reference-rotation race test.
+- Webhook delivery failure text is now redacted inside both SQLite and PostgreSQL storage adapters, not only in the processor. Direct-store credential-sentinel regression coverage was added for SQLite and PostgreSQL in commits `f763c36b9aa0c14691f0673189b54fc844f90654`, `a6cd3ae575d4e1e53e19652e674fcac202f19de5` and `3886ed3a0fc38912e8af77d38dca850e27a43b40`.
+- Migration v8 creates an append-only `build_ci_webhook_delivery_events` table in SQLite and PostgreSQL for replay audit history. SQLite blocks update/delete; PostgreSQL blocks update/delete/truncate.
+- Added workspace-scoped dead-letter listing with bounded cursor pagination, a minimized projection that excludes stored webhook payloads and body digests, atomic replay of terminal failures, and replay history with actor/time/previous-attempt metadata.
+- Added `WebhookDeliveryOperations`, which uses the persisted workspace membership authorizer. Current policy: all active workspace roles may read dead-letter metadata/history; owner, admin and maintainer may replay. Member/viewer replay is denied.
+- Added authenticated routes:
+  - `GET /v1/build-ci/webhooks/dead-letters`
+  - `GET /v1/build-ci/webhooks/dead-letters/events`
+  - `POST /v1/build-ci/webhooks/dead-letters/replay`
+- SQLite route/service tests cover workspace scoping, pagination, role denial, one-time replay, audit metadata, append-only enforcement and response data minimization. PostgreSQL integration coverage exercises terminal failure, listing, replay, idempotency and append-only enforcement.
+- The PostgreSQL test block was reordered after the existing webhook processor assertion so a replayed queue item cannot alter the earlier processor test's claim order.
+- API documentation now distinguishes verified-and-queued ingress from pipeline execution. The optional worker host remains opt-in; replay only queues the delivery and does not execute pipeline tasks.
+- Latest implementation commit at this checkpoint: `7705a557b5eaf9da3348d807ff4dac9698b551d1` (dead-letter storage projection). Documentation update: `3b1563f5a1c560d43764e7e015202c256d18f403`.
+- **Verification state: NOT YET VERIFIED.** The prior passing Actions run `41826209940` predates all continuation changes in this checkpoint. The available GitHub Actions connector exposes pull-request-triggered runs only and its commit status response is empty even for the known earlier passing commit; no latest push-run ID or job result has been independently inspected. Do not mark these additions as CI-passing until the actual run is inspected.
+- No merge, deployment, or changes to `main`, `mistral` or `claude` were made.
+- Pending product decision: confirm whether workspace maintainers should be allowed to replay failed provider deliveries, or whether replay should be restricted to owner/admin. The current implementation uses owner/admin/maintainer as a conservative operating policy pending review.
