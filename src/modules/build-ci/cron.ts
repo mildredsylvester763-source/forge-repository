@@ -15,7 +15,9 @@ function parseField(source: string, min: number, max: number, normalize?: (value
   const values = new Set<number>();
   const wildcard = source === '*' || source.startsWith('*/');
   for (const part of source.split(',')) {
-    const [base, stepText] = part.split('/');
+    const segments = part.split('/');
+    if (segments.length > 2) throw new TypeError('Invalid cron field');
+    const [base, stepText] = segments;
     if (!base || (stepText !== undefined && (!/^\\d+$/.test(stepText) || Number(stepText) < 1 || Number(stepText) > max - min + 1))) throw new TypeError('Invalid cron step');
     const step = stepText === undefined ? 1 : Number(stepText);
     const bounds = base === '*' ? [min, max] : base.includes('-') ? base.split('-').map(Number) : [Number(base), stepText === undefined ? Number(base) : max];
