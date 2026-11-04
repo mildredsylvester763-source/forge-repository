@@ -46,7 +46,7 @@ function timestamp(value: string, field: string): void {
 }
 function validateSecretRef(value: string, workspaceId?: string): void {
   required(value, 'secretRef', 512);
-  if (!new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?[A-Za-z0-9._-]{1,128}[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}
+  if (!new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?[A-Za-z0-9._-]{1,128}[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}$').test(value)) {
     throw new TypeError('secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
   }
   if (workspaceId !== undefined) {
