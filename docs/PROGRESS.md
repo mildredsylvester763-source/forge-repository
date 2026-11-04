@@ -246,3 +246,13 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - The first provider metadata commit exposed a PostgreSQL migration syntax boundary error; the next commit corrected it. TypeScript then flagged parameter properties under `erasableSyntaxOnly`; constructors were changed to explicit field assignments. These failures were corrected before the final verified run.
 - Final code/test commit `23c2faa1baff5cac3ae57726931843059af8a12a` passed Actions run `41825602764`: typecheck passed, production build passed, 195 tests passed, 0 failed, 0 skipped, including real PostgreSQL migration and provider-connection lifecycle coverage.
 - Still missing: concrete vault/KMS adapter, secure secret provisioning and rotation, authorization-enforced connection-management API, service-principal creation/revocation lifecycle, production workspace/provider resolver composition, and transactional event/outbox publication.
+
+
+### 2026-11-04 provider secret-reference rotation
+
+- Added compare-and-swap rotation to both SQLite and PostgreSQL provider-connection stores. Rotation requires an active connection and the expected current opaque reference, preventing a stale concurrent rotation from overwriting a newer reference.
+- Ingress resolves only the current reference and verifies that it remains unchanged/active after the external vault call. Delivery lookup remains vault-free.
+- Added SQLite and PostgreSQL tests for successful rotation and stale-reference rejection.
+- One more CI run exposed a third schedule test with a fixed synthetic clock but a wall-clock-created pipeline. The fixture now pins its pipeline creation timestamp, removing the runner-time dependency.
+- Verified code/test head `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; Actions run `41826209940` passed typecheck, production build and 195 tests against real PostgreSQL (0 failures, 0 skipped).
+- Vault-side provisioning/retirement is not performed by the compare-and-swap method. A concrete vault adapter and an authorized connection-management lifecycle remain outstanding.

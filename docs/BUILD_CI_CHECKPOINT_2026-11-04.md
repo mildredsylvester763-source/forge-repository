@@ -139,3 +139,13 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - Final verified commit: `23c2faa1baff5cac3ae57726931843059af8a12a`.
 - GitHub Actions run `41825602764`: typecheck passed, production build passed, 195 passed, 0 failed, 0 skipped; PostgreSQL integration ran.
 - Not implemented: concrete vault/KMS adapter, secret provisioning/rotation, authorization-enforced connection-management routes, service-principal lifecycle, production resolver/workspace-inventory wiring and transactional event/outbox publication.
+
+
+## Secret-reference rotation — verified 2026-11-04
+
+- Both provider connection stores now support compare-and-swap replacement of the opaque vault reference. The update requires an active connection and the exact expected current reference; a stale rotation returns false rather than overwriting a newer value.
+- The ingress resolver reads the current pointer, obtains the signing secret through the external vault port, then re-reads connection metadata to reject revocation or reference changes during lookup. Delivery resolution still never calls the vault.
+- Added SQLite unit tests and real PostgreSQL integration coverage for successful rotation and stale-reference rejection.
+- A third fixed-clock scheduler test also depended on wall-clock pipeline creation time. The fixture was pinned to a deterministic timestamp; no scheduler runtime behavior was changed.
+- Verified code/test commit `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; Actions run `41826209940` passed typecheck, production build and all 195 tests against real PostgreSQL (0 failures, 0 skipped).
+- Metadata rotation does not provision or delete vault secrets. The external management workflow must provision the new secret before swapping references and retire the old one afterward. Concrete vault/KMS integration and authorized management routes remain unimplemented.
