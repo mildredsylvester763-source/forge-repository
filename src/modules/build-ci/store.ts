@@ -74,6 +74,7 @@ export interface PipelineStore {
   saveVersion(input: SavePipelineVersionInput): Promise<PipelineVersion>;
   getVersion(workspaceId: string, pipelineId: string, version: number): Promise<PipelineVersion | null>;
   getLatestVersion(workspaceId: string, pipelineId: string): Promise<PipelineVersion | null>;
+  listLatestVersions(workspaceId: string): Promise<readonly PipelineVersion[]>;
   listVersions(workspaceId: string, pipelineId: string): Promise<readonly PipelineVersion[]>;
   importTemplate(input: { workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string; createdBy: string; createdAt?: string }): Promise<PipelineVersion>;
   createRun(input: CreatePipelineRunInput): Promise<CreatePipelineRunResult>;
@@ -343,6 +344,23 @@ export class BuildCiService {
       createdBy: input.actorId,
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     });
+  }
+
+  async triggerWorkspaceEvent(input: { workspaceId: string; actorId: string; event: TriggerEvent; createdAt?: string }): Promise<readonly TriggerPipelineResult[]> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.actorId, 'actorId');
+    const pipelines = await this.store.listLatestVersions(input.workspaceId);
+    const results: TriggerPipelineResult[] = [];
+    for (const pipeline of pipelines) {
+      results.push(await this.trigger({
+        workspaceId: input.workspaceId,
+        pipelineId: pipeline.pipelineId,
+        actorId: input.actorId,
+        event: input.event,
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      }));
+    }
+    return Object.freeze(results);
   }
 
   async trigger(input: { workspaceId: string; pipelineId: string; actorId: string; event: TriggerEvent; inputs?: unknown; createdAt?: string }): Promise<TriggerPipelineResult> {
