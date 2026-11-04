@@ -242,52 +242,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(await webhookDeliveries.complete(retried!.deliveryRowId, 'pg-worker-c', '2026-11-04T00:12:30.000Z'), true);
     assert.equal((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-delivery-1'))?.status, 'processed');
 
-    await webhookDeliveries.enqueue({
-      ...webhookInput,
-      deliveryId: 'pg-webhook-dead-letter',
-      event: { ...webhookEvent, eventId: 'pg-webhook-dead-letter' },
-      bodySha256: 'd'.repeat(64),
-      receivedAt: '2026-11-04T00:14:00.000Z',
-    });
-    const deadLetterClaim = await webhookDeliveries.claimNext({
-      workerId: 'pg-dead-letter-worker',
-      now: '2026-11-04T00:14:30.000Z',
-      leaseExpiresAt: '2026-11-04T00:15:30.000Z',
-    });
-    assert.ok(deadLetterClaim);
-    assert.deepEqual(await webhookDeliveries.fail({
-      deliveryRowId: deadLetterClaim.deliveryRowId,
-      workerId: 'pg-dead-letter-worker',
-      error: 'provider diagnostic containing ghp_POSTGRES_DEAD_LETTER_SECRET',
-      failedAt: '2026-11-04T00:14:45.000Z',
-      retryAt: '2026-11-04T00:15:00.000Z',
-      maxAttempts: 1,
-    }), { updated: true, terminal: true });
-    const deadLetterPage = await webhookDeliveries.listDeadLetters({ workspaceId: 'pg-workspace', limit: 10 });
-    assert.ok(deadLetterPage.items.some((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId));
-    assert.equal(deadLetterPage.items.find((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId)?.lastError,
-      'Webhook delivery processing failed.');
-    assert.deepEqual(await webhookDeliveries.replayFailed({
-      workspaceId: 'pg-workspace',
-      deliveryRowId: deadLetterClaim.deliveryRowId,
-      actorId: 'integration-test',
-      replayedAt: '2026-11-04T00:16:00.000Z',
-    }), { replayed: true, previousAttempts: 1 });
-    const postgresReplay = await webhookDeliveries.listReplayEvents('pg-workspace', deadLetterClaim.deliveryRowId);
-    assert.equal(postgresReplay.length, 1);
-    assert.equal(postgresReplay[0]?.actorId, 'integration-test');
-    assert.deepEqual(postgresReplay[0]?.metadata, { previousAttempts: 1 });
-    assert.equal((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-dead-letter'))?.status, 'queued');
-    assert.deepEqual(await webhookDeliveries.replayFailed({
-      workspaceId: 'pg-workspace',
-      deliveryRowId: deadLetterClaim.deliveryRowId,
-      actorId: 'integration-test',
-      replayedAt: '2026-11-04T00:17:00.000Z',
-    }), { replayed: false });
-    await assert.rejects(() => testPool.pool.query(
-      "UPDATE build_ci_webhook_delivery_events SET actor_id = 'tampered' WHERE delivery_row_id = $1",
-      [deadLetterClaim.deliveryRowId],
-    ));
+
 
     await service.createPipeline({
       workspaceId: 'pg-workspace',
@@ -334,6 +289,53 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       pipeline_id: 'postgres-webhook-build',
       status: 'queued',
     }]);
+
+    await webhookDeliveries.enqueue({
+      ...webhookInput,
+      deliveryId: 'pg-webhook-dead-letter',
+      event: { ...webhookEvent, eventId: 'pg-webhook-dead-letter' },
+      bodySha256: 'd'.repeat(64),
+      receivedAt: '2026-11-04T00:14:00.000Z',
+    });
+    const deadLetterClaim = await webhookDeliveries.claimNext({
+      workerId: 'pg-dead-letter-worker',
+      now: '2026-11-04T00:14:30.000Z',
+      leaseExpiresAt: '2026-11-04T00:15:30.000Z',
+    });
+    assert.ok(deadLetterClaim);
+    assert.deepEqual(await webhookDeliveries.fail({
+      deliveryRowId: deadLetterClaim.deliveryRowId,
+      workerId: 'pg-dead-letter-worker',
+      error: 'provider diagnostic containing ghp_POSTGRES_DEAD_LETTER_SECRET',
+      failedAt: '2026-11-04T00:14:45.000Z',
+      retryAt: '2026-11-04T00:15:00.000Z',
+      maxAttempts: 1,
+    }), { updated: true, terminal: true });
+    const deadLetterPage = await webhookDeliveries.listDeadLetters({ workspaceId: 'pg-workspace', limit: 10 });
+    assert.ok(deadLetterPage.items.some((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId));
+    assert.equal(deadLetterPage.items.find((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId)?.lastError,
+      'Webhook delivery processing failed.');
+    assert.deepEqual(await webhookDeliveries.replayFailed({
+      workspaceId: 'pg-workspace',
+      deliveryRowId: deadLetterClaim.deliveryRowId,
+      actorId: 'integration-test',
+      replayedAt: '2026-11-04T00:16:00.000Z',
+    }), { replayed: true, previousAttempts: 1 });
+    const postgresReplay = await webhookDeliveries.listReplayEvents('pg-workspace', deadLetterClaim.deliveryRowId);
+    assert.equal(postgresReplay.length, 1);
+    assert.equal(postgresReplay[0]?.actorId, 'integration-test');
+    assert.deepEqual(postgresReplay[0]?.metadata, { previousAttempts: 1 });
+    assert.equal((await webhookDeliveries.find('pg-webhook-connection', 'pg-webhook-dead-letter'))?.status, 'queued');
+    assert.deepEqual(await webhookDeliveries.replayFailed({
+      workspaceId: 'pg-workspace',
+      deliveryRowId: deadLetterClaim.deliveryRowId,
+      actorId: 'integration-test',
+      replayedAt: '2026-11-04T00:17:00.000Z',
+    }), { replayed: false });
+    await assert.rejects(() => testPool.pool.query(
+      "UPDATE build_ci_webhook_delivery_events SET actor_id = 'tampered' WHERE delivery_row_id = $1",
+      [deadLetterClaim.deliveryRowId],
+    ));
 
     await service.createPipeline({
       workspaceId: 'pg-workspace',
