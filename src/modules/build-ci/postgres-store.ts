@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createPipelineVersion, type PipelineVersion } from './pipeline.ts';
+import { createPipelineVersion, validatePipelineDefinition, type PipelineVersion, type PipelineTemplateSource } from './pipeline.ts';
+import { PipelineTemplateUnavailableError } from './templates.ts';
 import {
   type CreatePipelineRunInput,
   type CreatePipelineRunResult,
@@ -7,7 +8,7 @@ import {
   type PipelineStore,
   type SavePipelineVersionInput,
 } from './store.ts';
-import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
+import { withTransaction, type SqlPool, type SqlConn } from '../../kernel/sql.ts';
 
 interface VersionRow {
   workspace_id: string;
@@ -85,36 +86,90 @@ export class PostgresBuildCiStore implements PipelineStore {
   private readonly pool: SqlPool;
   constructor(pool: SqlPool) { this.pool = pool; }
 
+  private async saveVersionInTransaction(conn: SqlConn, input: SavePipelineVersionInput): Promise<PipelineVersion> {
+    const now = input.createdAt ?? new Date().toISOString();
+    await conn.query(`INSERT INTO build_pipelines (workspace_id, pipeline_id, current_version, created_at, updated_at)
+      VALUES ($1, $2, 0, $3, $3) ON CONFLICT (workspace_id, pipeline_id) DO NOTHING`, [input.workspaceId, input.definition.id, now]);
+    const head = await conn.query<{ current_version: number | string }>(`SELECT current_version FROM build_pipelines
+      WHERE workspace_id = $1 AND pipeline_id = $2 FOR UPDATE`, [input.workspaceId, input.definition.id]);
+    const current = head.rows[0];
+    if (!current) throw new Error('Pipeline head row was not created.');
+    const nextVersion = Number(current.current_version) + 1;
+    const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
+    await conn.query(`INSERT INTO build_pipeline_versions
+      (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [
+      input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
+      snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null,
+      snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null,
+      snapshot.templateSource?.publisherWorkspaceId ?? null,
+    ]);
+    if (snapshot.templateSource) {
+      await conn.query(`INSERT INTO build_pipeline_template_events
+        (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
+        VALUES ($1, $2, 'imported', $3, $4, NULL, $5, $6, $7, $8)`, [
+        randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
+        snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
+        JSON.stringify({ pipelineId: snapshot.pipelineId }),
+      ]);
+    }
+    await conn.query(`UPDATE build_pipelines SET current_version = $1, updated_at = $2
+      WHERE workspace_id = $3 AND pipeline_id = $4`, [snapshot.version, now, input.workspaceId, snapshot.pipelineId]);
+    return snapshot;
+  }
+
   async saveVersion(input: SavePipelineVersionInput): Promise<PipelineVersion> {
     ensureScope(input.workspaceId, input.definition.id);
+    return withTransaction(this.pool, (conn) => this.saveVersionInTransaction(conn, input));
+  }
+
+  async importTemplate(input: {
+    workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string;
+    createdBy: string; createdAt?: string;
+  }): Promise<PipelineVersion> {
+    ensureScope(input.workspaceId, input.pipelineId);
+    if (!Number.isSafeInteger(input.templateVersion) || input.templateVersion < 1) throw new TypeError('templateVersion must be a positive integer');
     return withTransaction(this.pool, async (conn) => {
-      const now = input.createdAt ?? new Date().toISOString();
-      await conn.query(`INSERT INTO build_pipelines (workspace_id, pipeline_id, current_version, created_at, updated_at)
-        VALUES ($1, $2, 0, $3, $3) ON CONFLICT (workspace_id, pipeline_id) DO NOTHING`, [input.workspaceId, input.definition.id, now]);
-      const head = await conn.query<{ current_version: number | string }>(`SELECT current_version FROM build_pipelines
-        WHERE workspace_id = $1 AND pipeline_id = $2 FOR UPDATE`, [input.workspaceId, input.definition.id]);
-      const current = head.rows[0];
-      if (!current) throw new Error('Pipeline head row was not created.');
-      const nextVersion = Number(current.current_version) + 1;
-      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
-      await conn.query(`INSERT INTO build_pipeline_versions
-        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [
-        input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
-        snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null,
-      ]);
-      if (snapshot.templateSource) {
-        await conn.query(`INSERT INTO build_pipeline_template_events
-          (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
-          VALUES ($1, $2, 'imported', $3, $4, NULL, $5, $6, $7, $8)`, [
-          randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
-          snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
-          JSON.stringify({ pipelineId: snapshot.pipelineId }),
-        ]);
+      const templateResult = await conn.query<{ publisher_workspace_id: string; visibility: string; status: string }>(
+        'SELECT publisher_workspace_id, visibility, status FROM build_pipeline_templates WHERE template_id = $1 FOR SHARE',
+        [input.templateId],
+      );
+      const template = templateResult.rows[0];
+      if (!template || (template.status !== 'active' && template.status !== 'deprecated')) throw new PipelineTemplateUnavailableError();
+      if (template.publisher_workspace_id !== input.workspaceId) {
+        if (template.visibility !== 'shared') throw new PipelineTemplateUnavailableError();
+        const grant = await conn.query(
+          'SELECT template_id FROM build_pipeline_template_grants WHERE template_id = $1 AND target_workspace_id = $2 AND revoked_at IS NULL FOR SHARE',
+          [input.templateId, input.workspaceId],
+        );
+        if (grant.rowCount !== 1) throw new PipelineTemplateUnavailableError();
       }
-      await conn.query(`UPDATE build_pipelines SET current_version = $1, updated_at = $2
-        WHERE workspace_id = $3 AND pipeline_id = $4`, [snapshot.version, now, input.workspaceId, snapshot.pipelineId]);
-      return snapshot;
+      const versionResult = await conn.query<{ source_pipeline_version: number | string; definition_json: string; definition_hash: string }>(
+        'SELECT source_pipeline_version, definition_json, definition_hash FROM build_pipeline_template_versions WHERE template_id = $1 AND version = $2',
+        [input.templateId, input.templateVersion],
+      );
+      const row = versionResult.rows[0];
+      if (!row) throw new PipelineTemplateUnavailableError();
+      const source = createPipelineVersion(JSON.parse(row.definition_json) as unknown, Number(row.source_pipeline_version), input.createdBy);
+      if (source.definitionHash !== row.definition_hash) throw new Error('Pipeline template release failed integrity verification.');
+      const definition = validatePipelineDefinition({
+        ...source.definition,
+        id: input.pipelineId,
+        ...(input.name ? { name: input.name } : {}),
+      });
+      const templateSource: PipelineTemplateSource = {
+        templateId: input.templateId,
+        templateVersion: input.templateVersion,
+        templateHash: row.definition_hash,
+        publisherWorkspaceId: template.publisher_workspace_id,
+      };
+      return this.saveVersionInTransaction(conn, {
+        workspaceId: input.workspaceId,
+        definition,
+        createdBy: input.createdBy,
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+        templateSource,
+      });
     });
   }
 
