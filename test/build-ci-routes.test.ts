@@ -156,6 +156,18 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     const version = await getVersion(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', version: '1' }));
     assert.equal(version.status, 200);
 
+    const diffVersions = routes['/v1/build-ci/pipelines/versions/diff']?.GET;
+    assert.ok(diffVersions);
+    const versionDiff = await diffVersions(context({}, 'valid-session', {
+      workspaceId: 'workspace-a', pipelineId: 'http-pipeline', fromVersion: '1', toVersion: '2',
+    }));
+    assert.equal(versionDiff.status, 200);
+    const savedDiff = versionDiff.body as { fromVersion: number; toVersion: number; diff: { hasChanges: boolean; changedFields: string[] } };
+    assert.equal(savedDiff.fromVersion, 1);
+    assert.equal(savedDiff.toVersion, 2);
+    assert.equal(savedDiff.diff.hasChanges, true);
+    assert.deepEqual(savedDiff.diff.changedFields, ['name']);
+
     const trigger = routes['/v1/build-ci/pipelines/trigger']?.POST;
     assert.ok(trigger);
     const triggered = await trigger(context({
@@ -182,11 +194,22 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
 
     const dryRun = routes['/v1/build-ci/pipelines/dry-run']?.POST;
     assert.ok(dryRun);
-    const candidate = { ...definition, id: 'candidate-pipeline' };
+    const candidate = { ...definition, name: 'Candidate-only workflow change' };
     const candidateResult = await dryRun(context({ workspaceId: 'workspace-a', definition: candidate, inputs: { target: 'production', deploy_credential: 'workspace.preview_key' } }, 'valid-session'));
     assert.equal(candidateResult.status, 200);
-    assert.equal((candidateResult.body as { source: string }).source, 'candidate');
-    await assert.rejects(() => app.buildCi.getPipeline({ workspaceId: 'workspace-a', pipelineId: 'candidate-pipeline', actorId: 'session-user' }));
+    const candidateBody = candidateResult.body as { source: string; plan: { comparison: { baselineVersion: number; diff: { hasChanges: boolean; changedFields: string[] } } } };
+    assert.equal(candidateBody.source, 'candidate');
+    assert.equal(candidateBody.plan.comparison.baselineVersion, 2);
+    assert.equal(candidateBody.plan.comparison.diff.hasChanges, true);
+    assert.deepEqual(candidateBody.plan.comparison.diff.changedFields, ['name']);
+    await assert.rejects(
+      () => diffVersions(context({}, undefined, { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', fromVersion: '1', toVersion: '2' })),
+      (error: unknown) => error instanceof Error && error.name === 'AppError',
+    );
+    await assert.rejects(
+      () => diffVersions(context({}, 'valid-session', { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', fromVersion: '0', toVersion: '2' })),
+      (error: unknown) => error instanceof Error && error.name === 'AppError',
+    );
 
     await assert.rejects(
       () => create(context({ workspaceId: 'workspace-a', definition, actorId: 'attacker' }, 'valid-session')),
