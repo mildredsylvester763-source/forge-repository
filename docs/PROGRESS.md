@@ -213,3 +213,10 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - Tests cover bounded draining, workspace-scoped dispatch, paginated workspace inventory, single-flight cycle execution, graceful stop and required trusted inventory pairing.
 - Shutdown refinement commit `39aa95cc22cd238cf9a8eabe70b0e74399bb6cc4` passed Actions run `41816619812`: typecheck, production build and 192 tests against real PostgreSQL (0 failures, 0 skipped). Cancellation is checked between processor calls, so stop does not drain the rest of the batch after the active call finishes.
 - This remains queued-run dispatch only. No registered pipeline task is executed. Event publication, production resolver wiring, operational replay/alerting and the Mistral execution adapter remain outstanding.
+
+
+### 2026-11-04 webhook failure-data minimization
+
+- Security review found that `WebhookDeliveryProcessor` persisted arbitrary `Error.message` text into the durable webhook delivery row. A provider resolver could accidentally include a credential or request detail in that message.
+- Changed the persisted failure detail to a fixed generic string and added a regression test with a credential-shaped sentinel in the resolver exception. The test asserts that the secret never appears in the stored delivery record.
+- This does not replace structured operational failure codes/metrics; those should be added through an allow-listed observability contract rather than raw exception text.

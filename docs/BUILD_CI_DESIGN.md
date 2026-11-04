@@ -69,3 +69,9 @@ See `BUILD_CI_MARKET_RESEARCH.md` for the per-feature competitor comparison, cap
 - Multiple processes may run the same host. Database lease/claim operations, rather than process-local locks, arbitrate webhook and schedule work. Abrupt process loss is recovered by lease expiry; graceful `stop()` propagates cancellation through the active bounded cycle, waits for the current processor call to finish, and prevents any subsequent item claims.
 - The app composes the worker only when `buildCiWorker` overrides are provided. It is not auto-started by default; `autoStart: true` is an explicit deployment choice. A configured worker needs either a trusted webhook resolver or both the scheduler and trusted workspace source.
 - This host still only produces authorized queued pipeline runs. It does not resolve production provider secrets itself, publish events, execute registered task handlers, or provide task isolation/logs/artifacts/cancellation.
+
+
+## Webhook failure-data minimization
+
+- Webhook provider/integration resolvers are outside the Build & CI trust boundary. Their thrown exceptions may include upstream request fragments or credential material. The delivery processor therefore persists only a fixed generic failure message and never copies arbitrary exception text into durable delivery rows.
+- This intentionally trades raw exception diagnostics for credential safety. Production observability should emit a structured, allow-listed failure code and correlation/delivery ID through a separately reviewed logger/metrics path; it must not log exception messages or secret-bearing resolver objects.

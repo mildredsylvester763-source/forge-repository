@@ -103,7 +103,9 @@ export class WebhookDeliveryProcessor {
       const failure = await this.deliveries.fail({
         deliveryRowId: delivery.deliveryRowId,
         workerId,
-        error: error instanceof Error ? error.message : 'Unknown webhook processing failure',
+        // Resolver/provider exceptions may embed credential material or request data.
+        // Persist only a fixed safe message; never copy arbitrary exception text into durable rows.
+        error: 'Webhook delivery processing failed.',
         failedAt: new Date(failedAt).toISOString(),
         retryAt: new Date(failedAt + delay).toISOString(),
         maxAttempts: this.maxAttempts,

@@ -88,3 +88,39 @@ test('webhook processor retries when trusted connection is unavailable', async (
     assert.ok(delivery?.nextAttemptAt);
   } finally { db.close(); }
 });
+
+
+test('webhook processor never persists provider exception text that may contain credentials', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  try {
+    migrateBuildCiSqlite(db);
+    const deliveries = new SqliteWebhookDeliveryStore(db);
+    await deliveries.enqueue({
+      connectionId: 'connection-secret-leak', provider: 'github', workspaceId: 'workspace-safe',
+      repository: 'team/private', deliveryId: 'delivery-secret-leak',
+      event: { kind: 'push', source: 'github:push', eventType: 'push', eventId: 'delivery-secret-leak', branch: 'main' },
+      bodySha256: 'c'.repeat(64), receivedAt: '2026-11-04T11:00:00.000Z',
+    });
+    const credential = 'ghp_SUPER_SECRET_TEST_CREDENTIAL_DO_NOT_PERSIST';
+    const processor = new WebhookDeliveryProcessor({
+      deliveries,
+      buildCi: new BuildCiService({
+        store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async () => true,
+      }),
+      connections: {
+        resolve: async () => { throw new Error('provider lookup failed using token ' + credential); },
+      },
+      now: () => Date.parse('2026-11-04T11:01:00.000Z'),
+      retryBaseMs: 1_000,
+    });
+
+    const result = await processor.processNext('worker-secret-test');
+    assert.equal(result.claimed, true);
+    assert.equal(result.processed, false);
+    const delivery = await deliveries.find('connection-secret-leak', 'delivery-secret-leak');
+    assert.equal(delivery?.status, 'queued');
+    assert.equal(delivery?.lastError, 'Webhook delivery processing failed.');
+    assert.equal(delivery?.lastError?.includes(credential), false);
+  } finally { db.close(); }
+});
