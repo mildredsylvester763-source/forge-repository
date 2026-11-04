@@ -53,9 +53,15 @@ function providerSecretReference(value: unknown, workspaceId: string): string {
   if (match[2] !== workspaceId) throw new AppError(400, 'invalid_request', 'secretRef belongs to a different workspace.');
   return reference;
 }
-function providerRepository(value: unknown): string {
+function providerRepository(value: unknown, provider: 'github' | 'gitlab'): string {
   const repository = textField(value, 'repository', 256);
-  if (/[\r\n\0]/.test(repository)) throw new AppError(400, 'invalid_request', 'repository contains invalid characters.');
+  const parts = repository.split('/');
+  if ((provider === 'github' && parts.length !== 2) || (provider === 'gitlab' && parts.length < 2) ||
+      parts.some((part) => !/^[A-Za-z0-9_.-]{1,100}$/.test(part) || part === '.' || part === '..')) {
+    throw new AppError(400, 'invalid_request', provider === 'github'
+      ? 'GitHub repository must be owner/repo.'
+      : 'GitLab repository must be group/subgroup/project.');
+  }
   return repository;
 }
 
@@ -260,7 +266,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               connectionId: id(body.connectionId, 'connectionId'),
               provider: webhookProvider(body.provider),
               deliveryActorId: id(body.deliveryActorId, 'deliveryActorId'),
-              repository: providerRepository(body.repository),
+              repository: providerRepository(body.repository, webhookProvider(body.provider)),
               secretRef: providerSecretReference(body.secretRef, id(body.workspaceId, 'workspaceId')),
             });
             return { status: 201, body: { connection } };
