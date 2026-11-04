@@ -125,3 +125,17 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - `1a67ed7e5c034fba243dc7d0b8f8a95893b2d61d` corrected this by defining `WebhookIngressConnectionResolver` and `WebhookDeliveryConnectionResolver`; the composite `WebhookConnectionResolver` extends both. Ingress can access signing material; asynchronous delivery processing can only receive non-secret binding metadata and actor identity.
 - GitHub Actions run `41823371670` passed typecheck, production build and all 193 tests against real PostgreSQL: 193 passed, 0 failed, 0 skipped.
 - Production vault/KMS integration, provider connection persistence, service-principal lifecycle, and event/outbox delivery are still not implemented.
+
+
+## Provider connection metadata and revocation — verified 2026-11-04
+
+- Code and test changes are on `gpt-part2-build-ci`; no other branch was changed.
+- Migration v7 adds `build_ci_provider_connections` in SQLite and PostgreSQL. It stores connection identity and trust metadata plus an opaque `secret_ref`; actual signing material is never persisted in this Build & CI table.
+- Added `SqliteProviderConnectionStore` and `PostgresProviderConnectionStore` with create, find and one-way revoke operations.
+- Added `StoredWebhookConnectionResolver`. Ingress resolves a vault reference through an injected `ProviderSecretResolver` and re-reads the record to reject revocation/rebinding during lookup. Delivery resolution does not call the vault and returns no signing secret.
+- Added SQLite unit tests and PostgreSQL integration coverage for both resolver paths, vault access count and revocation.
+- CI found two fixed-clock schedule tests that were dependent on the runner's actual wall clock. The tests now set deterministic pipeline creation timestamps; this is a test-stability correction, not a scheduler behavior change.
+- The first migration edit had a missing object separator and the first constructor version used parameter properties disallowed by the repository's TypeScript configuration. Both were corrected; neither failure was represented as a passing verification.
+- Final verified commit: `23c2faa1baff5cac3ae57726931843059af8a12a`.
+- GitHub Actions run `41825602764`: typecheck passed, production build passed, 195 passed, 0 failed, 0 skipped; PostgreSQL integration ran.
+- Not implemented: concrete vault/KMS adapter, secret provisioning/rotation, authorization-enforced connection-management routes, service-principal lifecycle, production resolver/workspace-inventory wiring and transactional event/outbox publication.

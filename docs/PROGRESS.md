@@ -234,3 +234,15 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - `97a6dd4f421eefc42132f9e39df20f84eb893c6a`: Actions run `41822931072` passed typecheck, production build and 193 tests against real PostgreSQL (0 failures, 0 skipped). It adds a regression test proving arbitrary provider exception text is not persisted.
 - `1a67ed7e5c034fba243dc7d0b8f8a95893b2d61d`: Actions run `41823371670` passed typecheck, production build and 193 tests against real PostgreSQL (0 failures, 0 skipped). It separates ingress-only secret resolution from non-secret delivery-principal resolution.
 - Intermediate commit `df8812905b41df595ebc35a28e598e6c2e4e118c` failed typecheck because service-specific tests were required to implement both resolver methods. Corrected by introducing narrow ingress and delivery resolver interfaces; the final run is green.
+
+
+### 2026-11-04 provider connection metadata and revocation
+
+- Added migration v7 for SQLite and PostgreSQL. Build & CI stores only provider connection metadata and an opaque `secret_ref`; it has no column for a signing secret or provider token.
+- Added SQLite and PostgreSQL provider-connection stores with create/find/revoke operations and one-way idempotent revocation.
+- Added `StoredWebhookConnectionResolver`: ingress resolves signing material through an injected vault port and re-checks the connection after resolution; background delivery receives only the non-secret binding and never calls the vault.
+- Added SQLite unit coverage and real PostgreSQL integration coverage for metadata persistence, vault separation, revocation and repeated revocation.
+- A CI run exposed two unrelated schedule tests that relied on the runner's wall clock while injecting a fixed 12:00 clock. Their pipeline fixtures now use explicit creation timestamps, removing that timing dependency.
+- The first provider metadata commit exposed a PostgreSQL migration syntax boundary error; the next commit corrected it. TypeScript then flagged parameter properties under `erasableSyntaxOnly`; constructors were changed to explicit field assignments. These failures were corrected before the final verified run.
+- Final code/test commit `23c2faa1baff5cac3ae57726931843059af8a12a` passed Actions run `41825602764`: typecheck passed, production build passed, 195 tests passed, 0 failed, 0 skipped, including real PostgreSQL migration and provider-connection lifecycle coverage.
+- Still missing: concrete vault/KMS adapter, secure secret provisioning and rotation, authorization-enforced connection-management API, service-principal creation/revocation lifecycle, production workspace/provider resolver composition, and transactional event/outbox publication.
