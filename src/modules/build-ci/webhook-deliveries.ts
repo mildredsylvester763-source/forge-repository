@@ -56,8 +56,13 @@ export interface FailWebhookDeliveryInput {
 }
 
 export interface WebhookDeliveryPageCursor { readonly receivedAt: string; readonly deliveryRowId: string; }
+export interface WebhookDeadLetter {
+  readonly deliveryRowId: string; readonly connectionId: string; readonly provider: WebhookProvider;
+  readonly workspaceId: string; readonly repository: string; readonly deliveryId: string; readonly eventType: string;
+  readonly status: 'failed'; readonly attempts: number; readonly receivedAt: string; readonly lastError?: string;
+}
 export interface ListWebhookDeadLettersInput { readonly workspaceId: string; readonly limit: number; readonly before?: WebhookDeliveryPageCursor; }
-export interface ListWebhookDeadLettersResult { readonly items: readonly WebhookDelivery[]; readonly nextCursor?: WebhookDeliveryPageCursor; }
+export interface ListWebhookDeadLettersResult { readonly items: readonly WebhookDeadLetter[]; readonly nextCursor?: WebhookDeliveryPageCursor; }
 export interface ReplayFailedWebhookDeliveryInput { readonly workspaceId: string; readonly deliveryRowId: string; readonly actorId: string; readonly replayedAt: string; }
 export interface ReplayFailedWebhookDeliveryResult { readonly replayed: boolean; readonly previousAttempts?: number; }
 export interface WebhookDeliveryReplayEvent {
@@ -101,6 +106,22 @@ interface DeliveryRow {
   lease_expires_at?: string | null;
   next_attempt_at?: string | null;
   processed_at?: string | null;
+}
+
+function deadLetterFromRow(row: DeliveryRow): WebhookDeadLetter {
+  return Object.freeze({
+    deliveryRowId: row.delivery_row_id,
+    connectionId: row.connection_id,
+    provider: row.provider,
+    workspaceId: row.workspace_id,
+    repository: row.repository,
+    deliveryId: row.delivery_id,
+    eventType: row.event_type,
+    status: 'failed' as const,
+    attempts: Number(row.attempts),
+    receivedAt: row.received_at,
+    ...(row.last_error !== null ? { lastError: row.last_error } : {}),
+  });
 }
 
 function deliveryFromRow(row: DeliveryRow): WebhookDelivery {
@@ -250,7 +271,7 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
       input.before?.deliveryRowId ?? null, input.limit + 1,
     ) as DeliveryRow[];
     const hasMore = rows.length > input.limit;
-    const page = rows.slice(0, input.limit).map(deliveryFromRow);
+    const page = rows.slice(0, input.limit).map(deadLetterFromRow);
     const last = page[page.length - 1];
     return Object.freeze({ items: Object.freeze(page),
       ...(hasMore && last ? { nextCursor: Object.freeze({ receivedAt: last.receivedAt, deliveryRowId: last.deliveryRowId }) } : {}) });
@@ -390,7 +411,7 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
       ORDER BY received_at DESC, delivery_row_id DESC LIMIT $4`,
     [input.workspaceId, input.before?.receivedAt ?? null, input.before?.deliveryRowId ?? null, input.limit + 1]);
     const hasMore = result.rows.length > input.limit;
-    const page = result.rows.slice(0, input.limit).map(deliveryFromRow);
+    const page = result.rows.slice(0, input.limit).map(deadLetterFromRow);
     const last = page[page.length - 1];
     return Object.freeze({ items: Object.freeze(page),
       ...(hasMore && last ? { nextCursor: Object.freeze({ receivedAt: last.receivedAt, deliveryRowId: last.deliveryRowId }) } : {}) });
