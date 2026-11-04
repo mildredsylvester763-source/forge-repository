@@ -43,12 +43,7 @@ const weekdayNumber: Readonly<Record<string, number>> = Object.freeze({
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
 });
 
-export function cronMatchesInstant(cron: ParsedCron, timestamp: number, timeZone: string): boolean {
-  if (!Number.isFinite(timestamp) || timestamp % 60_000 !== 0) throw new TypeError('timestamp must be aligned to a UTC minute');
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone, minute: '2-digit', hour: '2-digit', day: '2-digit', month: '2-digit',
-    weekday: 'short', hourCycle: 'h23',
-  }).formatToParts(timestamp);
+function matchesFormattedInstant(cron: ParsedCron, parts: Intl.DateTimeFormatPart[]): boolean {
   const part = (type: string): string => parts.find((item) => item.type === type)?.value ?? '';
   const minute = Number(part('minute'));
   const hour = Number(part('hour'));
@@ -62,6 +57,18 @@ export function cronMatchesInstant(cron: ParsedCron, timestamp: number, timeZone
     : cron.dayOfWeek.wildcard ? dayMatches
     : dayMatches || weekdayMatches;
   return calendarDayMatches;
+}
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone, minute: '2-digit', hour: '2-digit', day: '2-digit', month: '2-digit',
+    weekday: 'short', hourCycle: 'h23',
+  });
+}
+
+export function cronMatchesInstant(cron: ParsedCron, timestamp: number, timeZone: string): boolean {
+  if (!Number.isFinite(timestamp) || timestamp % 60_000 !== 0) throw new TypeError('timestamp must be aligned to a UTC minute');
+  return matchesFormattedInstant(cron, formatterFor(timeZone).formatToParts(timestamp));
 }
 
 /**
@@ -83,11 +90,12 @@ export function findCronOccurrences(
   const minutes = Math.floor((toInclusive - fromInclusive) / 60_000) + 1;
   if (minutes > maxMinutes || maxMinutes < 1 || maxMinutes > 10_080) throw new RangeError('Cron scan range exceeds the configured 7-day bound');
   const cron = parseCronExpression(expression);
-  // Validate the zone before the loop, including for empty ranges.
-  new Intl.DateTimeFormat('en-US', { timeZone }).format(fromInclusive);
+  // Reuse one timezone formatter for the entire bounded scan.
+  const formatter = formatterFor(timeZone);
+  formatter.format(fromInclusive);
   const found: number[] = [];
   for (let timestamp = fromInclusive; timestamp <= toInclusive; timestamp += 60_000) {
-    if (cronMatchesInstant(cron, timestamp, timeZone)) found.push(timestamp);
+    if (matchesFormattedInstant(cron, formatter.formatToParts(timestamp))) found.push(timestamp);
   }
   return Object.freeze(found);
 }
