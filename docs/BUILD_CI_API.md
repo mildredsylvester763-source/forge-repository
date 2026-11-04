@@ -263,12 +263,12 @@ The management routes are intentionally absent from the default app unless `prov
 
 | Role | Read | Create | Rollback | Dry-run | Manual/API trigger | List/read templates | Publish/share templates | Import templates | Deprecate/revoke template | Replay webhook dead letters | Manage provider connections |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
-| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
-| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes  Yes |
-| Member | Yes | No | No | Yes | Yes | Yes | No | No | No | No  No |
-| Viewer | Yes | No | No | Yes | No | Yes | No | No | No | No  No |
-| Suspended / no membership | No | No | No | No | No | No | No | No | No | No  No |
+| Owner | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Admin | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Maintainer | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Member | Yes | No | No | Yes | Yes | Yes | No | No | No | No | No |
+| Viewer | Yes | No | No | Yes | No | Yes | No | No | No | No | No |
+| Suspended / no membership | No | No | No | No | No | No | No | No | No | No | No |
 
 The matrix is a conservative initial Build & CI policy. Workspace membership creation, invitation, role changes and revocation are owned by the workspace/permissions catalogue area, not these endpoints.
 
