@@ -262,7 +262,7 @@ test('trigger service authorizes, persists once and de-duplicates webhook redeli
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
   migrateBuildCiSqlite(db);
-  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), authorize: async ({ actorId, action }) => actorId === 'owner' || (actorId === 'trusted-webhook' && action === 'trigger') });
+  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async ({ actorId, action }) => actorId === 'owner' || (actorId === 'trusted-webhook' && action === 'trigger') });
   await service.createPipeline({ workspaceId: 'ws-a', definition: definition(), actorId: 'owner' });
   const [first, second] = await Promise.all([
     service.trigger({ workspaceId: 'ws-a', pipelineId: 'web-build', actorId: 'trusted-webhook', event: pushEvent, createdAt: '2026-11-04T00:00:00.000Z' }),
@@ -283,7 +283,7 @@ test('pipeline and run records are isolated by workspace', async () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
   migrateBuildCiSqlite(db);
-  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), authorize: async () => true });
+  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async () => true });
   await service.createPipeline({ workspaceId: 'ws-a', definition: definition(), actorId: 'owner' });
   assert.equal(await service.dryRun({ workspaceId: 'ws-b', pipelineId: 'web-build', actorId: 'owner' }).then(() => false, () => true), true);
   db.close();
