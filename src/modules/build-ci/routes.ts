@@ -9,6 +9,7 @@ import { PipelineTemplateUnavailableError } from './templates.ts';
 import { WebhookIngressError, WebhookIngressService } from './webhook-ingress.ts';
 import { WebhookPayloadError } from './webhooks.ts';
 import type { WebhookDeliveryOperations } from './webhook-operations.ts';
+import type { ProviderConnectionOperations } from './provider-connection-operations.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -119,6 +120,15 @@ function authenticatedTriggerEvent(value: unknown, idempotencyKey: string | unde
 
 function mapError(err: unknown): never {
   if (err instanceof AppError) throw err;
+  if (err instanceof Error && err.name === 'ProviderConnectionNotFoundError') {
+    throw new AppError(404, 'not_found', 'Provider connection not found.');
+  }
+  if (err instanceof Error && err.name === 'ProviderSecretReferenceUnavailableError') {
+    throw new AppError(422, 'provider_secret_reference_unavailable', 'The provider secret reference could not be resolved.');
+  }
+  if (err instanceof Error && err.name === 'ProviderConnectionConflictError') {
+    throw new AppError(409, 'provider_connection_conflict', 'The provider connection changed concurrently. Refresh and retry.');
+  }
   if (err instanceof Error && err.name === 'PipelineAuthorizationError') {
     throw new AppError(403, 'forbidden', 'You do not have permission to perform this pipeline operation.');
   }
@@ -134,7 +144,7 @@ function mapError(err: unknown): never {
   throw err;
 }
 
-export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock, webhookIngress?: WebhookIngressService, webhookOperations?: WebhookDeliveryOperations): RouteTable {
+export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock, webhookIngress?: WebhookIngressService, webhookOperations?: WebhookDeliveryOperations, providerConnectionOperations?: ProviderConnectionOperations): RouteTable {
   const actor = async (ctx: RequestContext): Promise<string> => {
     const auth = await identity.authenticate(ctx.cookie(cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
@@ -206,6 +216,84 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
             });
             if (!result.replayed) throw new AppError(404, 'not_found', 'Failed webhook delivery not found.');
             return { status: 202, body: result };
+          } catch (err) { return mapError(err); }
+        },
+      },
+    } : {}),
+    ...(providerConnectionOperations ? {
+      '/v1/build-ci/provider-connections': {
+        GET: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          try {
+            const connections = await providerConnectionOperations.list({
+              workspaceId: id(ctx.query('workspaceId'), 'workspaceId'), actorId,
+            });
+            return { status: 200, body: { connections } };
+          } catch (err) { return mapError(err); }
+        },
+        POST: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          const body = await ctx.json();
+          exact(body, ['workspaceId', 'connectionId', 'provider', 'repository', 'secretRef'],
+            ['workspaceId', 'connectionId', 'provider', 'repository', 'secretRef']);
+          try {
+            const connection = await providerConnectionOperations.create({
+              workspaceId: id(body.workspaceId, 'workspaceId'),
+              actorId,
+              connectionId: id(body.connectionId, 'connectionId'),
+              provider: body.provider as 'github' | 'gitlab',
+              repository: textField(body.repository, 'repository', 256),
+              secretRef: textField(body.secretRef, 'secretRef', 512),
+            });
+            return { status: 201, body: { connection } };
+          } catch (err) { return mapError(err); }
+        },
+      },
+      '/v1/build-ci/provider-connections/rotate-secret-reference': {
+        POST: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          const body = await ctx.json();
+          exact(body, ['workspaceId', 'connectionId', 'provider', 'nextSecretRef'],
+            ['workspaceId', 'connectionId', 'provider', 'nextSecretRef']);
+          try {
+            const connection = await providerConnectionOperations.rotateSecretReference({
+              workspaceId: id(body.workspaceId, 'workspaceId'),
+              actorId,
+              connectionId: id(body.connectionId, 'connectionId'),
+              provider: body.provider as 'github' | 'gitlab',
+              nextSecretRef: textField(body.nextSecretRef, 'nextSecretRef', 512),
+            });
+            return { status: 200, body: { connection } };
+          } catch (err) { return mapError(err); }
+        },
+      },
+      '/v1/build-ci/provider-connections/revoke': {
+        POST: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          const body = await ctx.json();
+          exact(body, ['workspaceId', 'connectionId', 'provider'], ['workspaceId', 'connectionId', 'provider']);
+          try {
+            const result = await providerConnectionOperations.revoke({
+              workspaceId: id(body.workspaceId, 'workspaceId'),
+              actorId,
+              connectionId: id(body.connectionId, 'connectionId'),
+              provider: body.provider as 'github' | 'gitlab',
+            });
+            return { status: 200, body: result };
+          } catch (err) { return mapError(err); }
+        },
+      },
+      '/v1/build-ci/provider-connections/events': {
+        GET: async (ctx: RequestContext) => {
+          const actorId = await actor(ctx);
+          try {
+            const events = await providerConnectionOperations.listEvents({
+              workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+              actorId,
+              connectionId: id(ctx.query('connectionId'), 'connectionId'),
+              provider: ctx.query('provider') as 'github' | 'gitlab',
+            });
+            return { status: 200, body: { events } };
           } catch (err) { return mapError(err); }
         },
       },
