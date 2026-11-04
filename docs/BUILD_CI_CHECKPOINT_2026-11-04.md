@@ -107,3 +107,12 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - Database leases remain the cross-process concurrency authority; process-local single-flight only prevents overlapping cycles inside one instance. Abrupt shutdown relies on lease expiry/recovery.
 - The app constructs the worker only when `buildCiWorker` is explicitly supplied. It remains stopped unless `autoStart: true` is set. Production workspace inventory and provider secret/integration resolvers are not yet wired.
 - Tests cover bounded webhook/schedule draining, workspace pagination, single-flight cycles, graceful shutdown and source pairing. The host only creates queued runs; registered task execution, event-bus publication and operational replay/dead-letter tooling remain outstanding.
+
+
+## Worker shutdown refinement — verified 2026-11-04
+
+- Follow-up commit: `39aa95cc22cd238cf9a8eabe70b0e74399bb6cc4`.
+- `runOnce(signal?)` passes cancellation through the worker cycle. The poller checks cancellation before each webhook claim, each schedule workspace and each schedule occurrence claim. A stop request therefore waits for the currently awaited processor call, but does not keep draining the rest of that cycle.
+- Invalid/expired workspace page cursors reset to the first page so a bad cursor does not permanently stall schedule inventory scanning.
+- GitHub Actions run `41816619812` passed dependency installation, typecheck, production build and the complete suite against real PostgreSQL: 192 passed, 0 failed, 0 skipped.
+- No registered task execution, production secret resolver or event-bus integration was added by this change.
