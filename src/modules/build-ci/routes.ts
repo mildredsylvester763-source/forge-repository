@@ -234,14 +234,15 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
         POST: async (ctx: RequestContext) => {
           const actorId = await actor(ctx);
           const body = await ctx.json();
-          exact(body, ['workspaceId', 'connectionId', 'provider', 'repository', 'secretRef'],
-            ['workspaceId', 'connectionId', 'provider', 'repository', 'secretRef']);
+          exact(body, ['workspaceId', 'connectionId', 'provider', 'deliveryActorId', 'repository', 'secretRef'],
+            ['workspaceId', 'connectionId', 'provider', 'deliveryActorId', 'repository', 'secretRef']);
           try {
             const connection = await providerConnectionOperations.create({
               workspaceId: id(body.workspaceId, 'workspaceId'),
               actorId,
               connectionId: id(body.connectionId, 'connectionId'),
               provider: body.provider as 'github' | 'gitlab',
+              deliveryActorId: id(body.deliveryActorId, 'deliveryActorId'),
               repository: textField(body.repository, 'repository', 256),
               secretRef: textField(body.secretRef, 'secretRef', 512),
             });
