@@ -360,3 +360,38 @@ test('candidate dry-run validates and plans an unsaved definition without persis
     db.close();
   }
 });
+
+test('SQLite version reads reject a definition that no longer matches its stored content hash', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  migrateBuildCiSqlite(db);
+  const store = new SqliteBuildCiStore(db);
+  try {
+    const saved = await store.saveVersion({
+      workspaceId: 'ws-integrity',
+      definition: definition(),
+      createdBy: 'owner',
+      createdAt: '2026-11-04T15:00:00.000Z',
+    });
+    db.exec('DROP TRIGGER build_pipeline_versions_block_update');
+    db.prepare(`UPDATE build_pipeline_versions SET definition_json = ?
+      WHERE workspace_id = ? AND pipeline_id = ? AND version = ?`).run(
+      JSON.stringify({ ...saved.definition, name: 'Tampered after persistence' }),
+      'ws-integrity', saved.pipelineId, saved.version,
+    );
+    await assert.rejects(
+      () => store.getVersion('ws-integrity', saved.pipelineId, saved.version),
+      /failed integrity verification/,
+    );
+    await assert.rejects(
+      () => store.getLatestVersion('ws-integrity', saved.pipelineId),
+      /failed integrity verification/,
+    );
+    await assert.rejects(
+      () => store.listVersions('ws-integrity', saved.pipelineId),
+      /failed integrity verification/,
+    );
+  } finally {
+    db.close();
+  }
+});
