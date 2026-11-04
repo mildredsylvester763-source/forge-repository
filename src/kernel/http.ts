@@ -22,6 +22,8 @@ export interface RequestContext {
   header(name: string): string | undefined;
   cookie(name: string): string | undefined;
   json(): Promise<Record<string, unknown>>;
+  /** Exact request bytes for cryptographic webhook verification. */
+  rawBody?(): Promise<Buffer>;
 }
 
 export type RouteHandler = (ctx: RequestContext) => Promise<HttpResult>;
@@ -158,6 +160,14 @@ export function createHttpHandler(options: HttpOptions) {
 
       const cookies = parseCookies(req.headers.cookie);
       let bodyPromise: Promise<Record<string, unknown>> | undefined;
+      let rawBodyPromise: Promise<Buffer> | undefined;
+      const routeMaxBody = typeof options.maxBodyBytes === 'number'
+        ? options.maxBodyBytes
+        : options.maxBodyBytes?.[url.pathname] ?? defaultMaxBody;
+      const rawBody = (): Promise<Buffer> => {
+        rawBodyPromise ??= readBody(req, routeMaxBody);
+        return rawBodyPromise;
+      };
       const ctx: RequestContext = {
         requestId,
         ip,
@@ -170,16 +180,14 @@ export function createHttpHandler(options: HttpOptions) {
           return Array.isArray(v) ? v[0] : v;
         },
         cookie: (name) => cookies.get(name),
+        rawBody,
         json: () => {
           bodyPromise ??= (async () => {
             const type = String(req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
             if (type !== 'application/json') {
               throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json.');
             }
-            const routeMaxBody = typeof options.maxBodyBytes === 'number'
-              ? options.maxBodyBytes
-              : options.maxBodyBytes?.[url.pathname] ?? defaultMaxBody;
-            const raw = await readBody(req, routeMaxBody);
+            const raw = await rawBody();
             if (raw.length === 0) throw new AppError(400, 'invalid_request', 'A JSON body is required.');
             let parsed: unknown;
             try {

@@ -6,3 +6,4 @@ export * from './postgres-store.ts';
 export * from './workspace-access.ts';
 export * from './routes.ts';
 export * from './templates.ts';
+export * from './webhooks.ts';
