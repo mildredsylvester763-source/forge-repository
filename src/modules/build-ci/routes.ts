@@ -1,0 +1,161 @@
+import { AppError } from '../../kernel/errors.ts';
+import type { Clock } from '../../kernel/clock.ts';
+import type { RouteTable, RequestContext } from '../../kernel/http.ts';
+import type { IdentityService, CookieSettings as Never } from '../identity/identity-service.ts';
+import type { BuildCiService } from './store.ts';
+import type { JsonValue, TriggerEvent } from './pipeline.ts';
+
+interface CookieConfig { name: string; }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+
+function exact(body: Record<string, unknown>, allowed: readonly string[], required: readonly string[]): void {
+  for (const key of Object.keys(body)) {
+    if (!allowed.includes(key)) throw new AppError(400, 'invalid_request', 'The request body contains an unsupported field.', { details: { field: key } });
+  }
+  for (const key of required) {
+    if (!Object.hasOwn(body, key)) throw new AppError(400, 'invalid_request', 'A required field is missing.', { details: { field: key } });
+  }
+}
+
+function id(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 128) {
+    throw new AppError(400, 'invalid_request', `Invalid ${field}.`);
+  }
+  return value;
+}
+
+function jsonValue(value: unknown, depth = 0): value is JsonValue {
+  if (depth > 16) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.length <= 1000 && value.every((item) => jsonValue(item, depth + 1));
+  if (!isRecord(value) || Object.keys(value).length > 256) return false;
+  return Object.entries(value).every(([key, child]) =>
+    !['__proto__', 'prototype', 'constructor'].includes(key) && jsonValue(child, depth + 1));
+}
+
+function triggerEvent(value: unknown): TriggerEvent {
+  if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
+  const allowed = ['kind', 'source', 'eventId', 'branch', 'baseBranch', 'changedFiles', 'scheduleId', 'commitSha', 'pullRequestNumber', 'payload', 'eventType'];
+  exact(value, allowed, ['kind', 'source', 'eventId']);
+  if (value.kind !== 'manual' && value.kind !== 'api') {
+    throw new AppError(400, 'invalid_request', 'Only authenticated manual and API triggers are accepted on this endpoint.');
+  }
+  const event: TriggerEvent = {
+    kind: value.kind,
+    source: id(value.source, 'event.source'),
+    eventId: id(value.eventId, 'event.eventId'),
+    ...(value.eventType !== undefined ? { eventType: id(value.eventType, 'event.eventType') } : {}),
+    ...(value.branch !== undefined ? { branch: id(value.branch, 'event.branch') } : {}),
+    ...(value.baseBranch !== undefined ? { baseBranch: id(value.baseBranch, 'event.baseBranch') } : {}),
+    ...(value.scheduleId !== undefined ? { scheduleId: id(value.scheduleId, 'event.scheduleId') } : {}),
+    ...(value.commitSha !== undefined ? { commitSha: id(value.commitSha, 'event.commitSha') } : {}),
+    ...(value.pullRequestNumber !== undefined ? { pullRequestNumber: value.pullRequestNumber as number } : {}),
+    ...(value.changedFiles !== undefined ? { changedFiles: value.changedFiles as string[] } : {}),
+    ...(value.payload !== undefined ? { payload: value.payload as { readonly [key: string]: JsonValue } } : {}),
+  };
+  if (event.pullRequestNumber !== undefined && (!Number.isSafeInteger(event.pullRequestNumber) || event.pullRequestNumber < 1)) {
+    throw new AppError(400, 'invalid_request', 'event.pullRequestNumber must be a positive integer.');
+  }
+  if (event.changedFiles !== undefined && (!Array.isArray(event.changedFiles) || event.changedFiles.length > 10000 || !event.changedFiles.every((p) => typeof p === 'string' && p.length <= 1024))) {
+    throw new AppError(400, 'invalid_request', 'event.changedFiles must be an array of bounded paths.');
+  }
+  if (event.payload !== undefined && (!isRecord(event.payload) || !jsonValue(event.payload))) {
+    throw new AppError(400, 'invalid_request', 'event.payload must be bounded JSON.');
+  }
+  return event;
+}
+
+function mapError(err: unknown): never {
+  if (err instanceof AppError) throw err;
+  if (err instanceof Error && err.name === 'PipelineAuthorizationError') {
+    throw new AppError(403, 'forbidden', 'You do not have permission to perform this pipeline operation.');
+  }
+  if (err instanceof Error && err.name === 'PipelineNotFoundError') {
+    throw new AppError(404, 'not_found', 'Pipeline not found.');
+  }
+  if (err instanceof Error && (err.name === 'PipelineDefinitionError' || err.name === 'PipelineGraphError')) {
+    throw new AppError(422, 'invalid_pipeline_definition', err.message);
+  }
+  throw err;
+}
+
+export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock): RouteTable {
+  const actor = async (ctx: RequestContext): Promise<string> => {
+    const auth = await identity.authenticate(ctx.cookie(cookie.name));
+    if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    return auth.user.id;
+  };
+  return {
+    '/v1/build-ci/pipelines': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'definition'], ['workspaceId', 'definition']);
+        if (!isRecord(body.definition)) throw new AppError(400, 'invalid_request', 'definition must be an object.');
+        try {
+          const version = await buildCi.createPipeline({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            definition: body.definition,
+            actorId,
+            createdAt: new Date(clock()).toISOString(),
+          });
+          return { status: 201, body: { pipeline: version } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/pipelines/rollback': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'pipelineId', 'targetVersion'], ['workspaceId', 'pipelineId', 'targetVersion']);
+        if (!Number.isSafeInteger(body.targetVersion) || (body.targetVersion as number) < 1) throw new AppError(400, 'invalid_request', 'targetVersion must be a positive integer.');
+        try {
+          const version = await buildCi.rollbackPipeline({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            pipelineId: id(body.pipelineId, 'pipelineId'),
+            targetVersion: body.targetVersion as number,
+            actorId,
+            createdAt: new Date(clock()).toISOString(),
+          });
+          return { status: 200, body: { pipeline: version } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/pipelines/dry-run': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'pipelineId', 'event'], ['workspaceId', 'pipelineId']);
+        try {
+          const plan = await buildCi.dryRun({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            pipelineId: id(body.pipelineId, 'pipelineId'),
+            actorId,
+            ...(body.event !== undefined ? { event: triggerEvent(body.event) } : {}),
+          });
+          return { status: 200, body: { plan } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/pipelines/trigger': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'pipelineId', 'event'], ['workspaceId', 'pipelineId', 'event']);
+        try {
+          const result = await buildCi.trigger({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            pipelineId: id(body.pipelineId, 'pipelineId'),
+            actorId,
+            event: triggerEvent(body.event),
+            createdAt: new Date(clock()).toISOString(),
+          });
+          return { status: result.queued ? 202 : 200, body: result };
+        } catch (err) { return mapError(err); }
+      },
+    },
+  };
+}
