@@ -1,6 +1,6 @@
 import type { Database } from '../../kernel/sqlite.ts';
 import { transaction } from '../../kernel/sqlite.ts';
-import type { SqlPool } from '../../kernel/sql.ts';
+import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { WebhookConnectionResolver, WebhookConnectionBinding, WebhookIngressConnection } from './webhook-ingress.ts';
 import type { WebhookProvider } from './webhooks.ts';
 
@@ -14,13 +14,25 @@ export interface CreateProviderConnectionInput {
   readonly connectionId: string; readonly provider: WebhookProvider; readonly workspaceId: string;
   readonly actorId: string; readonly repository: string; readonly secretRef: string; readonly createdAt?: string;
 }
+export interface ProviderConnectionEvent {
+  readonly eventId: string; readonly provider: WebhookProvider; readonly connectionId: string;
+  readonly workspaceId: string; readonly actorId: string;
+  readonly eventType: 'created' | 'secret_reference_rotated' | 'revoked';
+  readonly occurredAt: string; readonly metadata: Readonly<Record<string, string | boolean>>;
+}
 export interface ProviderConnectionStore {
   create(input: CreateProviderConnectionInput): Promise<ProviderConnectionRecord>;
   find(provider: WebhookProvider, connectionId: string): Promise<ProviderConnectionRecord | null>;
-  revoke(provider: WebhookProvider, connectionId: string, revokedAt?: string): Promise<boolean>;
-  rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt?: string): Promise<boolean>;
+  listForWorkspace(workspaceId: string): Promise<readonly ProviderConnectionRecord[]>;
+  listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]>;
+  revoke(provider: WebhookProvider, connectionId: string, revokedAt?: string, actorId?: string): Promise<boolean>;
+  rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt?: string, actorId?: string): Promise<boolean>;
 }
 export interface ProviderSecretResolver { resolve(secretRef: string): Promise<string | null>; }
+interface ProviderConnectionEventRow {
+  event_id: string; provider: WebhookProvider; connection_id: string; workspace_id: string; actor_id: string;
+  event_type: ProviderConnectionEvent['eventType']; occurred_at: string; metadata_json: string;
+}
 interface ConnectionRow {
   connection_id: string; provider: WebhookProvider; workspace_id: string; actor_id: string; repository: string;
   secret_ref: string; status: 'active' | 'revoked'; created_at: string; updated_at: string; revoked_at: string | null;
@@ -53,6 +65,20 @@ function fromRow(row: ConnectionRow): ProviderConnectionRecord {
 }
 const COLUMNS = 'connection_id, provider, workspace_id, actor_id, repository, secret_ref, status, created_at, updated_at, revoked_at';
 
+const EVENT_COLUMNS = 'event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json';
+function eventFromRow(row: ProviderConnectionEventRow): ProviderConnectionEvent {
+  const metadata = JSON.parse(row.metadata_json) as Record<string, string | boolean>;
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('Provider connection audit metadata is invalid.');
+  return Object.freeze({
+    eventId: row.event_id, provider: row.provider, connectionId: row.connection_id, workspaceId: row.workspace_id,
+    actorId: row.actor_id, eventType: row.event_type, occurredAt: row.occurred_at, metadata: Object.freeze(metadata),
+  });
+}
+function validateProvider(provider: WebhookProvider): void {
+  if (provider !== 'github' && provider !== 'gitlab') throw new TypeError('provider is invalid');
+}
+function validateWorkspaceId(workspaceId: string): void { required(workspaceId, 'workspaceId', 128); }
+
 export class SqliteProviderConnectionStore implements ProviderConnectionStore {
   private readonly db: Database;
   constructor(db: Database) { this.db = db; }
@@ -62,6 +88,12 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
       this.db.prepare(`INSERT INTO build_ci_provider_connections
         (connection_id, provider, workspace_id, actor_id, repository, secret_ref, status, created_at, updated_at, revoked_at)
         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, NULL)`).run(input.connectionId, input.provider, input.workspaceId, input.actorId, input.repository, input.secretRef, now, now);
+      this.db.prepare(`INSERT INTO build_ci_provider_connection_events
+        (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES (?, ?, ?, ?, ?, 'created', ?, ?)`).run(
+        randomUUID(), input.provider, input.connectionId, input.workspaceId, input.actorId, now,
+        JSON.stringify({ repository: input.repository }),
+      );
       return this.db.prepare(`SELECT ${COLUMNS} FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
         .get(input.provider, input.connectionId) as ConnectionRow | undefined;
     });
@@ -74,21 +106,62 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
       .get(provider, connectionId) as ConnectionRow | undefined;
     return row ? fromRow(row) : null;
   }
-  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString()): Promise<boolean> {
-    required(connectionId, 'connectionId', 128); timestamp(revokedAt, 'revokedAt');
-    const result = this.db.prepare(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = ?, updated_at = ?
-      WHERE provider = ? AND connection_id = ? AND status = 'active'`).run(revokedAt, revokedAt, provider, connectionId);
-    return Number(result.changes) === 1;
+  async listForWorkspace(workspaceId: string): Promise<readonly ProviderConnectionRecord[]> {
+    validateWorkspaceId(workspaceId);
+    const rows = this.db.prepare(`SELECT ${COLUMNS} FROM build_ci_provider_connections
+      WHERE workspace_id = ? ORDER BY created_at DESC, provider, connection_id`).all(workspaceId) as ConnectionRow[];
+    return Object.freeze(rows.map(fromRow));
+  }
+  async listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]> {
+    validateWorkspaceId(workspaceId); validateProvider(provider); required(connectionId, 'connectionId', 128);
+    const rows = this.db.prepare(`SELECT ${EVENT_COLUMNS} FROM build_ci_provider_connection_events
+      WHERE workspace_id = ? AND provider = ? AND connection_id = ? ORDER BY occurred_at, event_id`)
+      .all(workspaceId, provider, connectionId) as ProviderConnectionEventRow[];
+    return Object.freeze(rows.map(eventFromRow));
+  }
+  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateProvider(provider); timestamp(revokedAt, 'revokedAt');
+    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    return transaction(this.db, () => {
+      const updated = this.db.prepare(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = ?, updated_at = ?
+        WHERE provider = ? AND connection_id = ? AND status = 'active'`).run(revokedAt, revokedAt, provider, connectionId);
+      if (Number(updated.changes) !== 1) return false;
+      if (actorId) {
+        const row = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
+          .get(provider, connectionId) as { workspace_id: string } | undefined;
+        if (!row) throw new Error('Provider connection disappeared during revocation.');
+        this.db.prepare(`INSERT INTO build_ci_provider_connection_events
+          (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+          VALUES (?, ?, ?, ?, ?, 'revoked', ?, ?)`).run(
+          randomUUID(), provider, connectionId, row.workspace_id, actorId, revokedAt, JSON.stringify({ revoked: true }),
+        );
+      }
+      return true;
+    });
   }
 
-  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString()): Promise<boolean> {
-    required(connectionId, 'connectionId', 128); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
+    if (actorId !== undefined) required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
-    const result = this.db.prepare(`UPDATE build_ci_provider_connections SET secret_ref = ?, updated_at = ?
-      WHERE provider = ? AND connection_id = ? AND status = 'active' AND secret_ref = ?`)
-      .run(nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef);
-    return Number(result.changes) === 1;
+    return transaction(this.db, () => {
+      const updated = this.db.prepare(`UPDATE build_ci_provider_connections SET secret_ref = ?, updated_at = ?
+        WHERE provider = ? AND connection_id = ? AND status = 'active' AND secret_ref = ?`)
+        .run(nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef);
+      if (Number(updated.changes) !== 1) return false;
+      if (actorId) {
+        const row = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
+          .get(provider, connectionId) as { workspace_id: string } | undefined;
+        if (!row) throw new Error('Provider connection disappeared during secret-reference rotation.');
+        this.db.prepare(`INSERT INTO build_ci_provider_connection_events
+          (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+          VALUES (?, ?, ?, ?, ?, 'secret_reference_rotated', ?, ?)`).run(
+          randomUUID(), provider, connectionId, row.workspace_id, actorId, updatedAt, JSON.stringify({ secretReferenceChanged: true }),
+        );
+      }
+      return true;
+    });
   }
 }
 export class PostgresProviderConnectionStore implements ProviderConnectionStore {
@@ -96,33 +169,70 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
   constructor(pool: SqlPool) { this.pool = pool; }
   async create(input: CreateProviderConnectionInput): Promise<ProviderConnectionRecord> {
     validateCreate(input); const now = input.createdAt ?? new Date().toISOString();
-    const result = await this.pool.query<ConnectionRow>(`INSERT INTO build_ci_provider_connections
-      (connection_id, provider, workspace_id, actor_id, repository, secret_ref, status, created_at, updated_at, revoked_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7, NULL) RETURNING ${COLUMNS}`,
-    [input.connectionId, input.provider, input.workspaceId, input.actorId, input.repository, input.secretRef, now]);
-    if (!result.rows[0]) throw new Error('Provider connection could not be read after creation.');
-    return fromRow(result.rows[0]);
+    return withTransaction(this.pool, async (conn) => {
+      const result = await conn.query<ConnectionRow>(`INSERT INTO build_ci_provider_connections
+        (connection_id, provider, workspace_id, actor_id, repository, secret_ref, status, created_at, updated_at, revoked_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7, NULL) RETURNING ${COLUMNS}`,
+      [input.connectionId, input.provider, input.workspaceId, input.actorId, input.repository, input.secretRef, now]);
+      if (!result.rows[0]) throw new Error('Provider connection could not be read after creation.');
+      await conn.query(`INSERT INTO build_ci_provider_connection_events
+        (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES ($1, $2, $3, $4, $5, 'created', $6, $7)`,
+      [randomUUID(), input.provider, input.connectionId, input.workspaceId, input.actorId, now, JSON.stringify({ repository: input.repository })]);
+      return fromRow(result.rows[0]);
+    });
   }
   async find(provider: WebhookProvider, connectionId: string): Promise<ProviderConnectionRecord | null> {
     required(connectionId, 'connectionId', 128);
     const result = await this.pool.query<ConnectionRow>(`SELECT ${COLUMNS} FROM build_ci_provider_connections WHERE provider = $1 AND connection_id = $2`, [provider, connectionId]);
     return result.rows[0] ? fromRow(result.rows[0]) : null;
   }
-  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString()): Promise<boolean> {
-    required(connectionId, 'connectionId', 128); timestamp(revokedAt, 'revokedAt');
-    const result = await this.pool.query(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = $1, updated_at = $1
-      WHERE provider = $2 AND connection_id = $3 AND status = 'active'`, [revokedAt, provider, connectionId]);
-    return result.rowCount === 1;
+  async listForWorkspace(workspaceId: string): Promise<readonly ProviderConnectionRecord[]> {
+    validateWorkspaceId(workspaceId);
+    const result = await this.pool.query<ConnectionRow>(`SELECT ${COLUMNS} FROM build_ci_provider_connections
+      WHERE workspace_id = $1 ORDER BY created_at DESC, provider, connection_id`, [workspaceId]);
+    return Object.freeze(result.rows.map(fromRow));
+  }
+  async listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]> {
+    validateWorkspaceId(workspaceId); validateProvider(provider); required(connectionId, 'connectionId', 128);
+    const result = await this.pool.query<ProviderConnectionEventRow>(`SELECT ${EVENT_COLUMNS} FROM build_ci_provider_connection_events
+      WHERE workspace_id = $1 AND provider = $2 AND connection_id = $3 ORDER BY occurred_at, event_id`,
+    [workspaceId, provider, connectionId]);
+    return Object.freeze(result.rows.map(eventFromRow));
+  }
+  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateProvider(provider); timestamp(revokedAt, 'revokedAt');
+    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    return withTransaction(this.pool, async (conn) => {
+      const updated = await conn.query(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = $1, updated_at = $1
+        WHERE provider = $2 AND connection_id = $3 AND status = 'active' RETURNING workspace_id`, [revokedAt, provider, connectionId]);
+      const row = updated.rows[0] as { workspace_id: string } | undefined;
+      if (!row) return false;
+      if (actorId) await conn.query(`INSERT INTO build_ci_provider_connection_events
+        (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES ($1, $2, $3, $4, $5, 'revoked', $6, $7)`,
+      [randomUUID(), provider, connectionId, row.workspace_id, actorId, revokedAt, JSON.stringify({ revoked: true })]);
+      return true;
+    });
   }
 
-  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString()): Promise<boolean> {
-    required(connectionId, 'connectionId', 128); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+    required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
+    if (actorId !== undefined) required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
-    const result = await this.pool.query(`UPDATE build_ci_provider_connections SET secret_ref = $1, updated_at = $2
-      WHERE provider = $3 AND connection_id = $4 AND status = 'active' AND secret_ref = $5`,
-    [nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef]);
-    return result.rowCount === 1;
+    return withTransaction(this.pool, async (conn) => {
+      const updated = await conn.query<{ workspace_id: string }>(`UPDATE build_ci_provider_connections SET secret_ref = $1, updated_at = $2
+        WHERE provider = $3 AND connection_id = $4 AND status = 'active' AND secret_ref = $5 RETURNING workspace_id`,
+      [nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef]);
+      const row = updated.rows[0];
+      if (!row) return false;
+      if (actorId) await conn.query(`INSERT INTO build_ci_provider_connection_events
+        (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
+        VALUES ($1, $2, $3, $4, $5, 'secret_reference_rotated', $6, $7)`,
+      [randomUUID(), provider, connectionId, row.workspace_id, actorId, updatedAt, JSON.stringify({ secretReferenceChanged: true })]);
+      return true;
+    });
   }
 }
 
