@@ -23,6 +23,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       provider: 'github',
       workspaceId: 'pg-workspace',
       actorId: 'integration-test',
+      createdBy: 'connection-admin',
       repository: 'team/postgres-app',
       secretRef: 'vault://forge/pg-workspace/github/webhook',
       createdAt: '2026-11-04T00:00:00.000Z',
@@ -48,7 +49,8 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:01:00.000Z', 'integration-test'), true);
     const providerEvents = await providerConnections.listEvents('pg-workspace', 'github', 'pg-github-installation');
     assert.deepEqual(providerEvents.map((event) => event.eventType), ['created', 'secret_reference_rotated', 'revoked']);
-    assert.equal(providerEvents.every((event) => event.actorId === 'integration-test'), true);
+    assert.deepEqual(providerEvents.map((event) => event.actorId), ['connection-admin', 'integration-test', 'integration-test']);
+    assert.equal((await providerConnections.find('github', 'pg-github-installation'))?.actorId, 'integration-test');
     assert.deepEqual(providerEvents[1]?.metadata, { secretReferenceChanged: true });
     assert.equal(JSON.stringify(providerEvents).includes('vault://'), false);
     const workspaceConnections = await providerConnections.listForWorkspace('pg-workspace');
