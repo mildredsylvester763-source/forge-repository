@@ -123,12 +123,12 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest verified commit: `203ef307d4cb924de5d4c287fb32ea07d540dfbe`
-Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41803011902
+Latest completed CI-verified commit before the current test-only change: `a9770080e404ef49a28a723bed7331220460e98c`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41810868381
 
-- Typecheck: passed.
-- Production build: passed.
-- Complete test suite against real PostgreSQL: 171 tests, 34 suites, 171 passed, 0 failed, 0 skipped.
+- The single configured job, `Typecheck, build, unit and real PostgreSQL integration`, completed successfully.
+- Do not infer a test count from this run; the job summary did not provide one here.
+- New candidate dry-run coverage was added afterward in commit `cc000ed1c6062184928864f402f93a4b0d998d4d`; its own CI run is pending and must be checked before calling that test verified.
 
 ### Feature status
 
@@ -137,7 +137,7 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 | BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance and append-only lifecycle audit implemented | Runtime task-registry compatibility, structured template diff/upgrade flow and any public/global catalogue policy |
 | BD-016 | Trigger model, matching, schedule identity, idempotent run persistence and authenticated manual/API trigger route implemented | Verified provider webhooks, provider-to-workspace binding, scheduler dispatcher, timezone/DST occurrence handling and retry/dead-letter delivery |
 | BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
-| BD-029 | Saved and unsaved candidate dry-run service/API implemented; no run or version is written by dry-run | Candidate-vs-current structured diff, scenario fixtures and additional route-level side-effect tests |
+| BD-029 | Saved and unsaved candidate dry-run service/API implemented; candidate definitions are validated and planned without persisting versions or runs. A service-level test now asserts no version/run writes, authorization denial and invalid-definition rejection. | Candidate-vs-current structured diff, scenario fixtures and dedicated HTTP route-level side-effect tests |
 | BD-030 | Immutable content-hashed versions, authenticated version reads/listing and append-only rollback implemented | Structured version diff, concurrency/tamper verification hardening and complete audit evidence |
 
 ### Supporting security and integration work
@@ -166,3 +166,12 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 
 Detailed market and product requirements: `docs/BUILD_CI_MARKET_RESEARCH.md`.
 API contracts: `docs/BUILD_CI_API.md`.
+
+
+### 2026-11-04 correction — candidate dry-run evidence
+
+The earlier chat statement that the detailed design document was outdated was incorrect. The current design document, API contract, route and service all describe and implement both saved and unsaved candidate dry-runs:
+- `POST /v1/build-ci/pipelines/dry-run` accepts exactly one of `pipelineId` or `definition`.
+- Candidate requests call `BuildCiService.dryRunDefinition`, which validates the definition, authorizes the dry-run against the candidate pipeline ID, and invokes the pure planner without saving a version or creating a run.
+- A new service-level test was committed as `cc000ed1c6062184928864f402f93a4b0d998d4d`; CI for that commit must pass before the test is considered verified.
+- Remaining BD-029 gaps are candidate-vs-current structured diff, scenario fixtures/reporting, and HTTP route-level side-effect/authorization coverage. Do not describe candidate dry-run itself as missing.
