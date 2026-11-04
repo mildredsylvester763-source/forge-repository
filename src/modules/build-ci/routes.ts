@@ -46,11 +46,11 @@ function webhookProvider(value: unknown): 'github' | 'gitlab' {
   if (value !== 'github' && value !== 'gitlab') throw new AppError(400, 'invalid_request', 'provider must be github or gitlab.');
   return value;
 }
-function providerSecretReference(value: unknown): string {
+function providerSecretReference(value: unknown, workspaceId: string): string {
   const reference = textField(value, 'secretRef', 512);
-  if (!/^(secret|vault|kms):\/\/[A-Za-z0-9._:/-]{1,500}$/.test(reference)) {
-    throw new AppError(400, 'invalid_request', 'secretRef must be an opaque secret://, vault:// or kms:// reference.');
-  }
+  const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9._/-]{1,400}$').exec(reference);
+  if (!match) throw new AppError(400, 'invalid_request', 'secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference.');
+  if (match[2] !== workspaceId) throw new AppError(400, 'invalid_request', 'secretRef belongs to a different workspace.');
   return reference;
 }
 function providerRepository(value: unknown): string {
@@ -261,7 +261,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               provider: webhookProvider(body.provider),
               deliveryActorId: id(body.deliveryActorId, 'deliveryActorId'),
               repository: providerRepository(body.repository),
-              secretRef: providerSecretReference(body.secretRef),
+              secretRef: providerSecretReference(body.secretRef, id(body.workspaceId, 'workspaceId')),
             });
             return { status: 201, body: { connection } };
           } catch (err) { return mapError(err); }
@@ -279,7 +279,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
               actorId,
               connectionId: id(body.connectionId, 'connectionId'),
               provider: webhookProvider(body.provider),
-              nextSecretRef: providerSecretReference(body.nextSecretRef),
+              nextSecretRef: providerSecretReference(body.nextSecretRef, id(body.workspaceId, 'workspaceId')),
             });
             return { status: 200, body: { connection } };
           } catch (err) { return mapError(err); }
