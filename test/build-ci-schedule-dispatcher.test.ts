@@ -126,3 +126,45 @@ test('queued occurrence from a superseded pipeline version is skipped, not run a
     assert.equal((await occurrences.list('workspace-version'))[0]?.status, 'skipped');
   } finally { db.close(); }
 });
+
+test('paused schedules create no occurrences and resume from the next due minute', async () => {
+  const { db, pipelines, buildCi, occurrences } = fixture();
+  try {
+    const base = {
+      id: 'pausable-build',
+      name: 'Pausable build',
+      triggers: [{
+        id: 'every-minute',
+        kind: 'schedule' as const,
+        enabled: false,
+        scheduleId: 'pausable',
+        cron: '* * * * *',
+        timeZone: 'UTC',
+      }],
+      steps: [{ id: 'test', task: 'quality.test' }],
+    };
+    await buildCi.createPipeline({
+      workspaceId: 'workspace-pause', actorId: 'scheduler-actor',
+      createdAt: '2026-11-04T11:00:00.000Z', definition: base,
+    });
+    let now = Date.parse('2026-11-04T12:00:00.000Z');
+    const dispatcher = new ScheduleDispatcher({
+      occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 1,
+    });
+    const pausedScan = await dispatcher.scanWorkspace('workspace-pause');
+    assert.equal(pausedScan.occurrencesFound, 0);
+    await buildCi.createPipeline({
+      workspaceId: 'workspace-pause', actorId: 'scheduler-actor',
+      createdAt: '2026-11-04T12:00:30.000Z',
+      definition: { ...base, name: 'Resumed build', triggers: [{ ...base.triggers[0], enabled: true }] },
+    });
+    now = Date.parse('2026-11-04T12:01:00.000Z');
+    const resumedScan = await dispatcher.scanWorkspace('workspace-pause');
+    assert.equal(resumedScan.inserted, 1);
+    const dispatched = await dispatcher.processNext({
+      workspaceId: 'workspace-pause', actorId: 'scheduler-actor', workerId: 'resume-worker',
+    });
+    assert.equal(dispatched.dispatched, true);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM build_pipeline_runs').get()?.count, 1);
+  } finally { db.close(); }
+});
