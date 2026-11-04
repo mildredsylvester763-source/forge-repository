@@ -50,6 +50,49 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(await providerResolver.resolveForIngress('github', 'pg-github-installation'), null);
     assert.equal(await providerResolver.resolveForDelivery('github', 'pg-github-installation'), null);
     assert.equal(vaultResolutions, 1);
+    const revocationRaceRef = 'vault://forge/pg-workspace/github/race-revocation';
+    await providerConnections.create({
+      connectionId: 'pg-race-revocation',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/postgres-app',
+      secretRef: revocationRaceRef,
+      createdAt: '2026-11-04T00:02:00.000Z',
+    });
+    const revocationRaceResolver = new StoredWebhookConnectionResolver(providerConnections, {
+      resolve: async () => {
+        assert.equal(await providerConnections.revoke('github', 'pg-race-revocation', '2026-11-04T00:02:30.000Z'), true);
+        return 'secret-read-before-postgres-revocation';
+      },
+    });
+    assert.equal(await revocationRaceResolver.resolveForIngress('github', 'pg-race-revocation'), null,
+      'PostgreSQL ingress must reject a secret lookup raced by connection revocation');
+
+    const rotationRaceRef = 'vault://forge/pg-workspace/github/race-rotation';
+    const rotatedRaceRef = 'vault://forge/pg-workspace/github/race-rotation-v2';
+    await providerConnections.create({
+      connectionId: 'pg-race-rotation',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/postgres-app',
+      secretRef: rotationRaceRef,
+      createdAt: '2026-11-04T00:03:00.000Z',
+    });
+    const rotationRaceResolver = new StoredWebhookConnectionResolver(providerConnections, {
+      resolve: async (reference) => {
+        assert.equal(reference, rotationRaceRef);
+        assert.equal(await providerConnections.rotateSecretReference(
+          'github', 'pg-race-rotation', rotationRaceRef, rotatedRaceRef, '2026-11-04T00:03:30.000Z',
+        ), true);
+        return 'secret-read-before-postgres-rotation';
+      },
+    });
+    assert.equal(await rotationRaceResolver.resolveForIngress('github', 'pg-race-rotation'), null,
+      'PostgreSQL ingress must reject a secret resolved for a superseded reference');
+    assert.equal((await providerConnections.find('github', 'pg-race-rotation'))?.secretRef, rotatedRaceRef);
+
     await migratePostgres(testPool.pool, 'workspace_access', workspaceAccessMigrations);
     await testPool.pool.query(
       "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
