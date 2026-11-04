@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { migrateBuildCiSqlite } from '../src/modules/build-ci/migrations.ts';
+import { SqliteProviderConnectionStore, StoredWebhookConnectionResolver } from '../src/modules/build-ci/provider-connections.ts';
+
+test('provider metadata uses an opaque vault reference and revocation disables both resolver paths', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateBuildCiSqlite(db);
+    const store = new SqliteProviderConnectionStore(db);
+    const created = await store.create({ connectionId: 'github-installation-1', provider: 'github',
+      workspaceId: 'workspace-alpha', actorId: 'workspace-service-1', repository: 'team/private-api',
+      secretRef: 'vault://forge/workspaces/alpha/github/webhook', createdAt: '2026-11-04T12:00:00.000Z' });
+    assert.equal(created.active, true);
+    assert.equal(created.secretRef, 'vault://forge/workspaces/alpha/github/webhook');
+    const columns = db.prepare('PRAGMA table_info(build_ci_provider_connections)').all() as Array<{ name: string }>;
+    assert.equal(columns.some((column) => /secret_value|signing_secret|token_value/i.test(column.name)), false);
+    let vaultCalls = 0;
+    const resolver = new StoredWebhookConnectionResolver(store, { resolve: async (reference) => {
+      vaultCalls += 1; assert.equal(reference, 'vault://forge/workspaces/alpha/github/webhook'); return 'actual-signing-secret';
+    } });
+    assert.equal((await resolver.resolveForIngress('github', 'github-installation-1'))?.signingSecret, 'actual-signing-secret');
+    const delivery = await resolver.resolveForDelivery('github', 'github-installation-1');
+    assert.equal(delivery?.actorId, 'workspace-service-1');
+    assert.equal('signingSecret' in (delivery ?? {}), false);
+    assert.equal(vaultCalls, 1, 'delivery lookup must not call the vault');
+    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:05:00.000Z'), true);
+    assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:06:00.000Z'), false);
+    assert.equal(await resolver.resolveForIngress('github', 'github-installation-1'), null);
+    assert.equal(await resolver.resolveForDelivery('github', 'github-installation-1'), null);
+    assert.equal(vaultCalls, 1);
+    assert.equal((await store.find('github', 'github-installation-1'))?.active, false);
+  } finally { db.close(); }
+});
+
+test('provider metadata rejects inline credential values and malformed secret references', async () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateBuildCiSqlite(db);
+    const store = new SqliteProviderConnectionStore(db);
+    const base = { connectionId: 'connection-invalid', provider: 'github' as const,
+      workspaceId: 'workspace-alpha', actorId: 'workspace-service-1', repository: 'team/private-api' };
+    await assert.rejects(() => store.create({ ...base, secretRef: 'ghp_this-is-not-a-vault-reference' }), /opaque/);
+    await assert.rejects(() => store.create({ ...base, secretRef: 'vault://forge/path?token=inline' }), /opaque/);
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM build_ci_provider_connections').get() as { count: number }).count, 0);
+  } finally { db.close(); }
+});

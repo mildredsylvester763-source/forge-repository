@@ -210,6 +210,27 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 7,
+    name: 'provider_connection_metadata_and_revocation',
+    sql: `
+      CREATE TABLE build_ci_provider_connections (
+        connection_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        secret_ref TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        revoked_at TEXT,
+        PRIMARY KEY (provider, connection_id),
+        CHECK ((status = 'active' AND revoked_at IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL))
+      ) STRICT;
+      CREATE INDEX build_ci_provider_connections_workspace_idx ON build_ci_provider_connections (workspace_id, provider, status);
+    `,
+  },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
   {
     version: 1,
@@ -432,6 +453,26 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         cursor_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+    `,
+  {
+    version: 7,
+    name: 'provider_connection_metadata_and_revocation',
+    sql: `
+      CREATE TABLE build_ci_provider_connections (
+        connection_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('github', 'gitlab')),
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        secret_ref TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        revoked_at TEXT,
+        PRIMARY KEY (provider, connection_id),
+        CHECK ((status = 'active' AND revoked_at IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL))
+      );
+      CREATE INDEX build_ci_provider_connections_workspace_idx ON build_ci_provider_connections (workspace_id, provider, status);
     `,
   },
 ]; 
