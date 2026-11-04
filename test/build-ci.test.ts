@@ -6,6 +6,7 @@ import {
   buildDryRunPlan,
   createPipelineVersion,
   createRollbackVersion,
+  comparePipelineDefinitions,
   evaluateCondition,
   evaluatePathFilter,
   evaluateTrigger,
@@ -457,4 +458,34 @@ test('candidate dry-run returns a value-free baseline diff and saved versions ex
   } finally {
     db.close();
   }
+});
+
+test('pipeline definition diffs report added, removed, changed and reordered elements without values', () => {
+  const before = definition();
+  const after = validatePipelineDefinition({
+    ...before,
+    name: 'Changed name',
+    triggers: [
+      { ...before.triggers[0]!, branches: ['release/**'] },
+      { id: 'on-pr', kind: 'pull_request' as const },
+    ],
+    steps: [
+      { ...before.steps[1]!, task: 'quality.security' },
+      { ...before.steps[0]!, task: 'quality.audit' },
+      { id: 'scan', task: 'security.scan' },
+    ],
+  });
+  const diff = comparePipelineDefinitions(before, after);
+  assert.equal(diff.pipelineId, before.id);
+  assert.deepEqual(diff.changedFields, ['name']);
+  assert.deepEqual(diff.triggers.added, [{ id: 'on-pr', kind: 'pull_request' }]);
+  assert.deepEqual(diff.triggers.changed, [{ id: 'on-push', changedFields: ['branches'] }]);
+  assert.deepEqual(diff.steps.added, [{ id: 'scan', task: 'security.scan' }]);
+  assert.deepEqual(diff.steps.removed, [{ id: 'package', task: 'build.package' }]);
+  assert.deepEqual(diff.steps.changed, [{ id: 'lint', changedFields: ['task'] }]);
+  assert.equal(diff.steps.orderChanged, true);
+  assert.equal(diff.hasChanges, true);
+  assert.equal(JSON.stringify(diff).includes('Changed name'), false);
+  assert.equal(JSON.stringify(diff).includes('release/**'), false);
+  assert.throws(() => comparePipelineDefinitions(before, { ...after, id: 'different-pipeline' }), /same ID/);
 });
