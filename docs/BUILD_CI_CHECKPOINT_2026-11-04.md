@@ -116,3 +116,12 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - Invalid/expired workspace page cursors reset to the first page so a bad cursor does not permanently stall schedule inventory scanning.
 - GitHub Actions run `41816619812` passed dependency installation, typecheck, production build and the complete suite against real PostgreSQL: 192 passed, 0 failed, 0 skipped.
 - No registered task execution, production secret resolver or event-bus integration was added by this change.
+
+
+## Webhook credential-boundary hardening — verified 2026-11-04
+
+- `97a6dd4f421eefc42132f9e39df20f84eb893c6a` redacts provider exception details before they are persisted in webhook delivery rows. Regression test uses a credential-shaped sentinel and verifies that it is not stored.
+- `df8812905b41df595ebc35a28e598e6c2e4e118c` introduced separate ingress and delivery resolver methods, but the first CI run failed typecheck because each narrow service/test was still typed against the composite interface.
+- `1a67ed7e5c034fba243dc7d0b8f8a95893b2d61d` corrected this by defining `WebhookIngressConnectionResolver` and `WebhookDeliveryConnectionResolver`; the composite `WebhookConnectionResolver` extends both. Ingress can access signing material; asynchronous delivery processing can only receive non-secret binding metadata and actor identity.
+- GitHub Actions run `41823371670` passed typecheck, production build and all 193 tests against real PostgreSQL: 193 passed, 0 failed, 0 skipped.
+- Production vault/KMS integration, provider connection persistence, service-principal lifecycle, and event/outbox delivery are still not implemented.

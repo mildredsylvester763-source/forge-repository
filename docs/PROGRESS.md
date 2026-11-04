@@ -227,3 +227,10 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - Split webhook connection resolution into `resolveForIngress` (non-secret binding plus signing material for signature verification) and `resolveForDelivery` (non-secret binding and actor only).
 - The asynchronous processor now uses only `resolveForDelivery`, so worker code no longer requests or receives webhook signing secrets. Existing workspace/repository/provider checks and BuildCiService authorization remain.
 - Updated SQLite and real-PostgreSQL integration tests for the split contract. This is an interface hardening step, not a production vault/resolver implementation.
+
+
+### Verification — webhook credential boundary
+
+- `97a6dd4f421eefc42132f9e39df20f84eb893c6a`: Actions run `41822931072` passed typecheck, production build and 193 tests against real PostgreSQL (0 failures, 0 skipped). It adds a regression test proving arbitrary provider exception text is not persisted.
+- `1a67ed7e5c034fba243dc7d0b8f8a95893b2d61d`: Actions run `41823371670` passed typecheck, production build and 193 tests against real PostgreSQL (0 failures, 0 skipped). It separates ingress-only secret resolution from non-secret delivery-principal resolution.
+- Intermediate commit `df8812905b41df595ebc35a28e598e6c2e4e118c` failed typecheck because service-specific tests were required to implement both resolver methods. Corrected by introducing narrow ingress and delivery resolver interfaces; the final run is green.
