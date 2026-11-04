@@ -184,6 +184,7 @@ function validate(input: EnqueueWebhookDeliveryInput): void {
   }
   if (!/^[a-f0-9]{64}$/.test(input.bodySha256)) throw new TypeError('bodySha256 is invalid');
   if (input.provider !== 'github' && input.provider !== 'gitlab') throw new TypeError('provider is invalid');
+  validTimestamp(input.receivedAt, 'receivedAt');
 }
 
 function validateClaim(input: ClaimWebhookDeliveryInput): void {
@@ -213,7 +214,7 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, NULL)
         ON CONFLICT (connection_id, delivery_id) DO NOTHING`).run(
         deliveryRowId, input.connectionId, input.provider, input.workspaceId, input.repository, input.deliveryId,
-        input.event.eventType ?? input.event.kind, JSON.stringify(input.event), input.bodySha256, input.receivedAt,
+        input.event.eventType ?? input.event.kind, JSON.stringify(input.event), input.bodySha256, new Date(input.receivedAt).toISOString(),
       );
       if (Number(result.changes) === 1) return Object.freeze({ inserted: true, deliveryRowId });
       const existing = this.db.prepare('SELECT delivery_row_id FROM build_ci_webhook_deliveries WHERE connection_id = ? AND delivery_id = ?')
@@ -267,7 +268,8 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
       WHERE workspace_id = ? AND status = 'failed'
         AND (? IS NULL OR (received_at, delivery_row_id) < (?, ?))
       ORDER BY received_at DESC, delivery_row_id DESC LIMIT ?`).all(
-      input.workspaceId, input.before?.receivedAt ?? null, input.before?.receivedAt ?? null,
+      input.workspaceId, input.before ? new Date(input.before.receivedAt).toISOString() : null,
+      input.before ? new Date(input.before.receivedAt).toISOString() : null,
       input.before?.deliveryRowId ?? null, input.limit + 1,
     ) as DeliveryRow[];
     const hasMore = rows.length > input.limit;
@@ -354,7 +356,7 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
         ON CONFLICT (connection_id, delivery_id) DO NOTHING
         RETURNING delivery_row_id`, [
         deliveryRowId, input.connectionId, input.provider, input.workspaceId, input.repository, input.deliveryId,
-        input.event.eventType ?? input.event.kind, JSON.stringify(input.event), input.bodySha256, input.receivedAt,
+        input.event.eventType ?? input.event.kind, JSON.stringify(input.event), input.bodySha256, new Date(input.receivedAt).toISOString(),
       ]);
       if (inserted.rowCount === 1) return Object.freeze({ inserted: true, deliveryRowId });
       const existing = await conn.query<{ delivery_row_id: string }>(
@@ -409,7 +411,7 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
       WHERE workspace_id = $1 AND status = 'failed'
         AND ($2::text IS NULL OR (received_at, delivery_row_id) < ($2, $3))
       ORDER BY received_at DESC, delivery_row_id DESC LIMIT $4`,
-    [input.workspaceId, input.before?.receivedAt ?? null, input.before?.deliveryRowId ?? null, input.limit + 1]);
+    [input.workspaceId, input.before ? new Date(input.before.receivedAt).toISOString() : null, input.before?.deliveryRowId ?? null, input.limit + 1]);
     const hasMore = result.rows.length > input.limit;
     const page = result.rows.slice(0, input.limit).map(deadLetterFromRow);
     const last = page[page.length - 1];
