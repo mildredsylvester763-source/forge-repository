@@ -1,0 +1,55 @@
+name: FORGE backend verification
+
+on:
+  push:
+    branches:
+      - gpt-part2-build-ci
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forge-backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, build, unit and real PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d forge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      FORGE_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/forge_test
+      FORGE_TEST_POSTGRES_SSL: "off"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up required Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build production output
+        run: npm run build
+      - name: Run complete test suite against real PostgreSQL
+        run: npm test
