@@ -148,7 +148,7 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
   async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
-    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
     return transaction(this.db, () => {
       const current = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections
@@ -160,7 +160,7 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
         WHERE provider = ? AND connection_id = ? AND status = 'active' AND secret_ref = ?`)
         .run(nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef);
       if (Number(updated.changes) !== 1) return false;
-      if (actorId) {
+      {
         const row = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
           .get(provider, connectionId) as { workspace_id: string } | undefined;
         if (!row) throw new Error('Provider connection disappeared during secret-reference rotation.');
@@ -210,7 +210,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
     [workspaceId, provider, connectionId]);
     return Object.freeze(result.rows.map(eventFromRow));
   }
-  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+  async revoke(provider: WebhookProvider, connectionId: string, revokedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); timestamp(revokedAt, 'revokedAt');
     if (actorId !== undefined) required(actorId, 'actorId', 128);
     return withTransaction(this.pool, async (conn) => {
@@ -226,7 +226,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
     });
   }
 
-  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
     if (actorId !== undefined) required(actorId, 'actorId', 128);
@@ -243,7 +243,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
       [nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef]);
       const row = updated.rows[0];
       if (!row) return false;
-      if (actorId) await conn.query(`INSERT INTO build_ci_provider_connection_events
+      await conn.query(`INSERT INTO build_ci_provider_connection_events
         (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
         VALUES ($1, $2, $3, $4, $5, 'secret_reference_rotated', $6, $7)`,
       [randomUUID(), provider, connectionId, row.workspace_id, actorId, updatedAt, JSON.stringify({ secretReferenceChanged: true })]);
