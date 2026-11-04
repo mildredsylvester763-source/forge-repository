@@ -7,3 +7,5 @@ export * from './workspace-access.ts';
 export * from './routes.ts';
 export * from './templates.ts';
 export * from './webhooks.ts';
+export * from './webhook-deliveries.ts';
+export * from './webhook-ingress.ts';

@@ -23,6 +23,11 @@ import {
   createWorkspacePipelineAuthorizer,
   workspaceAccessMigrations,
   type WorkspaceMembershipReader,
+  WebhookIngressService,
+  SqliteWebhookDeliveryStore,
+  PostgresWebhookDeliveryStore,
+  type WebhookDeliveryStore,
+  type WebhookConnectionResolver,
   buildCiRoutes,
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
@@ -63,6 +68,8 @@ export interface AppOverrides {
   postgres?: SqlPool;
   /** Workspace-scoped policy supplied by the workspace/permissions module. Defaults to deny. */
   buildCiAuthorize?: PipelineAuthorizer;
+  /** Supplied by the secrets/integrations subsystem; no webhook is accepted without a trusted binding and secret. */
+  webhookConnections?: WebhookConnectionResolver;
 }
 
 export interface ForgeApp {
@@ -86,6 +93,7 @@ interface Storage {
   buildCiDb: Database | null;
   buildCiStore: PipelineStore;
   buildCiTemplates: PipelineTemplateStore;
+  webhookDeliveries: WebhookDeliveryStore;
   workspaceMemberships: WorkspaceMembershipReader;
 }
 
@@ -102,6 +110,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiDb: null,
       buildCiStore: new PostgresBuildCiStore(pool),
       buildCiTemplates: new PostgresPipelineTemplateStore(pool),
+      webhookDeliveries: new PostgresWebhookDeliveryStore(pool),
       workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
     };
   }
@@ -121,6 +130,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       buildCiDb: null,
       buildCiStore: new SqliteBuildCiStore(db),
       buildCiTemplates: new SqlitePipelineTemplateStore(db),
+      webhookDeliveries: new SqliteWebhookDeliveryStore(db),
       workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
     };
   }
@@ -137,6 +147,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     buildCiDb,
     buildCiStore: new SqliteBuildCiStore(buildCiDb),
     buildCiTemplates: new SqlitePipelineTemplateStore(buildCiDb),
+    webhookDeliveries: new SqliteWebhookDeliveryStore(buildCiDb),
     workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
   };
 }
@@ -187,6 +198,10 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     checkBreachOnSignIn: config.breach.checkOnSignIn,
   });
 
+  const webhookIngress = overrides.webhookConnections
+    ? new WebhookIngressService({ connections: overrides.webhookConnections, deliveries: storage.webhookDeliveries })
+    : undefined;
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -196,7 +211,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
-    ...buildCiRoutes(buildCi, identity, config.cookie, clock),
+    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress),
   };
 
   const handler = createHttpHandler({
@@ -206,7 +221,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     trustProxyHops: config.trustProxyHops,
     hsts: config.env === 'production',
     // Only pipeline-definition creation needs a larger body budget; all other routes keep the 16 KiB default.
-    maxBodyBytes: { '/v1/build-ci/pipelines': 300 * 1024 },
+    maxBodyBytes: { '/v1/build-ci/pipelines': 300 * 1024, '/v1/webhooks/github': 2 * 1024 * 1024, '/v1/webhooks/gitlab': 2 * 1024 * 1024 },
   });
 
   const close = async (): Promise<void> => {
@@ -215,5 +230,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, buildCi, logger, db: storage.db, close };
+  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), close };
 }

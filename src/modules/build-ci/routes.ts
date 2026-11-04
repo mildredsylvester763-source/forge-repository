@@ -6,6 +6,8 @@ import type { IdentityService } from '../identity/identity-service.ts';
 import type { BuildCiService } from './store.ts';
 import type { JsonValue, TriggerEvent, TriggerKind } from './pipeline.ts';
 import { PipelineTemplateUnavailableError } from './templates.ts';
+import { WebhookIngressError, WebhookIngressService } from './webhook-ingress.ts';
+import { WebhookPayloadError } from './webhooks.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -138,6 +140,53 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
     return auth.user.id;
   };
   return {
+    ...(webhookIngress ? {
+      '/v1/webhooks/github': {
+        POST: async (ctx: RequestContext) => {
+          if (!ctx.rawBody) throw new AppError(500, 'raw_body_unavailable', 'Raw request body access is unavailable.');
+          const contentType = (ctx.header('content-type') ?? '').split(';')[0]?.trim().toLowerCase();
+          if (contentType !== 'application/json') throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json.');
+          try {
+            const result = await webhookIngress.ingest('github', id(ctx.query('connectionId'), 'connectionId'), await ctx.rawBody(), {
+              'x-hub-signature-256': ctx.header('x-hub-signature-256'),
+              'x-github-event': ctx.header('x-github-event'),
+              'x-github-delivery': ctx.header('x-github-delivery'),
+            });
+            return { status: 202, body: result };
+          } catch (err) {
+            if (err instanceof WebhookIngressError) {
+              const status = err.code === 'invalid_signature' ? 401 : err.code === 'repository_mismatch' ? 403 : 404;
+              throw new AppError(status, err.code, err.message);
+            }
+            if (err instanceof WebhookPayloadError) throw new AppError(400, 'invalid_webhook_payload', err.message);
+            throw err;
+          }
+        },
+      },
+      '/v1/webhooks/gitlab': {
+        POST: async (ctx: RequestContext) => {
+          if (!ctx.rawBody) throw new AppError(500, 'raw_body_unavailable', 'Raw request body access is unavailable.');
+          const contentType = (ctx.header('content-type') ?? '').split(';')[0]?.trim().toLowerCase();
+          if (contentType !== 'application/json') throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json.');
+          try {
+            const result = await webhookIngress.ingest('gitlab', id(ctx.query('connectionId'), 'connectionId'), await ctx.rawBody(), {
+              'webhook-id': ctx.header('webhook-id'),
+              'webhook-timestamp': ctx.header('webhook-timestamp'),
+              'webhook-signature': ctx.header('webhook-signature'),
+              'x-gitlab-event': ctx.header('x-gitlab-event'),
+            });
+            return { status: 202, body: result };
+          } catch (err) {
+            if (err instanceof WebhookIngressError) {
+              const status = err.code === 'invalid_signature' ? 401 : err.code === 'repository_mismatch' ? 403 : 404;
+              throw new AppError(status, err.code, err.message);
+            }
+            if (err instanceof WebhookPayloadError) throw new AppError(400, 'invalid_webhook_payload', err.message);
+            throw err;
+          }
+        },
+      },
+    } : {}),
     '/v1/build-ci/pipelines': {
       GET: async (ctx) => {
         const actorId = await actor(ctx);
