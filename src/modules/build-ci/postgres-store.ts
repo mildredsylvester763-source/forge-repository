@@ -188,6 +188,14 @@ export class PostgresBuildCiStore implements PipelineStore {
     return result.rows[0] ? versionFromRow(result.rows[0]) : null;
   }
 
+  async listLatestVersions(workspaceId: string): Promise<readonly PipelineVersion[]> {
+    if (!workspaceId.trim() || workspaceId.length > 128) throw new TypeError('workspaceId is required');
+    const result = await this.pool.query<VersionRow>(`SELECT v.* FROM build_pipelines p
+      JOIN build_pipeline_versions v ON v.workspace_id = p.workspace_id AND v.pipeline_id = p.pipeline_id AND v.version = p.current_version
+      WHERE p.workspace_id = $1 ORDER BY p.pipeline_id`, [workspaceId]);
+    return Object.freeze(result.rows.map(versionFromRow));
+  }
+
   async listVersions(workspaceId: string, pipelineId: string): Promise<readonly PipelineVersion[]> {
     ensureScope(workspaceId, pipelineId);
     const result = await this.pool.query<VersionRow>(`SELECT * FROM build_pipeline_versions
