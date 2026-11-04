@@ -143,7 +143,7 @@ test('verified webhook ingress enqueues once and rejects repository-binding mism
       active: true,
     };
     const ingress = new WebhookIngressService({
-      connections: { resolve: async () => connection },
+      connections: { resolveForIngress: async () => connection },
       deliveries,
       now: () => 1_800_000_000_000,
     });
@@ -172,13 +172,13 @@ test('verified webhook ingress enqueues once and rejects repository-binding mism
     assert.equal(stored?.bodySha256.length, 64);
 
     const wrongBinding = new WebhookIngressService({
-      connections: { resolve: async () => ({ ...connection, repository: 'team/other' }) },
+      connections: { resolveForIngress: async () => ({ ...connection, repository: 'team/other' }) },
       deliveries,
       now: () => 1_800_000_000_000,
     });
     await assert.rejects(() => wrongBinding.ingest('github', 'connection-123', rawBody, headers), WebhookIngressError);
     const invalidSignature = new WebhookIngressService({
-      connections: { resolve: async () => connection },
+      connections: { resolveForIngress: async () => connection },
       deliveries,
       now: () => 1_800_000_000_000,
     });

@@ -220,3 +220,10 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - Security review found that `WebhookDeliveryProcessor` persisted arbitrary `Error.message` text into the durable webhook delivery row. A provider resolver could accidentally include a credential or request detail in that message.
 - Changed the persisted failure detail to a fixed generic string and added a regression test with a credential-shaped sentinel in the resolver exception. The test asserts that the secret never appears in the stored delivery record.
 - This does not replace structured operational failure codes/metrics; those should be added through an allow-listed observability contract rather than raw exception text.
+
+
+### 2026-11-04 provider credential least-privilege boundary
+
+- Split webhook connection resolution into `resolveForIngress` (non-secret binding plus signing material for signature verification) and `resolveForDelivery` (non-secret binding and actor only).
+- The asynchronous processor now uses only `resolveForDelivery`, so worker code no longer requests or receives webhook signing secrets. Existing workspace/repository/provider checks and BuildCiService authorization remain.
+- Updated SQLite and real-PostgreSQL integration tests for the split contract. This is an interface hardening step, not a production vault/resolver implementation.

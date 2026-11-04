@@ -180,7 +180,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       deliveries: webhookDeliveries,
       buildCi: service,
       connections: {
-        resolve: async () => ({
+        resolveForDelivery: async () => ({
           connectionId: 'pg-webhook-connection',
           provider: 'github',
           workspaceId: 'pg-workspace',

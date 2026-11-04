@@ -10,20 +10,30 @@ import {
   type WebhookProvider,
 } from './webhooks.ts';
 
-export interface WebhookConnection {
+/** Non-secret provider/workspace binding used by asynchronous delivery processing. */
+export interface WebhookConnectionBinding {
   readonly connectionId: string;
   readonly provider: WebhookProvider;
   readonly workspaceId: string;
-  /** Trusted workspace service principal used for asynchronous pipeline authorization. */
+  /** Trusted workspace principal; BuildCiService independently re-authorizes this actor. */
   readonly actorId: string;
   readonly repository: string;
-  /** Resolved by the dedicated secret/integration subsystem; never persisted by Build & CI. */
-  readonly signingSecret: string;
   readonly active: boolean;
 }
 
+/** Short-lived ingress result; signing material is resolved only while verifying the raw webhook request. */
+export interface WebhookIngressConnection extends WebhookConnectionBinding {
+  /** Supplied by the dedicated secret/integration subsystem; never persisted or returned by Build & CI. */
+  readonly signingSecret: string;
+}
+
+/**
+ * Split lookup contract: ingress may resolve a signing secret, while background delivery
+ * processing must use resolveForDelivery and must never retrieve secret material.
+ */
 export interface WebhookConnectionResolver {
-  resolve(provider: WebhookProvider, connectionId: string): Promise<WebhookConnection | null>;
+  resolveForIngress(provider: WebhookProvider, connectionId: string): Promise<WebhookIngressConnection | null>;
+  resolveForDelivery(provider: WebhookProvider, connectionId: string): Promise<WebhookConnectionBinding | null>;
 }
 
 export type WebhookIngressErrorCode = 'connection_unavailable' | 'invalid_signature' | 'repository_mismatch';
@@ -63,7 +73,7 @@ export class WebhookIngressService {
     if (!connectionId || connectionId.length > 128 || rawBody.byteLength === 0 || rawBody.byteLength > 2 * 1024 * 1024) {
       throw new WebhookPayloadError('Webhook connection ID or body size is invalid.');
     }
-    const connection = await this.connections.resolve(provider, connectionId);
+    const connection = await this.connections.resolveForIngress(provider, connectionId);
     if (!connection || !connection.active || connection.provider !== provider || connection.connectionId !== connectionId || !connection.signingSecret) {
       throw new WebhookIngressError('connection_unavailable', 'Webhook connection is unavailable.');
     }

@@ -35,7 +35,7 @@ test('webhook processor re-resolves trusted connection and queues matching pipel
     });
     const processor = new WebhookDeliveryProcessor({
       deliveries, buildCi,
-      connections: { resolve: async () => ({
+      connections: { resolveForDelivery: async () => ({
         connectionId: 'connection-1', provider: 'github', workspaceId: 'workspace-1',
         actorId: 'workspace-service', repository: 'team/api', signingSecret: 'not-used-by-worker', active: true,
       }) },
@@ -74,7 +74,7 @@ test('webhook processor retries when trusted connection is unavailable', async (
       buildCi: new BuildCiService({
         store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async () => true,
       }),
-      connections: { resolve: async () => null },
+      connections: { resolveForDelivery: async () => null },
       now: () => Date.parse('2026-11-04T11:01:00.000Z'),
       retryBaseMs: 1_000,
     });
@@ -109,7 +109,7 @@ test('webhook processor never persists provider exception text that may contain 
         store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async () => true,
       }),
       connections: {
-        resolve: async () => { throw new Error('provider lookup failed using token ' + credential); },
+        resolveForDelivery: async () => { throw new Error('provider lookup failed using token ' + credential); },
       },
       now: () => Date.parse('2026-11-04T11:01:00.000Z'),
       retryBaseMs: 1_000,

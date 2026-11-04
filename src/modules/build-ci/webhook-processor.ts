@@ -67,7 +67,7 @@ export class WebhookDeliveryProcessor {
     if (!delivery) return Object.freeze({ claimed: false, processed: false });
 
     try {
-      const connection = await this.connections.resolve(delivery.provider, delivery.connectionId);
+      const connection = await this.connections.resolveForDelivery(delivery.provider, delivery.connectionId);
       if (!connection || !connection.active || connection.connectionId !== delivery.connectionId ||
           connection.provider !== delivery.provider || connection.workspaceId !== delivery.workspaceId ||
           connection.repository !== delivery.repository || !connection.actorId?.trim()) {

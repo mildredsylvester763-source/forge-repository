@@ -75,3 +75,12 @@ See `BUILD_CI_MARKET_RESEARCH.md` for the per-feature competitor comparison, cap
 
 - Webhook provider/integration resolvers are outside the Build & CI trust boundary. Their thrown exceptions may include upstream request fragments or credential material. The delivery processor therefore persists only a fixed generic failure message and never copies arbitrary exception text into durable delivery rows.
 - This intentionally trades raw exception diagnostics for credential safety. Production observability should emit a structured, allow-listed failure code and correlation/delivery ID through a separately reviewed logger/metrics path; it must not log exception messages or secret-bearing resolver objects.
+
+
+## Provider credential separation contract
+
+- `WebhookConnectionResolver` deliberately exposes two different lookups. `resolveForIngress` returns the active provider/repository/workspace binding plus signing material for raw-body signature verification. `resolveForDelivery` returns only non-secret binding metadata and the trusted workspace actor.
+- Background delivery processors must never retrieve signing secrets. This limits credential exposure to the request-verification path and avoids loading secrets into worker memory unnecessarily.
+- Both lookups must resolve current connection state, verify provider and connection identity, and return no binding for revoked/disabled connections. The processor additionally compares the resolved workspace and repository with the durable receipt before dispatch.
+- The resolver is an integration boundary, not a Build & CI-owned credential database. Implementations should resolve secret references through a dedicated vault/KMS-backed secret service, return the secret only for ingress verification, and never log it. Build & CI persists only connection IDs and event metadata.
+- No production resolver or vault adapter exists in this repository yet; this commit establishes and tests the least-privilege interface only.
