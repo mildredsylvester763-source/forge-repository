@@ -14,17 +14,25 @@ test('provider metadata uses an opaque vault reference and revocation disables b
       secretRef: 'vault://forge/workspaces/alpha/github/webhook', createdAt: '2026-11-04T12:00:00.000Z' });
     assert.equal(created.active, true);
     assert.equal(created.secretRef, 'vault://forge/workspaces/alpha/github/webhook');
+    assert.equal(await store.rotateSecretReference('github', 'github-installation-1',
+      'vault://forge/workspaces/alpha/github/webhook', 'vault://forge/workspaces/alpha/github/webhook-v2',
+      '2026-11-04T12:01:00.000Z'), true);
+    assert.equal(await store.rotateSecretReference('github', 'github-installation-1',
+      'vault://forge/workspaces/alpha/github/webhook', 'vault://forge/workspaces/alpha/github/webhook-v3',
+      '2026-11-04T12:02:00.000Z'), false, 'stale rotation must not overwrite a newer secret reference');
     const columns = db.prepare('PRAGMA table_info(build_ci_provider_connections)').all() as Array<{ name: string }>;
     assert.equal(columns.some((column) => /secret_value|signing_secret|token_value/i.test(column.name)), false);
     let vaultCalls = 0;
     const resolver = new StoredWebhookConnectionResolver(store, { resolve: async (reference) => {
-      vaultCalls += 1; assert.equal(reference, 'vault://forge/workspaces/alpha/github/webhook'); return 'actual-signing-secret';
+      vaultCalls += 1; assert.equal(reference, 'vault://forge/workspaces/alpha/github/webhook-v2'); return 'actual-signing-secret';
     } });
     assert.equal((await resolver.resolveForIngress('github', 'github-installation-1'))?.signingSecret, 'actual-signing-secret');
     const delivery = await resolver.resolveForDelivery('github', 'github-installation-1');
     assert.equal(delivery?.actorId, 'workspace-service-1');
     assert.equal('signingSecret' in (delivery ?? {}), false);
     assert.equal(vaultCalls, 1, 'delivery lookup must not call the vault');
+    assert.equal((await store.find('github', 'github-installation-1'))?.secretRef,
+      'vault://forge/workspaces/alpha/github/webhook-v2');
     assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:05:00.000Z'), true);
     assert.equal(await store.revoke('github', 'github-installation-1', '2026-11-04T12:06:00.000Z'), false);
     assert.equal(await resolver.resolveForIngress('github', 'github-installation-1'), null);
