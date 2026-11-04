@@ -4,27 +4,55 @@ import type {
   AgentEventRecord,
   AiTrainingStore,
   BlindBallotRecord,
+  ByokKeyRecord,
+  CapabilityMatrixRecord,
   DatasetSnapshotRecord,
   EvalSuiteRecord,
   ExperimentRecord,
   ExperimentSubjectRecord,
+  GatewayLogRecord,
+  GatewayProviderRecord,
+  GatewayUsageRecord,
+  InstanceReservationRecord,
   MiningBatchRecord,
+  ModelCardRecord,
+  ModelOpsRecord,
+  ModelPinRecord,
+  ModelPromotionRecord,
+  ModelVersionRecord,
   NewAgentEvent,
   NewBlindBallot,
+  NewByokKey,
+  NewCapabilityMatrix,
   NewDatasetSnapshot,
   NewEvalSuite,
   NewExperiment,
   NewExperimentSubject,
+  NewGatewayLog,
+  NewGatewayProvider,
+  NewGatewayUsage,
+  NewInstanceReservation,
   NewMiningBatch,
+  NewModelCard,
+  NewModelOpsRecord,
+  NewModelPin,
+  NewModelPromotion,
+  NewModelVersion,
+  NewOnPremPackage,
+  NewOutputSchema,
   NewPanelVote,
   NewSafetyBattery,
   NewSafetyGrade,
+  NewServingPlan,
   NewTrainingAsset,
   NewTrainingRun,
   NewTrendSample,
+  OnPremPackageRecord,
+  OutputSchemaRecord,
   PanelVoteRecord,
   SafetyBatteryRecord,
   SafetyGradeRecord,
+  ServingPlanRecord,
   TrainingAssetRecord,
   TrainingRunRecord,
   TrendSampleRecord,
@@ -175,6 +203,162 @@ interface MiningRow {
   created_at: string | number;
 }
 
+interface PgModelVersionRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: string | number;
+  stage: string;
+  owners: string;
+  lineage: string;
+  weights_fingerprint: string;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgModelCardRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: string | number;
+  card: string;
+  card_fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgModelPromotionRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: string | number;
+  from_stage: string;
+  to_stage: string;
+  promotion_fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgServingPlanRow {
+  id: string;
+  user_id: string;
+  model_id: string | null;
+  kind: string;
+  plan: string;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgModelOpsRow {
+  id: string;
+  user_id: string;
+  kind: string;
+  model_id: string | null;
+  record: string;
+  created_at: string | number;
+}
+
+interface PgModelPinRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: string | number;
+  model_tier: string;
+  switched_from: string | number | null;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgReservationRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  slots: string | number;
+  pool_total: string | number;
+  free_after: string | number;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgOnPremRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  version: string | number;
+  format: string;
+  weights_fingerprint: string;
+  quantized: boolean;
+  license_terms: string;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgProviderRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  cost_per_1k_in: string | number;
+  cost_per_1k_out: string | number;
+  max_tokens: string | number;
+  retention_days: string | number;
+  active: boolean;
+  consecutive_failures: string | number;
+  created_at: string | number;
+}
+
+interface PgByokRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  key_fingerprint: string;
+  key_length: string | number;
+  created_at: string | number;
+}
+
+interface PgGatewayUsageRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  tokens_in: string | number;
+  tokens_out: string | number;
+  latency_ms: string | number;
+  ok: boolean;
+  created_at: string | number;
+}
+
+interface PgGatewayLogRow {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  model_id: string;
+  prompt: string;
+  response: string;
+  redaction_count: string | number;
+  findings: string;
+  content_omitted: boolean;
+  logged_at: string | number;
+}
+
+interface PgCapabilityRow {
+  id: string;
+  user_id: string;
+  model_id: string;
+  capabilities: string;
+  max_context_tokens: string | number;
+  cost_per_1k_in: string | number;
+  cost_per_1k_out: string | number;
+  active: boolean;
+  fingerprint: string;
+  created_at: string | number;
+}
+
+interface PgOutputSchemaRow {
+  id: string;
+  user_id: string;
+  schema_id: string;
+  fields: string;
+  fingerprint: string;
+  created_at: string | number;
+}
+
 const toAssetRecord = (r: AssetRow): TrainingAssetRecord => ({
   id: r.id,
   userId: r.user_id,
@@ -314,6 +498,162 @@ const toMiningRecord = (r: MiningRow): MiningBatchRecord => ({
   cases: JSON.parse(r.cases) as unknown,
   count: num(r.count),
   duplicatesDropped: num(r.duplicates_dropped),
+  createdAt: num(r.created_at),
+});
+
+const toModelVersionRecord = (r: PgModelVersionRow): ModelVersionRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: num(r.version),
+  stage: r.stage,
+  owners: JSON.parse(r.owners) as string[],
+  lineage: JSON.parse(r.lineage) as unknown,
+  weightsFingerprint: r.weights_fingerprint,
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toModelCardRecord = (r: PgModelCardRow): ModelCardRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: num(r.version),
+  card: JSON.parse(r.card) as unknown,
+  cardFingerprint: r.card_fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toModelPromotionRecord = (r: PgModelPromotionRow): ModelPromotionRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: num(r.version),
+  fromStage: r.from_stage,
+  toStage: r.to_stage,
+  promotionFingerprint: r.promotion_fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toServingPlanRecord = (r: PgServingPlanRow): ServingPlanRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  kind: r.kind,
+  plan: JSON.parse(r.plan) as unknown,
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toModelOpsRecord = (r: PgModelOpsRow): ModelOpsRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  kind: r.kind,
+  modelId: r.model_id,
+  record: JSON.parse(r.record) as unknown,
+  createdAt: num(r.created_at),
+});
+
+const toModelPinRecord = (r: PgModelPinRow): ModelPinRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: num(r.version),
+  modelTier: r.model_tier,
+  switchedFrom: r.switched_from === null ? null : num(r.switched_from),
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toReservationRecord = (r: PgReservationRow): InstanceReservationRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  slots: num(r.slots),
+  poolTotal: num(r.pool_total),
+  freeAfter: num(r.free_after),
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toOnPremRecord = (r: PgOnPremRow): OnPremPackageRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  version: num(r.version),
+  format: r.format,
+  weightsFingerprint: r.weights_fingerprint,
+  quantized: boolFromPg(r.quantized),
+  licenseTerms: r.license_terms,
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toProviderRecord = (r: PgProviderRow): GatewayProviderRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  costPer1kIn: num(r.cost_per_1k_in),
+  costPer1kOut: num(r.cost_per_1k_out),
+  maxTokens: num(r.max_tokens),
+  retentionDays: num(r.retention_days),
+  active: boolFromPg(r.active),
+  consecutiveFailures: num(r.consecutive_failures),
+  createdAt: num(r.created_at),
+});
+
+const toByokRecord = (r: PgByokRow): ByokKeyRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  keyFingerprint: r.key_fingerprint,
+  keyLength: num(r.key_length),
+  createdAt: num(r.created_at),
+});
+
+const toGatewayUsageRecord = (r: PgGatewayUsageRow): GatewayUsageRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  tokensIn: num(r.tokens_in),
+  tokensOut: num(r.tokens_out),
+  latencyMs: num(r.latency_ms),
+  ok: boolFromPg(r.ok),
+  createdAt: num(r.created_at),
+});
+
+const toGatewayLogRecord = (r: PgGatewayLogRow): GatewayLogRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  providerId: r.provider_id,
+  modelId: r.model_id,
+  prompt: r.prompt,
+  response: r.response,
+  redactionCount: num(r.redaction_count),
+  findings: JSON.parse(r.findings) as unknown,
+  contentOmitted: boolFromPg(r.content_omitted),
+  loggedAt: num(r.logged_at),
+});
+
+const toCapabilityRecord = (r: PgCapabilityRow): CapabilityMatrixRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  modelId: r.model_id,
+  capabilities: JSON.parse(r.capabilities) as string[],
+  maxContextTokens: num(r.max_context_tokens),
+  costPer1kIn: num(r.cost_per_1k_in),
+  costPer1kOut: num(r.cost_per_1k_out),
+  active: boolFromPg(r.active),
+  fingerprint: r.fingerprint,
+  createdAt: num(r.created_at),
+});
+
+const toOutputSchemaRecord = (r: PgOutputSchemaRow): OutputSchemaRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  schemaId: r.schema_id,
+  fields: JSON.parse(r.fields) as unknown,
+  fingerprint: r.fingerprint,
   createdAt: num(r.created_at),
 });
 
@@ -581,5 +921,281 @@ export class PostgresAiTrainingStore implements AiTrainingStore {
     const result = await this.pool.query<MiningRow>('SELECT * FROM mining_batches WHERE user_id = $1 AND batch_id = $2', [userId, batchId]);
     const row = result.rows[0];
     return row ? toMiningRecord(row) : null;
+  }
+
+  async createModelVersion(version: NewModelVersion): Promise<ModelVersionRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO model_versions (id, user_id, model_id, version, stage, owners, lineage, weights_fingerprint, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [id, version.userId, version.modelId, version.version, version.stage, JSON.stringify(version.owners), JSON.stringify(version.lineage), version.weightsFingerprint, version.fingerprint, version.now],
+    );
+    return { id, userId: version.userId, modelId: version.modelId, version: version.version, stage: version.stage, owners: [...version.owners], lineage: version.lineage, weightsFingerprint: version.weightsFingerprint, fingerprint: version.fingerprint, createdAt: version.now };
+  }
+
+  async listModelVersions(userId: string, modelId: string, take: number): Promise<ModelVersionRecord[]> {
+    const result = await this.pool.query<PgModelVersionRow>('SELECT * FROM model_versions WHERE user_id = $1 AND model_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3', [userId, modelId, take]);
+    return result.rows.map(toModelVersionRecord);
+  }
+
+  async findModelVersion(userId: string, modelId: string, version: number): Promise<ModelVersionRecord | null> {
+    const result = await this.pool.query<PgModelVersionRow>('SELECT * FROM model_versions WHERE user_id = $1 AND model_id = $2 AND version = $3', [userId, modelId, version]);
+    const row = result.rows[0];
+    return row ? toModelVersionRecord(row) : null;
+  }
+
+  async saveModelVersion(version: ModelVersionRecord): Promise<ModelVersionRecord> {
+    await this.pool.query('UPDATE model_versions SET stage = $1 WHERE id = $2', [version.stage, version.id]);
+    return version;
+  }
+
+  async createModelCard(card: NewModelCard): Promise<ModelCardRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO model_cards (id, user_id, model_id, version, card, card_fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, card.userId, card.modelId, card.version, JSON.stringify(card.card), card.cardFingerprint, card.now],
+    );
+    return { id, userId: card.userId, modelId: card.modelId, version: card.version, card: card.card, cardFingerprint: card.cardFingerprint, createdAt: card.now };
+  }
+
+  async findModelCard(userId: string, modelId: string, version: number): Promise<ModelCardRecord | null> {
+    const result = await this.pool.query<PgModelCardRow>('SELECT * FROM model_cards WHERE user_id = $1 AND model_id = $2 AND version = $3', [userId, modelId, version]);
+    const row = result.rows[0];
+    return row ? toModelCardRecord(row) : null;
+  }
+
+  async createModelPromotion(promotion: NewModelPromotion): Promise<ModelPromotionRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO model_promotions (id, user_id, model_id, version, from_stage, to_stage, promotion_fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, promotion.userId, promotion.modelId, promotion.version, promotion.fromStage, promotion.toStage, promotion.promotionFingerprint, promotion.now],
+    );
+    return { id, userId: promotion.userId, modelId: promotion.modelId, version: promotion.version, fromStage: promotion.fromStage, toStage: promotion.toStage, promotionFingerprint: promotion.promotionFingerprint, createdAt: promotion.now };
+  }
+
+  async listModelPromotions(userId: string, modelId: string, take: number): Promise<ModelPromotionRecord[]> {
+    const result = await this.pool.query<PgModelPromotionRow>('SELECT * FROM model_promotions WHERE user_id = $1 AND model_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3', [userId, modelId, take]);
+    return result.rows.map(toModelPromotionRecord);
+  }
+
+  async createServingPlan(plan: NewServingPlan): Promise<ServingPlanRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO serving_plans (id, user_id, model_id, kind, plan, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, plan.userId, plan.modelId, plan.kind, JSON.stringify(plan.plan), plan.fingerprint, plan.now],
+    );
+    return { id, userId: plan.userId, modelId: plan.modelId, kind: plan.kind, plan: plan.plan, fingerprint: plan.fingerprint, createdAt: plan.now };
+  }
+
+  async listServingPlans(userId: string, take: number): Promise<ServingPlanRecord[]> {
+    const result = await this.pool.query<PgServingPlanRow>('SELECT * FROM serving_plans WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2', [userId, take]);
+    return result.rows.map(toServingPlanRecord);
+  }
+
+  async createModelOpsRecord(entry: NewModelOpsRecord): Promise<ModelOpsRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO model_ops_records (id, user_id, kind, model_id, record, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, entry.userId, entry.kind, entry.modelId, JSON.stringify(entry.record), entry.now],
+    );
+    return { id, userId: entry.userId, kind: entry.kind, modelId: entry.modelId, record: entry.record, createdAt: entry.now };
+  }
+
+  async listModelOpsRecords(userId: string, kind: string, take: number): Promise<ModelOpsRecord[]> {
+    const result = await this.pool.query<PgModelOpsRow>('SELECT * FROM model_ops_records WHERE user_id = $1 AND kind = $2 ORDER BY created_at DESC, id DESC LIMIT $3', [userId, kind, take]);
+    return result.rows.map(toModelOpsRecord);
+  }
+
+  async saveModelPin(pin: NewModelPin): Promise<ModelPinRecord> {
+    const existing = await this.pool.query<PgModelPinRow>('SELECT * FROM model_pins WHERE user_id = $1 AND model_id = $2', [pin.userId, pin.modelId]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE model_pins SET version = $1, model_tier = $2, switched_from = $3, fingerprint = $4, created_at = $5 WHERE id = $6', [pin.version, pin.modelTier, pin.switchedFrom, pin.fingerprint, pin.now, row.id]);
+      return { id: row.id, userId: pin.userId, modelId: pin.modelId, version: pin.version, modelTier: pin.modelTier, switchedFrom: pin.switchedFrom, fingerprint: pin.fingerprint, createdAt: pin.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO model_pins (id, user_id, model_id, version, model_tier, switched_from, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, pin.userId, pin.modelId, pin.version, pin.modelTier, pin.switchedFrom, pin.fingerprint, pin.now],
+    );
+    return { id, userId: pin.userId, modelId: pin.modelId, version: pin.version, modelTier: pin.modelTier, switchedFrom: pin.switchedFrom, fingerprint: pin.fingerprint, createdAt: pin.now };
+  }
+
+  async findModelPin(userId: string, modelId: string): Promise<ModelPinRecord | null> {
+    const result = await this.pool.query<PgModelPinRow>('SELECT * FROM model_pins WHERE user_id = $1 AND model_id = $2', [userId, modelId]);
+    const row = result.rows[0];
+    return row ? toModelPinRecord(row) : null;
+  }
+
+  async deleteModelPin(userId: string, modelId: string): Promise<boolean> {
+    const result = await this.pool.query('DELETE FROM model_pins WHERE user_id = $1 AND model_id = $2 RETURNING id', [userId, modelId]);
+    return result.rows.length > 0;
+  }
+
+  async saveInstanceReservation(reservation: NewInstanceReservation): Promise<InstanceReservationRecord> {
+    const existing = await this.pool.query<PgReservationRow>('SELECT * FROM instance_reservations WHERE user_id = $1 AND model_id = $2', [reservation.userId, reservation.modelId]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE instance_reservations SET slots = $1, pool_total = $2, free_after = $3, fingerprint = $4, created_at = $5 WHERE id = $6', [reservation.slots, reservation.poolTotal, reservation.freeAfter, reservation.fingerprint, reservation.now, row.id]);
+      return { id: row.id, userId: reservation.userId, modelId: reservation.modelId, slots: reservation.slots, poolTotal: reservation.poolTotal, freeAfter: reservation.freeAfter, fingerprint: reservation.fingerprint, createdAt: reservation.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO instance_reservations (id, user_id, model_id, slots, pool_total, free_after, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, reservation.userId, reservation.modelId, reservation.slots, reservation.poolTotal, reservation.freeAfter, reservation.fingerprint, reservation.now],
+    );
+    return { id, userId: reservation.userId, modelId: reservation.modelId, slots: reservation.slots, poolTotal: reservation.poolTotal, freeAfter: reservation.freeAfter, fingerprint: reservation.fingerprint, createdAt: reservation.now };
+  }
+
+  async findInstanceReservation(userId: string, modelId: string): Promise<InstanceReservationRecord | null> {
+    const result = await this.pool.query<PgReservationRow>('SELECT * FROM instance_reservations WHERE user_id = $1 AND model_id = $2', [userId, modelId]);
+    const row = result.rows[0];
+    return row ? toReservationRecord(row) : null;
+  }
+
+  async deleteInstanceReservation(userId: string, modelId: string): Promise<boolean> {
+    const result = await this.pool.query('DELETE FROM instance_reservations WHERE user_id = $1 AND model_id = $2 RETURNING id', [userId, modelId]);
+    return result.rows.length > 0;
+  }
+
+  async createOnPremPackage(pkg: NewOnPremPackage): Promise<OnPremPackageRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO onprem_packages (id, user_id, model_id, version, format, weights_fingerprint, quantized, license_terms, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [id, pkg.userId, pkg.modelId, pkg.version, pkg.format, pkg.weightsFingerprint, pkg.quantized, pkg.licenseTerms, pkg.fingerprint, pkg.now],
+    );
+    return { id, userId: pkg.userId, modelId: pkg.modelId, version: pkg.version, format: pkg.format, weightsFingerprint: pkg.weightsFingerprint, quantized: pkg.quantized, licenseTerms: pkg.licenseTerms, fingerprint: pkg.fingerprint, createdAt: pkg.now };
+  }
+
+  async findOnPremPackageByFingerprint(userId: string, fingerprint: string): Promise<OnPremPackageRecord | null> {
+    const result = await this.pool.query<PgOnPremRow>('SELECT * FROM onprem_packages WHERE user_id = $1 AND fingerprint = $2', [userId, fingerprint]);
+    const row = result.rows[0];
+    return row ? toOnPremRecord(row) : null;
+  }
+
+  async saveGatewayProvider(provider: NewGatewayProvider): Promise<GatewayProviderRecord> {
+    const existing = await this.pool.query<PgProviderRow>('SELECT * FROM gateway_providers WHERE user_id = $1 AND provider_id = $2', [provider.userId, provider.providerId]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE gateway_providers SET cost_per_1k_in = $1, cost_per_1k_out = $2, max_tokens = $3, retention_days = $4, active = $5, created_at = $6 WHERE id = $7', [provider.costPer1kIn, provider.costPer1kOut, provider.maxTokens, provider.retentionDays, provider.active, provider.now, row.id]);
+      return { id: row.id, userId: provider.userId, providerId: provider.providerId, costPer1kIn: provider.costPer1kIn, costPer1kOut: provider.costPer1kOut, maxTokens: provider.maxTokens, retentionDays: provider.retentionDays, active: provider.active, consecutiveFailures: num(row.consecutive_failures), createdAt: provider.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO gateway_providers (id, user_id, provider_id, cost_per_1k_in, cost_per_1k_out, max_tokens, retention_days, active, consecutive_failures, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9)',
+      [id, provider.userId, provider.providerId, provider.costPer1kIn, provider.costPer1kOut, provider.maxTokens, provider.retentionDays, provider.active, provider.now],
+    );
+    return { id, userId: provider.userId, providerId: provider.providerId, costPer1kIn: provider.costPer1kIn, costPer1kOut: provider.costPer1kOut, maxTokens: provider.maxTokens, retentionDays: provider.retentionDays, active: provider.active, consecutiveFailures: 0, createdAt: provider.now };
+  }
+
+  async findGatewayProvider(userId: string, providerId: string): Promise<GatewayProviderRecord | null> {
+    const result = await this.pool.query<PgProviderRow>('SELECT * FROM gateway_providers WHERE user_id = $1 AND provider_id = $2', [userId, providerId]);
+    const row = result.rows[0];
+    return row ? toProviderRecord(row) : null;
+  }
+
+  async listGatewayProviders(userId: string, take: number): Promise<GatewayProviderRecord[]> {
+    const result = await this.pool.query<PgProviderRow>('SELECT * FROM gateway_providers WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2', [userId, take]);
+    return result.rows.map(toProviderRecord);
+  }
+
+  async saveGatewayProviderHealth(userId: string, providerId: string, consecutiveFailures: number): Promise<GatewayProviderRecord | null> {
+    await this.pool.query('UPDATE gateway_providers SET consecutive_failures = $1 WHERE user_id = $2 AND provider_id = $3', [consecutiveFailures, userId, providerId]);
+    const result = await this.pool.query<PgProviderRow>('SELECT * FROM gateway_providers WHERE user_id = $1 AND provider_id = $2', [userId, providerId]);
+    const row = result.rows[0];
+    return row ? toProviderRecord(row) : null;
+  }
+
+  async saveByokKey(key: NewByokKey): Promise<ByokKeyRecord> {
+    const existing = await this.pool.query<PgByokRow>('SELECT * FROM byok_keys WHERE user_id = $1 AND provider_id = $2', [key.userId, key.providerId]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE byok_keys SET key_fingerprint = $1, key_length = $2, created_at = $3 WHERE id = $4', [key.keyFingerprint, key.keyLength, key.now, row.id]);
+      return { id: row.id, userId: key.userId, providerId: key.providerId, keyFingerprint: key.keyFingerprint, keyLength: key.keyLength, createdAt: key.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO byok_keys (id, user_id, provider_id, key_fingerprint, key_length, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, key.userId, key.providerId, key.keyFingerprint, key.keyLength, key.now],
+    );
+    return { id, userId: key.userId, providerId: key.providerId, keyFingerprint: key.keyFingerprint, keyLength: key.keyLength, createdAt: key.now };
+  }
+
+  async findByokKey(userId: string, providerId: string): Promise<ByokKeyRecord | null> {
+    const result = await this.pool.query<PgByokRow>('SELECT * FROM byok_keys WHERE user_id = $1 AND provider_id = $2', [userId, providerId]);
+    const row = result.rows[0];
+    return row ? toByokRecord(row) : null;
+  }
+
+  async createGatewayUsage(usage: NewGatewayUsage): Promise<GatewayUsageRecord> {
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO gateway_usage (id, user_id, provider_id, tokens_in, tokens_out, latency_ms, ok, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [id, usage.userId, usage.providerId, usage.tokensIn, usage.tokensOut, usage.latencyMs, usage.ok, usage.now],
+    );
+    return { id, userId: usage.userId, providerId: usage.providerId, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, latencyMs: usage.latencyMs, ok: usage.ok, createdAt: usage.now };
+  }
+
+  async listGatewayUsage(userId: string, providerId: string, take: number): Promise<GatewayUsageRecord[]> {
+    const result = await this.pool.query<PgGatewayUsageRow>('SELECT * FROM gateway_usage WHERE user_id = $1 AND provider_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3', [userId, providerId, take]);
+    return result.rows.map(toGatewayUsageRecord);
+  }
+
+  async createGatewayLog(log: NewGatewayLog): Promise<GatewayLogRecord> {
+    await this.pool.query(
+      'INSERT INTO gateway_logs (id, user_id, provider_id, model_id, prompt, response, redaction_count, findings, content_omitted, logged_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [log.id, log.userId, log.providerId, log.modelId, log.prompt, log.response, log.redactionCount, JSON.stringify(log.findings), log.contentOmitted, log.loggedAt],
+    );
+    return { id: log.id, userId: log.userId, providerId: log.providerId, modelId: log.modelId, prompt: log.prompt, response: log.response, redactionCount: log.redactionCount, findings: log.findings, contentOmitted: log.contentOmitted, loggedAt: log.loggedAt };
+  }
+
+  async listGatewayLogs(userId: string, providerId: string, take: number): Promise<GatewayLogRecord[]> {
+    const result = await this.pool.query<PgGatewayLogRow>('SELECT * FROM gateway_logs WHERE user_id = $1 AND provider_id = $2 ORDER BY logged_at DESC, id DESC LIMIT $3', [userId, providerId, take]);
+    return result.rows.map(toGatewayLogRecord);
+  }
+
+  async saveCapabilityMatrix(matrix: NewCapabilityMatrix): Promise<CapabilityMatrixRecord> {
+    const existing = await this.pool.query<PgCapabilityRow>('SELECT * FROM capability_matrices WHERE user_id = $1 AND fingerprint = $2', [matrix.userId, matrix.fingerprint]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE capability_matrices SET model_id = $1, capabilities = $2, max_context_tokens = $3, cost_per_1k_in = $4, cost_per_1k_out = $5, active = $6, created_at = $7 WHERE id = $8', [matrix.modelId, JSON.stringify(matrix.capabilities), matrix.maxContextTokens, matrix.costPer1kIn, matrix.costPer1kOut, matrix.active, matrix.now, row.id]);
+      return { id: row.id, userId: matrix.userId, modelId: matrix.modelId, capabilities: [...matrix.capabilities], maxContextTokens: matrix.maxContextTokens, costPer1kIn: matrix.costPer1kIn, costPer1kOut: matrix.costPer1kOut, active: matrix.active, fingerprint: matrix.fingerprint, createdAt: matrix.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO capability_matrices (id, user_id, model_id, capabilities, max_context_tokens, cost_per_1k_in, cost_per_1k_out, active, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [id, matrix.userId, matrix.modelId, JSON.stringify(matrix.capabilities), matrix.maxContextTokens, matrix.costPer1kIn, matrix.costPer1kOut, matrix.active, matrix.fingerprint, matrix.now],
+    );
+    return { id, userId: matrix.userId, modelId: matrix.modelId, capabilities: [...matrix.capabilities], maxContextTokens: matrix.maxContextTokens, costPer1kIn: matrix.costPer1kIn, costPer1kOut: matrix.costPer1kOut, active: matrix.active, fingerprint: matrix.fingerprint, createdAt: matrix.now };
+  }
+
+  async listCapabilityMatrices(userId: string, take: number): Promise<CapabilityMatrixRecord[]> {
+    const result = await this.pool.query<PgCapabilityRow>('SELECT * FROM capability_matrices WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2', [userId, take]);
+    return result.rows.map(toCapabilityRecord);
+  }
+
+  async saveOutputSchema(schema: NewOutputSchema): Promise<OutputSchemaRecord> {
+    const existing = await this.pool.query<PgOutputSchemaRow>('SELECT * FROM output_schemas WHERE user_id = $1 AND fingerprint = $2', [schema.userId, schema.fingerprint]);
+    const row = existing.rows[0];
+    if (row) {
+      await this.pool.query('UPDATE output_schemas SET schema_id = $1, fields = $2, fingerprint = $3, created_at = $4 WHERE id = $5', [schema.schemaId, JSON.stringify(schema.fields), schema.fingerprint, schema.now, row.id]);
+      return { id: row.id, userId: schema.userId, schemaId: schema.schemaId, fields: schema.fields, fingerprint: schema.fingerprint, createdAt: schema.now };
+    }
+    const id = randomUUID();
+    await this.pool.query(
+      'INSERT INTO output_schemas (id, user_id, schema_id, fields, fingerprint, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, schema.userId, schema.schemaId, JSON.stringify(schema.fields), schema.fingerprint, schema.now],
+    );
+    return { id, userId: schema.userId, schemaId: schema.schemaId, fields: schema.fields, fingerprint: schema.fingerprint, createdAt: schema.now };
+  }
+
+  async findOutputSchema(userId: string, schemaId: string): Promise<OutputSchemaRecord | null> {
+    const result = await this.pool.query<PgOutputSchemaRow>('SELECT * FROM output_schemas WHERE user_id = $1 AND schema_id = $2 ORDER BY created_at DESC, id DESC LIMIT 1', [userId, schemaId]);
+    const row = result.rows[0];
+    return row ? toOutputSchemaRecord(row) : null;
+  }
+
+  async listOutputSchemas(userId: string, take: number): Promise<OutputSchemaRecord[]> {
+    const result = await this.pool.query<PgOutputSchemaRow>('SELECT * FROM output_schemas WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2', [userId, take]);
+    return result.rows.map(toOutputSchemaRecord);
   }
 }
