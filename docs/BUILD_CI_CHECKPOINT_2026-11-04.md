@@ -14,12 +14,12 @@ Approved catalogue scope: BD-001, BD-016, BD-017, BD-029, BD-030.
 ## Verified branch state
 
 At inspection, branch heads were:
-- `gpt-part2-build-ci`: `b64bf4c4a139d42ff608d2e72025a9558feb0a6e` (subsequently advanced by documentation-only commits).
+- `gpt-part2-build-ci`: `307c3c140fb2880fa736e741aaaeacc5f2b0414e`.
 - `mistral`: `fdde1f062496d2ef0c5cf6746b9164240f7af8bd`.
 - `claude`: `c2c8ac99013f5012091843927a9f032ccfbeed0f`.
 - `main`: `ec6716fb5ba6c42e940b748581990df9194a2a2b`.
 
-GitHub Actions run `41803937752` on GPT commit `b64bf4c4a139d42ff608d2e72025a9558feb0a6e` succeeded. The job steps included dependency installation, typecheck, production build, and the complete configured test suite against real PostgreSQL. Do not infer a test count from the green status. A later documentation commit run `41810771907` also succeeded on `4b104cafbc31afe845174a6ad7f1311880995e58`. The most recent market-research documentation commit must still receive its own CI run before being called verified.
+GitHub Actions run `41812055280` on GPT commit `307c3c140fb2880fa736e741aaaeacc5f2b0414e` succeeded. Dependency installation, typecheck, production build, and the complete test suite against real PostgreSQL all passed: 173 tests, 0 failures, 0 skipped. This run includes the new candidate dry-run side-effect test. Earlier run `41810868381` on `a9770080e404ef49a28a723bed7331220460e98c` also succeeded.
 
 ## Accurate BD-016 state
 
@@ -59,3 +59,16 @@ Not implemented:
 4. Resolve branch integration strategy before wiring execution; do not create duplicate worker/runtime infrastructure.
 5. Continue implementation only within the five approved feature IDs, then test both SQLite and real PostgreSQL, including replay/idempotency, concurrency, cross-workspace denial, malformed events, recovery, and worker isolation where applicable.
 6. Do not mark a feature accepted until independent verification and owner acceptance.
+
+
+## Candidate dry-run test evidence
+
+Commit `cc000ed1c6062184928864f402f93a4b0d998d4d` adds a service-level test for an unsaved candidate definition. It verifies a valid candidate produces a dry-run plan, writes neither a pipeline version nor a run, denies an unauthorized actor, and rejects an invalid definition. The candidate route and service were already implemented; the new test closes a test-coverage gap. The subsequent full CI run `41812055280` passed all 173 tests against real PostgreSQL.
+
+## Execution integration boundary — read-only Mistral inspection
+
+The public Task Runtime contract currently exposes `TaskRuntimeService.createTask(userId, goal)`; its `TaskRunRecord` is user-owned and stores goal/state/events, not workspace ID, pipeline ID/version, registered task reference or Build & CI run identity. Its event journal and task-control engines are for AI task lifecycle, not a generic CI queue. The Orchestrator persists user-owned plans and offers planning, tool-selection and sandbox verdicts; it is not a CI dispatcher. Therefore neither module is currently a safe drop-in worker for Build & CI. Do not encode CI definitions into free-text task goals, duplicate the modules, or modify the `mistral` branch. Any future integration needs an explicit workspace-scoped adapter contract and an owner-approved branch integration strategy.
+
+## Catalogue scope boundary
+
+The user-approved batch remains BD-001, BD-016, BD-017, BD-029 and BD-030 only. BD-026 (priority/fair queue scheduling), BD-041 (long-running jobs with checkpointing), BD-048 (pipeline notifications and approvals), and BD-057 (scheduled maintenance jobs) are adjacent catalogue items, not silently included in this batch. BD-016 may process verified trigger deliveries and create idempotent queued pipeline runs; it does not authorize building those separate products.
