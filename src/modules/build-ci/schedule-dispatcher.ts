@@ -42,7 +42,7 @@ function required(value: string, field: string): void {
 }
 
 function scheduleTriggers(triggers: readonly PipelineTrigger[]): readonly PipelineTrigger[] {
-  return triggers.filter((trigger) => trigger.kind === 'schedule');
+  return triggers.filter((trigger) => trigger.kind === 'schedule' && trigger.enabled !== false);
 }
 
 /**
@@ -139,7 +139,7 @@ export class ScheduleDispatcher {
       const trigger = latest?.version === occurrence.pipelineVersion
         ? latest.definition.triggers.find((item) => item.id === occurrence.triggerId && item.kind === 'schedule')
         : undefined;
-      if (!trigger || trigger.scheduleId !== occurrence.scheduleId) {
+      if (!trigger || trigger.enabled === false || trigger.scheduleId !== occurrence.scheduleId) {
         const skipped = await this.occurrences.skip(occurrence.occurrenceId, input.workerId, new Date(this.now()).toISOString());
         return Object.freeze({
           claimed: true, dispatched: false, occurrenceId: occurrence.occurrenceId,
