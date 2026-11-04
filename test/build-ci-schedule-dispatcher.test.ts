@@ -26,7 +26,7 @@ test('scheduler scans with a durable cursor and dispatches each minute occurrenc
   const { db, pipelines, buildCi, occurrences } = fixture();
   try {
     await buildCi.createPipeline({
-      workspaceId: 'workspace-schedule', actorId: 'scheduler-actor',
+      workspaceId: 'workspace-schedule', actorId: 'scheduler-actor', createdAt: '2026-11-04T12:00:00.000Z',
       definition: {
         id: 'minute-build', name: 'Minute build',
         triggers: [{ id: 'every-minute', kind: 'schedule', scheduleId: 'minute-build', cron: '* * * * *', timeZone: 'UTC' }],
