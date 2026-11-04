@@ -3,7 +3,7 @@ import type { Clock } from '../../kernel/clock.ts';
 import type { RouteTable, RequestContext } from '../../kernel/http.ts';
 import type { IdentityService } from '../identity/identity-service.ts';
 import type { BuildCiService } from './store.ts';
-import type { JsonValue, TriggerEvent } from './pipeline.ts';
+import type { JsonValue, TriggerEvent, TriggerKind } from './pipeline.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -40,11 +40,15 @@ function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent 
   if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
   const allowed = ['kind', 'source', 'eventId', 'branch', 'baseBranch', 'changedFiles', 'scheduleId', 'commitSha', 'pullRequestNumber', 'payload', 'eventType'];
   exact(value, allowed, ['kind', 'source', 'eventId']);
+  const kinds: readonly TriggerKind[] = ['push', 'pull_request', 'schedule', 'event', 'manual', 'api'];
+  if (typeof value.kind !== 'string' || !kinds.includes(value.kind as TriggerKind)) {
+    throw new AppError(400, 'invalid_request', 'event.kind is unsupported.');
+  }
   if (!allowExternalKinds && value.kind !== 'manual' && value.kind !== 'api') {
     throw new AppError(400, 'invalid_request', 'Only authenticated manual and API triggers are accepted on this endpoint.');
   }
   const event: TriggerEvent = {
-    kind: value.kind,
+    kind: value.kind as TriggerKind,
     source: id(value.source, 'event.source'),
     eventId: id(value.eventId, 'event.eventId'),
     ...(value.eventType !== undefined ? { eventType: id(value.eventType, 'event.eventType') } : {}),
