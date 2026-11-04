@@ -110,8 +110,8 @@ Schedules: due → occurrence claimed → evaluated → queued/no-match; missed 
 - Do not execute untrusted PR code with privileged secrets or deployment permissions.
 
 ### Current FORGE status
-Implemented: trigger type definitions and matching; schedule identity; branch/path filtering; idempotent queued-run persistence; authenticated manual/API trigger route; GitHub HMAC-SHA256 and GitLab Standard Webhooks signature verification over raw request bytes; provider event normalization; trusted connection/repository binding; and durable, deduplicated webhook receipt persistence in SQLite and PostgreSQL.
-Still missing: production secret/integration resolver wiring; webhook queue claiming/leases, retry scheduling and processing; mapping verified deliveries to matching pipeline runs; schedule dispatcher with explicit DST/catch-up/concurrency policy; event-bus integration; and operational dead-letter/replay controls. The current webhook HTTP 202 confirms verified durable receipt only, not a queued pipeline run or execution.
+Implemented: trigger type definitions and matching; per-trigger enable/disable; schedule identity; numeric five-field cron with IANA timezone; branch/path filtering; idempotent queued-run persistence; authenticated manual/API trigger route; GitHub HMAC-SHA256 and GitLab Standard Webhooks signature verification over raw request bytes; provider event normalization; trusted connection/repository binding; durable deduplicated webhook receipts; leased webhook processing with bounded retry; and a DB-backed schedule dispatcher with per-workspace scan cursors, version-bound occurrence IDs, leased claims, retry/recovery and authorization-controlled queued-run creation. The scheduler explicitly skips nonexistent spring-forward wall times and emits both UTC instants for repeated fall-back wall times. A durable cursor supports catch-up after downtime in bounded scan batches.
+Still missing: production secret/integration resolver wiring; autonomous worker hosting/polling; event-bus integration; operational dead-letter/replay and monitoring controls; per-pipeline concurrency groups/overlap serialization; and execution of registered pipeline tasks. Webhook HTTP 202 still confirms verified durable receipt only, not a queued run or execution. The schedule dispatcher creates queued run records only; it is not a task executor.
 
 ## BD-017 — Conditional and path-based pipelines
 
@@ -209,3 +209,16 @@ Additional primary references:
 - Buildkite incoming pipeline triggers and delivery model: https://buildkite.com/docs/apis/webhooks/incoming/pipeline-triggers
 - OWASP Webhook Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Webhook_Security_Cheat_Sheet.html
 - OWASP CI/CD Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/CI_CD_Security_Cheat_Sheet.html
+
+
+### BD-016 — durable schedule dispatch implementation update (2026-11-04)
+
+The schedule path now has a durable occurrence queue rather than relying on process-local timers:
+
+- A per-workspace UTC-minute scan cursor is persisted. Initial lookback defaults to five minutes; later catch-up work is processed in bounded batches (default 24 hours). The cursor advances only after all discovered occurrences are stored, making crash/retry rescans safe.
+- Occurrence IDs bind workspace, pipeline, trigger, immutable pipeline version and scheduled UTC instant. Database uniqueness and leases prevent duplicate claims across concurrent workers. Failed dispatches use bounded exponential retry and terminal failure state.
+- Numeric five-field cron supports wildcards, integers, ranges, comma lists and numeric steps. Day-of-month/day-of-week follow standard cron OR semantics when both are restricted; weekday 0 and 7 are Sunday.
+- IANA timezone calculation is performed against UTC instants. Spring-forward nonexistent local times are skipped; repeated fall-back local times create two distinct UTC occurrences. This policy is covered by tests.
+- Trigger pause/resume is represented by the enabled flag in a new immutable pipeline version. A superseded queued occurrence is skipped rather than being dispatched against stale configuration. Occurrences are not generated before the active pipeline version's creation time.
+- The scheduler calls the ordinary BuildCiService trigger method, so workspace authorization and idempotent run creation are rechecked. It does not execute pipeline tasks. A worker host/polling loop, overlap serialization and production operational controls remain outstanding.
+- GitHub Actions run 41814529813 passed typecheck, production build and 184 tests against real PostgreSQL. The subsequent pause/resume and cron-step coverage is pending its own full CI run.
