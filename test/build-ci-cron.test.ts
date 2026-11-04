@@ -41,3 +41,17 @@ test('cron scan enforces a bounded, minute-aligned range', () => {
   assert.throws(() => findCronOccurrences('* * * * *', 'UTC', 1, 60_001));
   assert.throws(() => findCronOccurrences('* * * * *', 'UTC', 0, 10_081 * 60_000));
 });
+
+test('numeric cron steps are expanded at their declared interval', () => {
+  const times = findCronOccurrences(
+    '*/15 * * * *', 'UTC',
+    Date.parse('2026-11-04T12:00:00.000Z'),
+    Date.parse('2026-11-04T12:45:00.000Z'),
+  );
+  assert.deepEqual(times, [
+    Date.parse('2026-11-04T12:00:00.000Z'),
+    Date.parse('2026-11-04T12:15:00.000Z'),
+    Date.parse('2026-11-04T12:30:00.000Z'),
+    Date.parse('2026-11-04T12:45:00.000Z'),
+  ]);
+});
