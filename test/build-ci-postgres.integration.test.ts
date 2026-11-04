@@ -30,7 +30,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(providerConnection.active, true);
     assert.equal(await providerConnections.rotateSecretReference('github', 'pg-github-installation',
       'vault://forge/pg-workspace/github/webhook', 'vault://forge/pg-workspace/github/webhook-v2',
-      '2026-11-04T00:00:30.000Z'), true);
+      '2026-11-04T00:00:30.000Z', 'integration-test'), true);
     assert.equal(await providerConnections.rotateSecretReference('github', 'pg-github-installation',
       'vault://forge/pg-workspace/github/webhook', 'vault://forge/pg-workspace/github/webhook-v3',
       '2026-11-04T00:00:45.000Z'), false);
@@ -45,7 +45,23 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal((await providerResolver.resolveForIngress('github', 'pg-github-installation'))?.signingSecret, 'postgres-integration-secret');
     assert.equal((await providerResolver.resolveForDelivery('github', 'pg-github-installation'))?.actorId, 'integration-test');
     assert.equal(vaultResolutions, 1);
-    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:01:00.000Z'), true);
+    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:01:00.000Z', 'integration-test'), true);
+    const providerEvents = await providerConnections.listEvents('pg-workspace', 'github', 'pg-github-installation');
+    assert.deepEqual(providerEvents.map((event) => event.eventType), ['created', 'secret_reference_rotated', 'revoked']);
+    assert.equal(providerEvents.every((event) => event.actorId === 'integration-test'), true);
+    assert.deepEqual(providerEvents[1]?.metadata, { secretReferenceChanged: true });
+    assert.equal(JSON.stringify(providerEvents).includes('vault://'), false);
+    const workspaceConnections = await providerConnections.listForWorkspace('pg-workspace');
+    assert.ok(workspaceConnections.some((connection) => connection.connectionId === 'pg-github-installation'));
+    await assert.rejects(() => testPool.pool.query(
+      "UPDATE build_ci_provider_connection_events SET actor_id = 'tampered' WHERE connection_id = $1",
+      ['pg-github-installation'],
+    ));
+    await assert.rejects(() => testPool.pool.query(
+      "DELETE FROM build_ci_provider_connection_events WHERE connection_id = $1",
+      ['pg-github-installation'],
+    ));
+    await assert.rejects(() => testPool.pool.query("TRUNCATE build_ci_provider_connection_events"));
     assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:02:00.000Z'), false);
     assert.equal(await providerResolver.resolveForIngress('github', 'pg-github-installation'), null);
     assert.equal(await providerResolver.resolveForDelivery('github', 'pg-github-installation'), null);
