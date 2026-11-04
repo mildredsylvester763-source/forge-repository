@@ -43,17 +43,21 @@ function required(value: string, field: string, max: number): void {
 function timestamp(value: string, field: string): void {
   if (!Number.isFinite(Date.parse(value))) throw new TypeError(field + ' must be a valid timestamp');
 }
-function validateSecretRef(value: string): void {
+function validateSecretRef(value: string, workspaceId?: string): void {
   required(value, 'secretRef', 512);
-  const scheme = value.startsWith('secret://') ? 'secret://' : value.startsWith('vault://') ? 'vault://' : value.startsWith('kms://') ? 'kms://' : '';
-  if (!scheme || !/^[A-Za-z0-9._:/-]+$/.test(value.slice(scheme.length))) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
+  if (!/^(secret|vault|kms):\\/\\/forge\\/(?:workspaces\\/)?[A-Za-z0-9._-]{1,128}\\/[A-Za-z0-9._/-]{1,400}$/.test(value)) {
+    throw new TypeError('secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+  }
+  if (workspaceId !== undefined) {
+    const match = /^(?:secret|vault|kms):\\/\\/forge\\/(?:workspaces\\/)?([A-Za-z0-9._-]{1,128})\\//.exec(value);
+    if (!match || match[1] !== workspaceId) throw new TypeError('secretRef belongs to a different workspace');
+  }
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
   required(input.actorId, 'actorId', 128); if (input.createdBy !== undefined) required(input.createdBy, 'createdBy', 128);
   required(input.repository, 'repository', 256);
-  required(input.secretRef, 'secretRef', 512);
-  if (!/^(secret|vault|kms):\/\/[A-Za-z0-9._:/-]+$/.test(input.secretRef)) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
+  validateSecretRef(input.secretRef, input.workspaceId);
   if (input.provider !== 'github' && input.provider !== 'gitlab') throw new TypeError('provider is invalid');
   if (input.createdAt !== undefined) timestamp(input.createdAt, 'createdAt');
 }
@@ -147,6 +151,11 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
     if (actorId !== undefined) required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
     return transaction(this.db, () => {
+      const current = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections
+        WHERE provider = ? AND connection_id = ? AND status = 'active'`).get(provider, connectionId) as { workspace_id: string } | undefined;
+      if (!current) return false;
+      validateSecretRef(expectedSecretRef, current.workspace_id);
+      validateSecretRef(nextSecretRef, current.workspace_id);
       const updated = this.db.prepare(`UPDATE build_ci_provider_connections SET secret_ref = ?, updated_at = ?
         WHERE provider = ? AND connection_id = ? AND status = 'active' AND secret_ref = ?`)
         .run(nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef);
@@ -223,6 +232,12 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
     if (actorId !== undefined) required(actorId, 'actorId', 128);
     if (expectedSecretRef === nextSecretRef) throw new TypeError('nextSecretRef must differ from expectedSecretRef');
     return withTransaction(this.pool, async (conn) => {
+      const current = await conn.query<{ workspace_id: string }>(`SELECT workspace_id FROM build_ci_provider_connections
+        WHERE provider = $1 AND connection_id = $2 AND status = 'active' FOR UPDATE`, [provider, connectionId]);
+      const existing = current.rows[0];
+      if (!existing) return false;
+      validateSecretRef(expectedSecretRef, existing.workspace_id);
+      validateSecretRef(nextSecretRef, existing.workspace_id);
       const updated = await conn.query<{ workspace_id: string }>(`UPDATE build_ci_provider_connections SET secret_ref = $1, updated_at = $2
         WHERE provider = $3 AND connection_id = $4 AND status = 'active' AND secret_ref = $5 RETURNING workspace_id`,
       [nextSecretRef, updatedAt, provider, connectionId, expectedSecretRef]);
