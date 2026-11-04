@@ -203,7 +203,8 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
 
   async fail(input: FailWebhookDeliveryInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }> {
     validateFailure(input);
-    const message = input.error.replace(/[\r\n\t]+/g, ' ').slice(0, 1000) || 'Delivery processing failed';
+    // Never persist exception text or provider diagnostics: they may contain credentials or private payload data.
+    const message = 'Webhook delivery processing failed.';
     return withTransactionSqlite(this.db, () => {
       const row = this.db.prepare(`SELECT attempts FROM build_ci_webhook_deliveries
         WHERE delivery_row_id = ? AND status = 'processing' AND lease_owner = ? AND lease_expires_at > ?`)
@@ -296,7 +297,8 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
 
   async fail(input: FailWebhookDeliveryInput): Promise<{ readonly updated: boolean; readonly terminal: boolean }> {
     validateFailure(input);
-    const message = input.error.replace(/[\r\n\t]+/g, ' ').slice(0, 1000) || 'Delivery processing failed';
+    // Never persist exception text or provider diagnostics: they may contain credentials or private payload data.
+    const message = 'Webhook delivery processing failed.';
     return withTransaction(this.pool, async (conn) => {
       const row = await conn.query<{ attempts: number | string }>(`SELECT attempts FROM build_ci_webhook_deliveries
         WHERE delivery_row_id = $1 AND status = 'processing' AND lease_owner = $2 AND lease_expires_at > $3 FOR UPDATE`,
