@@ -97,7 +97,8 @@ function validateInput(input: { templateId: string; publisherWorkspaceId: string
 }
 
 export class SqlitePipelineTemplateStore implements PipelineTemplateStore {
-  constructor(private readonly db: Database) {}
+  private readonly db: Database;
+  constructor(db: Database) { this.db = db; }
 
   async create(input: CreatePipelineTemplateInput): Promise<PipelineTemplateVersion> {
     validateInput(input);
@@ -195,7 +196,8 @@ export class SqlitePipelineTemplateStore implements PipelineTemplateStore {
 }
 
 export class PostgresPipelineTemplateStore implements PipelineTemplateStore {
-  constructor(private readonly pool: SqlPool) {}
+  private readonly pool: SqlPool;
+  constructor(pool: SqlPool) { this.pool = pool; }
 
   async create(input: CreatePipelineTemplateInput): Promise<PipelineTemplateVersion> {
     validateInput(input);

@@ -218,6 +218,7 @@ test('event idempotency keys are stable and scoped by workspace and pipeline', (
 import { DatabaseSync } from 'node:sqlite';
 import { migrateBuildCiSqlite } from '../src/modules/build-ci/migrations.ts';
 import { SqliteBuildCiStore } from '../src/modules/build-ci/sqlite-store.ts';
+import { SqlitePipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
 import { BuildCiService, PipelineAuthorizationError } from '../src/modules/build-ci/store.ts';
 
 test('SQLite store persists immutable versions and append-only rollback snapshots', async () => {
@@ -225,7 +226,7 @@ test('SQLite store persists immutable versions and append-only rollback snapshot
   db.exec('PRAGMA foreign_keys = ON');
   migrateBuildCiSqlite(db);
   const store = new SqliteBuildCiStore(db);
-  const service = new BuildCiService({ store, authorize: async () => true });
+  const service = new BuildCiService({ store, templates: new SqlitePipelineTemplateStore(db), authorize: async () => true });
   const v1 = await service.createPipeline({ workspaceId: 'ws-a', definition: definition(), actorId: 'owner', createdAt: '2026-11-01T00:00:00.000Z' });
   const edited = validatePipelineDefinition({ ...definition(), name: 'Updated build' });
   const v2 = await service.createPipeline({ workspaceId: 'ws-a', definition: edited, actorId: 'owner', createdAt: '2026-11-02T00:00:00.000Z' });
@@ -245,7 +246,7 @@ test('service dry-run reads the durable current version', async () => {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON');
   migrateBuildCiSqlite(db);
-  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), authorize: async () => true });
+  const service = new BuildCiService({ store: new SqliteBuildCiStore(db), templates: new SqlitePipelineTemplateStore(db), authorize: async () => true });
   await service.createPipeline({ workspaceId: 'ws-a', definition: definition(), actorId: 'owner' });
   const before = Number((db.prepare('SELECT COUNT(*) AS count FROM build_pipeline_runs').get() as { count: number }).count);
   const plan = await service.dryRun({ workspaceId: 'ws-a', pipelineId: 'web-build', actorId: 'owner', event: pushEvent });
@@ -295,6 +296,7 @@ test('service authorizes creation, rollback and dry-run independently of trigger
   migrateBuildCiSqlite(db);
   const service = new BuildCiService({
     store: new SqliteBuildCiStore(db),
+    templates: new SqlitePipelineTemplateStore(db),
     authorize: async ({ actorId, action }) => actorId === 'owner' && action !== 'trigger',
   });
   await service.createPipeline({ workspaceId: 'ws-a', definition: definition(), actorId: 'owner' });

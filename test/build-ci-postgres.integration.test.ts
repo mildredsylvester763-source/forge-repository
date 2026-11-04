@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BuildCiService } from '../src/modules/build-ci/store.ts';
 import { PostgresBuildCiStore } from '../src/modules/build-ci/postgres-store.ts';
+import { PostgresPipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
@@ -20,7 +21,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(await authorize({ workspaceId: 'pg-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), true);
     assert.equal(await authorize({ workspaceId: 'other-workspace', pipelineId: 'pipeline', actorId: 'integration-test', action: 'create' }), false);
     const store = new PostgresBuildCiStore(testPool.pool);
-    const service = new BuildCiService({ store, authorize: async () => true });
+    const service = new BuildCiService({ store, templates: new PostgresPipelineTemplateStore(testPool.pool), authorize: async () => true });
     const definition = {
       id: 'postgres-build',
       name: 'PostgreSQL build',
