@@ -81,7 +81,7 @@ export interface PipelineStore {
   getRun(workspaceId: string, pipelineId: string, runId: string): Promise<PipelineRun | null>;
 }
 
-export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger' | 'list_templates' | 'read_template' | 'publish_template' | 'share_template' | 'import_template' | 'manage_template';
+export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger' | 'list_templates' | 'read_template' | 'publish_template' | 'share_template' | 'import_template' | 'manage_template' | 'manage_webhook_deliveries';
 
 export interface PipelineAuthorizationRequest {
   readonly workspaceId: string;
