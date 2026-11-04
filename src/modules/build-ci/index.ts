@@ -15,3 +15,4 @@ export * from './schedule-occurrences.ts';
 export * from './schedule-dispatcher.ts';
 export * from './worker.ts';
 export * from './provider-connections.ts';
+export * from './webhook-operations.ts';
