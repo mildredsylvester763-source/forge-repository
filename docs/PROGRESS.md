@@ -123,12 +123,13 @@ Approved first batch: BD-001, BD-016, BD-017, BD-029 and BD-030. Research each a
 ### Latest verified checkpoint — 2026-11-04
 
 Branch: `gpt-part2-build-ci`
-Latest completed CI-verified commit before the current test-only change: `a9770080e404ef49a28a723bed7331220460e98c`
-Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41810868381
+Latest CI-verified commit: `307c3c140fb2880fa736e741aaaeacc5f2b0414e`
+Successful GitHub Actions run: https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41812055280
 
-- The single configured job, `Typecheck, build, unit and real PostgreSQL integration`, completed successfully.
-- Do not infer a test count from this run; the job summary did not provide one here.
-- New candidate dry-run coverage was added afterward in commit `cc000ed1c6062184928864f402f93a4b0d998d4d`; its own CI run is pending and must be checked before calling that test verified.
+- Typecheck: passed.
+- Production build: passed.
+- Complete test suite against real PostgreSQL: 173 tests, 173 passed, 0 failed, 0 skipped.
+- This run includes the candidate dry-run service test added in commit `cc000ed1c6062184928864f402f93a4b0d998d4d`.
 
 ### Feature status
 
@@ -175,3 +176,10 @@ The earlier chat statement that the detailed design document was outdated was in
 - Candidate requests call `BuildCiService.dryRunDefinition`, which validates the definition, authorizes the dry-run against the candidate pipeline ID, and invokes the pure planner without saving a version or creating a run.
 - A new service-level test was committed as `cc000ed1c6062184928864f402f93a4b0d998d4d`; CI for that commit must pass before the test is considered verified.
 - Remaining BD-029 gaps are candidate-vs-current structured diff, scenario fixtures/reporting, and HTTP route-level side-effect/authorization coverage. Do not describe candidate dry-run itself as missing.
+
+
+### 2026-11-04 execution-boundary clarification
+
+The Part Two catalogue keeps BD-016 trigger types separate from adjacent capabilities: BD-026 is queue priority/fair scheduling; BD-041 is long-running jobs with checkpointing; BD-048 is pipeline notifications/approvals; BD-057 is scheduled maintenance jobs. The approved batch remains only BD-001, BD-016, BD-017, BD-029 and BD-030. BD-016 delivery processing may claim verified provider receipts and create idempotent queued pipeline runs; it must not silently grow into queue fairness, checkpointed long-running execution, or notification/approval products.
+
+Read-only Mistral API inspection confirms its current Task Runtime is not a drop-in CI worker: `TaskRuntimeService.createTask(userId, goal)` creates a user-owned run; `TaskRunRecord` is keyed by `userId` and contains goal/state/events, with no workspace, pipeline/version, registered task reference, or build-run identity. Its event journal and task-control engines serve AI task lifecycle, not generic pipeline job dispatch. The Orchestrator similarly persists user-owned plans and provides planning/tool-selection/sandbox verdicts, not a CI dispatcher. Do not pass CI jobs through these APIs by encoding them into free-text goals, and do not duplicate either module. Any execution integration needs a deliberate architecture/branch decision and an explicit workspace-scoped adapter contract; no Mistral files have been modified.
