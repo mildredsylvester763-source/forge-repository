@@ -34,7 +34,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       '2026-11-04T00:00:30.000Z', 'integration-test'), true);
     assert.equal(await providerConnections.rotateSecretReference('github', 'pg-github-installation',
       'vault://forge/pg-workspace/github/webhook', 'vault://forge/pg-workspace/github/webhook-v3',
-      '2026-11-04T00:00:45.000Z'), false);
+      '2026-11-04T00:00:45.000Z', 'integration-test'), false);
     let vaultResolutions = 0;
     const providerResolver = new StoredWebhookConnectionResolver(providerConnections, {
       resolve: async (reference) => {
@@ -64,7 +64,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       ['pg-github-installation'],
     ));
     await assert.rejects(() => testPool.pool.query("TRUNCATE build_ci_provider_connection_events"));
-    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:02:00.000Z'), false);
+    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:02:00.000Z', 'integration-test'), false);
     assert.equal(await providerResolver.resolveForIngress('github', 'pg-github-installation'), null);
     assert.equal(await providerResolver.resolveForDelivery('github', 'pg-github-installation'), null);
     assert.equal(vaultResolutions, 1);
@@ -80,7 +80,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     });
     const revocationRaceResolver = new StoredWebhookConnectionResolver(providerConnections, {
       resolve: async () => {
-        assert.equal(await providerConnections.revoke('github', 'pg-race-revocation', '2026-11-04T00:02:30.000Z'), true);
+        assert.equal(await providerConnections.revoke('github', 'pg-race-revocation', '2026-11-04T00:02:30.000Z', 'integration-test'), true);
         return 'secret-read-before-postgres-revocation';
       },
     });
@@ -102,7 +102,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       resolve: async (reference) => {
         assert.equal(reference, rotationRaceRef);
         assert.equal(await providerConnections.rotateSecretReference(
-          'github', 'pg-race-rotation', rotationRaceRef, rotatedRaceRef, '2026-11-04T00:03:30.000Z',
+          'github', 'pg-race-rotation', rotationRaceRef, rotatedRaceRef, '2026-11-04T00:03:30.000Z', 'integration-test',
         ), true);
         return 'secret-read-before-postgres-rotation';
       },
