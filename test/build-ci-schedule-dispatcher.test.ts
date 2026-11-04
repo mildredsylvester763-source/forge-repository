@@ -73,7 +73,7 @@ test('scheduler retries authorization failures and dispatches idempotently after
   const { db, pipelines, buildCi, occurrences } = fixture(async () => allowed);
   try {
     await buildCi.createPipeline({
-      workspaceId: 'workspace-retry', actorId: 'scheduler-actor',
+      workspaceId: 'workspace-retry', actorId: 'scheduler-actor', createdAt: '2026-11-04T11:00:00.000Z',
       definition: {
         id: 'retry-build', name: 'Retry build',
         triggers: [{ id: 'daily', kind: 'schedule', scheduleId: 'daily', cron: '0 12 * * *', timeZone: 'UTC' }],
@@ -110,12 +110,12 @@ test('queued occurrence from a superseded pipeline version is skipped, not run a
       triggers: [{ id: 'nightly', kind: 'schedule' as const, scheduleId: 'nightly', cron: '0 12 * * *', timeZone: 'UTC' }],
       steps: [{ id: 'test', task: 'quality.test' }],
     };
-    await buildCi.createPipeline({ workspaceId: 'workspace-version', actorId: 'scheduler-actor', definition });
+    await buildCi.createPipeline({ workspaceId: 'workspace-version', actorId: 'scheduler-actor', createdAt: '2026-11-04T11:00:00.000Z', definition });
     let now = Date.parse('2026-11-04T12:00:00.000Z');
     const dispatcher = new ScheduleDispatcher({ occurrences, pipelines, buildCi, now: () => now, initialLookbackMinutes: 1 });
     await dispatcher.scanWorkspace('workspace-version');
     await buildCi.createPipeline({
-      workspaceId: 'workspace-version', actorId: 'scheduler-actor',
+      workspaceId: 'workspace-version', actorId: 'scheduler-actor', createdAt: '2026-11-04T11:30:00.000Z',
       definition: { ...definition, name: 'Updated build' },
     });
     const result = await dispatcher.processNext({
