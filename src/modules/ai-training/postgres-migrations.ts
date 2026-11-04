@@ -160,4 +160,166 @@ export const pgAiTrainingMigrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'ai_training_lifecycle',
+    sql: `
+      CREATE TABLE model_versions (
+        id                 TEXT PRIMARY KEY,
+        user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id           TEXT NOT NULL,
+        version            INTEGER NOT NULL,
+        stage              TEXT NOT NULL,
+        owners             TEXT NOT NULL,
+        lineage            TEXT NOT NULL,
+        weights_fingerprint TEXT NOT NULL,
+        fingerprint        TEXT NOT NULL,
+        created_at         BIGINT NOT NULL,
+        UNIQUE (user_id, model_id, version)
+      );
+      CREATE TABLE model_cards (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id        TEXT NOT NULL,
+        version         INTEGER NOT NULL,
+        card            TEXT NOT NULL,
+        card_fingerprint TEXT NOT NULL,
+        created_at      BIGINT NOT NULL,
+        UNIQUE (user_id, model_id, version)
+      );
+      CREATE TABLE model_promotions (
+        id                  TEXT PRIMARY KEY,
+        user_id             TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id            TEXT NOT NULL,
+        version             INTEGER NOT NULL,
+        from_stage          TEXT NOT NULL,
+        to_stage            TEXT NOT NULL,
+        promotion_fingerprint TEXT NOT NULL,
+        created_at          BIGINT NOT NULL
+      );
+      CREATE TABLE serving_plans (
+        id          TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id    TEXT,
+        kind        TEXT NOT NULL,
+        plan        TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at  BIGINT NOT NULL
+      );
+      CREATE INDEX serving_plans_user_idx ON serving_plans (user_id, created_at);
+      CREATE TABLE model_ops_records (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL,
+        model_id   TEXT,
+        record     TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX model_ops_user_idx ON model_ops_records (user_id, kind, created_at);
+      CREATE TABLE model_pins (
+        id           TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id     TEXT NOT NULL,
+        version      INTEGER NOT NULL,
+        model_tier   TEXT NOT NULL,
+        switched_from INTEGER,
+        fingerprint  TEXT NOT NULL,
+        created_at   BIGINT NOT NULL,
+        UNIQUE (user_id, model_id)
+      );
+      CREATE TABLE instance_reservations (
+        id         TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id   TEXT NOT NULL,
+        slots      INTEGER NOT NULL,
+        pool_total INTEGER NOT NULL,
+        free_after INTEGER NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        UNIQUE (user_id, model_id)
+      );
+      CREATE TABLE onprem_packages (
+        id                 TEXT PRIMARY KEY,
+        user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id           TEXT NOT NULL,
+        version            INTEGER NOT NULL,
+        format             TEXT NOT NULL,
+        weights_fingerprint TEXT NOT NULL,
+        quantized          BOOLEAN NOT NULL,
+        license_terms      TEXT NOT NULL,
+        fingerprint        TEXT NOT NULL,
+        created_at         BIGINT NOT NULL,
+        UNIQUE (user_id, fingerprint)
+      );
+      CREATE TABLE gateway_providers (
+        id                  TEXT PRIMARY KEY,
+        user_id             TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        provider_id         TEXT NOT NULL,
+        cost_per_1k_in      DOUBLE PRECISION NOT NULL,
+        cost_per_1k_out      DOUBLE PRECISION NOT NULL,
+        max_tokens          INTEGER NOT NULL,
+        retention_days      INTEGER NOT NULL,
+        active              BOOLEAN NOT NULL,
+        consecutive_failures INTEGER NOT NULL,
+        created_at          BIGINT NOT NULL,
+        UNIQUE (user_id, provider_id)
+      );
+      CREATE TABLE byok_keys (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        provider_id     TEXT NOT NULL,
+        key_fingerprint TEXT NOT NULL,
+        key_length      INTEGER NOT NULL,
+        created_at      BIGINT NOT NULL,
+        UNIQUE (user_id, provider_id)
+      );
+      CREATE TABLE gateway_usage (
+        id          TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        provider_id TEXT NOT NULL,
+        tokens_in   INTEGER NOT NULL,
+        tokens_out  INTEGER NOT NULL,
+        latency_ms  DOUBLE PRECISION NOT NULL,
+        ok          BOOLEAN NOT NULL,
+        created_at  BIGINT NOT NULL
+      );
+      CREATE INDEX gateway_usage_user_idx ON gateway_usage (user_id, provider_id, created_at);
+      CREATE TABLE gateway_logs (
+        id               TEXT PRIMARY KEY,
+        user_id          TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        provider_id      TEXT NOT NULL,
+        model_id         TEXT NOT NULL,
+        prompt           TEXT NOT NULL,
+        response         TEXT NOT NULL,
+        redaction_count  INTEGER NOT NULL,
+        findings         TEXT NOT NULL,
+        content_omitted  BOOLEAN NOT NULL,
+        logged_at        BIGINT NOT NULL
+      );
+      CREATE INDEX gateway_logs_user_idx ON gateway_logs (user_id, provider_id, logged_at);
+      CREATE TABLE capability_matrices (
+        id                 TEXT PRIMARY KEY,
+        user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        model_id           TEXT NOT NULL,
+        capabilities       TEXT NOT NULL,
+        max_context_tokens INTEGER NOT NULL,
+        cost_per_1k_in     DOUBLE PRECISION NOT NULL,
+        cost_per_1k_out    DOUBLE PRECISION NOT NULL,
+        active             BOOLEAN NOT NULL,
+        fingerprint        TEXT NOT NULL,
+        created_at         BIGINT NOT NULL,
+        UNIQUE (user_id, fingerprint)
+      );
+      CREATE TABLE output_schemas (
+        id          TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        schema_id   TEXT NOT NULL,
+        fields      TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at  BIGINT NOT NULL,
+        UNIQUE (user_id, fingerprint)
+      );
+    `,
+  },
 ];
+

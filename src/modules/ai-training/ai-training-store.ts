@@ -277,13 +277,325 @@ export interface NewMiningBatch {
   now: number;
 }
 
+// --- FORGE AI-033..056: model lifecycle storage ---------------------------------
+// Registered model versions with lineage, honest model cards, staged
+// promotions, serving plan audits, operations records (metrics, shadow
+// verdicts, rollbacks), workspace pins, instance reservations, on-prem
+// packages, gateway providers with circuit health, BYOK fingerprints (the
+// keys themselves are NEVER stored), gateway usage samples, redacted gateway
+// logs, capability matrices and structured-output schemas. Zero-trust
+// scoping: every query is per-user.
+
+export interface ModelVersionRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly version: number;
+  readonly stage: string;
+  readonly owners: string[];
+  readonly lineage: unknown;
+  readonly weightsFingerprint: string;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewModelVersion {
+  userId: string;
+  modelId: string;
+  version: number;
+  stage: string;
+  owners: string[];
+  lineage: unknown;
+  weightsFingerprint: string;
+  fingerprint: string;
+  now: number;
+}
+
+export interface ModelCardRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly version: number;
+  readonly card: unknown;
+  readonly cardFingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewModelCard {
+  userId: string;
+  modelId: string;
+  version: number;
+  card: unknown;
+  cardFingerprint: string;
+  now: number;
+}
+
+export interface ModelPromotionRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly version: number;
+  readonly fromStage: string;
+  readonly toStage: string;
+  readonly promotionFingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewModelPromotion {
+  userId: string;
+  modelId: string;
+  version: number;
+  fromStage: string;
+  toStage: string;
+  promotionFingerprint: string;
+  now: number;
+}
+
+export interface ServingPlanRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string | null;
+  readonly kind: string;
+  readonly plan: unknown;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewServingPlan {
+  userId: string;
+  modelId: string | null;
+  kind: string;
+  plan: unknown;
+  fingerprint: string;
+  now: number;
+}
+
+export interface ModelOpsRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly kind: string;
+  readonly modelId: string | null;
+  readonly record: unknown;
+  readonly createdAt: number;
+}
+
+export interface NewModelOpsRecord {
+  userId: string;
+  kind: string;
+  modelId: string | null;
+  record: unknown;
+  now: number;
+}
+
+export interface ModelPinRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly version: number;
+  readonly modelTier: string;
+  readonly switchedFrom: number | null;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewModelPin {
+  userId: string;
+  modelId: string;
+  version: number;
+  modelTier: string;
+  switchedFrom: number | null;
+  fingerprint: string;
+  now: number;
+}
+
+export interface InstanceReservationRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly slots: number;
+  readonly poolTotal: number;
+  readonly freeAfter: number;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewInstanceReservation {
+  userId: string;
+  modelId: string;
+  slots: number;
+  poolTotal: number;
+  freeAfter: number;
+  fingerprint: string;
+  now: number;
+}
+
+export interface OnPremPackageRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly version: number;
+  readonly format: string;
+  readonly weightsFingerprint: string;
+  readonly quantized: boolean;
+  readonly licenseTerms: string;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewOnPremPackage {
+  userId: string;
+  modelId: string;
+  version: number;
+  format: string;
+  weightsFingerprint: string;
+  quantized: boolean;
+  licenseTerms: string;
+  fingerprint: string;
+  now: number;
+}
+
+export interface GatewayProviderRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly providerId: string;
+  readonly costPer1kIn: number;
+  readonly costPer1kOut: number;
+  readonly maxTokens: number;
+  readonly retentionDays: number;
+  readonly active: boolean;
+  readonly consecutiveFailures: number;
+  readonly createdAt: number;
+}
+
+export interface NewGatewayProvider {
+  userId: string;
+  providerId: string;
+  costPer1kIn: number;
+  costPer1kOut: number;
+  maxTokens: number;
+  retentionDays: number;
+  active: boolean;
+  now: number;
+}
+
+/** Only the fingerprint survives storage; the raw key never touches disk. */
+export interface ByokKeyRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly providerId: string;
+  readonly keyFingerprint: string;
+  readonly keyLength: number;
+  readonly createdAt: number;
+}
+
+export interface NewByokKey {
+  userId: string;
+  providerId: string;
+  keyFingerprint: string;
+  keyLength: number;
+  now: number;
+}
+
+export interface GatewayUsageRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly providerId: string;
+  readonly tokensIn: number;
+  readonly tokensOut: number;
+  readonly latencyMs: number;
+  readonly ok: boolean;
+  readonly createdAt: number;
+}
+
+export interface NewGatewayUsage {
+  userId: string;
+  providerId: string;
+  tokensIn: number;
+  tokensOut: number;
+  latencyMs: number;
+  ok: boolean;
+  now: number;
+}
+
+export interface GatewayLogRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly prompt: string;
+  readonly response: string;
+  readonly redactionCount: number;
+  readonly findings: unknown;
+  readonly contentOmitted: boolean;
+  readonly loggedAt: number;
+}
+
+export interface NewGatewayLog {
+  id: string;
+  userId: string;
+  providerId: string;
+  modelId: string;
+  prompt: string;
+  response: string;
+  redactionCount: number;
+  findings: unknown;
+  contentOmitted: boolean;
+  loggedAt: number;
+}
+
+export interface CapabilityMatrixRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly modelId: string;
+  readonly capabilities: string[];
+  readonly maxContextTokens: number;
+  readonly costPer1kIn: number;
+  readonly costPer1kOut: number;
+  readonly active: boolean;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewCapabilityMatrix {
+  userId: string;
+  modelId: string;
+  capabilities: string[];
+  maxContextTokens: number;
+  costPer1kIn: number;
+  costPer1kOut: number;
+  active: boolean;
+  fingerprint: string;
+  now: number;
+}
+
+export interface OutputSchemaRecord {
+  readonly id: string;
+  readonly userId: string;
+  readonly schemaId: string;
+  readonly fields: unknown;
+  readonly fingerprint: string;
+  readonly createdAt: number;
+}
+
+export interface NewOutputSchema {
+  userId: string;
+  schemaId: string;
+  fields: unknown;
+  fingerprint: string;
+  now: number;
+}
+
 /**
  * The AI training module's storage contract: training assets (soft-deleted
  * so dataset snapshots stay frozen evidence), immutable dataset snapshots,
  * training runs, eval suites and panel votes, safety batteries and grades,
  * blind ballots, product experiments with their subjects, agent events,
- * eval trend samples and failure-mining batches. SQLite and PostgreSQL
- * adapters sit behind the same interface.
+ * eval trend samples and failure-mining batches. The model lifecycle
+ * (AI-033..056) adds registered model versions, model cards, promotions,
+ * serving plan audits, operations records, pins, reservations, on-prem
+ * packages, gateway providers, BYOK fingerprints, usage samples, redacted
+ * gateway logs, capability matrices and output schemas. SQLite and
+ * PostgreSQL adapters sit behind the same interface.
  */
 export interface AiTrainingStore {
   createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord>;
@@ -333,6 +645,55 @@ export interface AiTrainingStore {
 
   createMiningBatch(batch: NewMiningBatch): Promise<MiningBatchRecord>;
   findMiningBatch(userId: string, batchId: string): Promise<MiningBatchRecord | null>;
+
+  createModelVersion(version: NewModelVersion): Promise<ModelVersionRecord>;
+  listModelVersions(userId: string, modelId: string, take: number): Promise<ModelVersionRecord[]>;
+  findModelVersion(userId: string, modelId: string, version: number): Promise<ModelVersionRecord | null>;
+  saveModelVersion(version: ModelVersionRecord): Promise<ModelVersionRecord>;
+
+  createModelCard(card: NewModelCard): Promise<ModelCardRecord>;
+  findModelCard(userId: string, modelId: string, version: number): Promise<ModelCardRecord | null>;
+
+  createModelPromotion(promotion: NewModelPromotion): Promise<ModelPromotionRecord>;
+  listModelPromotions(userId: string, modelId: string, take: number): Promise<ModelPromotionRecord[]>;
+
+  createServingPlan(plan: NewServingPlan): Promise<ServingPlanRecord>;
+  listServingPlans(userId: string, take: number): Promise<ServingPlanRecord[]>;
+
+  createModelOpsRecord(entry: NewModelOpsRecord): Promise<ModelOpsRecord>;
+  listModelOpsRecords(userId: string, kind: string, take: number): Promise<ModelOpsRecord[]>;
+
+  saveModelPin(pin: NewModelPin): Promise<ModelPinRecord>;
+  findModelPin(userId: string, modelId: string): Promise<ModelPinRecord | null>;
+  deleteModelPin(userId: string, modelId: string): Promise<boolean>;
+
+  saveInstanceReservation(reservation: NewInstanceReservation): Promise<InstanceReservationRecord>;
+  findInstanceReservation(userId: string, modelId: string): Promise<InstanceReservationRecord | null>;
+  deleteInstanceReservation(userId: string, modelId: string): Promise<boolean>;
+
+  createOnPremPackage(pkg: NewOnPremPackage): Promise<OnPremPackageRecord>;
+  findOnPremPackageByFingerprint(userId: string, fingerprint: string): Promise<OnPremPackageRecord | null>;
+
+  saveGatewayProvider(provider: NewGatewayProvider): Promise<GatewayProviderRecord>;
+  findGatewayProvider(userId: string, providerId: string): Promise<GatewayProviderRecord | null>;
+  listGatewayProviders(userId: string, take: number): Promise<GatewayProviderRecord[]>;
+  saveGatewayProviderHealth(userId: string, providerId: string, consecutiveFailures: number): Promise<GatewayProviderRecord | null>;
+
+  saveByokKey(key: NewByokKey): Promise<ByokKeyRecord>;
+  findByokKey(userId: string, providerId: string): Promise<ByokKeyRecord | null>;
+
+  createGatewayUsage(usage: NewGatewayUsage): Promise<GatewayUsageRecord>;
+  listGatewayUsage(userId: string, providerId: string, take: number): Promise<GatewayUsageRecord[]>;
+
+  createGatewayLog(log: NewGatewayLog): Promise<GatewayLogRecord>;
+  listGatewayLogs(userId: string, providerId: string, take: number): Promise<GatewayLogRecord[]>;
+
+  saveCapabilityMatrix(matrix: NewCapabilityMatrix): Promise<CapabilityMatrixRecord>;
+  listCapabilityMatrices(userId: string, take: number): Promise<CapabilityMatrixRecord[]>;
+
+  saveOutputSchema(schema: NewOutputSchema): Promise<OutputSchemaRecord>;
+  findOutputSchema(userId: string, schemaId: string): Promise<OutputSchemaRecord | null>;
+  listOutputSchemas(userId: string, take: number): Promise<OutputSchemaRecord[]>;
 }
 
 /** Development and test store. Lists are newest-first; deterministic tie-breaks belong to the service. */
@@ -350,6 +711,20 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   private readonly agentEventsByUser = new Map<string, AgentEventRecord[]>();
   private readonly trendByUser = new Map<string, TrendSampleRecord[]>();
   private readonly miningByUser = new Map<string, MiningBatchRecord[]>();
+  private readonly modelVersionsByUser = new Map<string, ModelVersionRecord[]>();
+  private readonly modelCardsByUser = new Map<string, ModelCardRecord[]>();
+  private readonly modelPromotionsByUser = new Map<string, ModelPromotionRecord[]>();
+  private readonly servingPlansByUser = new Map<string, ServingPlanRecord[]>();
+  private readonly modelOpsByUser = new Map<string, ModelOpsRecord[]>();
+  private readonly modelPinsByUser = new Map<string, ModelPinRecord[]>();
+  private readonly reservationsByUser = new Map<string, InstanceReservationRecord[]>();
+  private readonly onPremByUser = new Map<string, OnPremPackageRecord[]>();
+  private readonly providersByUser = new Map<string, GatewayProviderRecord[]>();
+  private readonly byokByUser = new Map<string, ByokKeyRecord[]>();
+  private readonly gatewayUsageByUser = new Map<string, GatewayUsageRecord[]>();
+  private readonly gatewayLogsByUser = new Map<string, GatewayLogRecord[]>();
+  private readonly capabilityByUser = new Map<string, CapabilityMatrixRecord[]>();
+  private readonly outputSchemasByUser = new Map<string, OutputSchemaRecord[]>();
 
   async createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord> {
     const record: TrainingAssetRecord = {
@@ -698,4 +1073,377 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
     const list = this.miningByUser.get(userId) ?? [];
     return list.find((b) => b.batchId === batchId) ?? null;
   }
+
+  async createModelVersion(version: NewModelVersion): Promise<ModelVersionRecord> {
+    const record: ModelVersionRecord = {
+      id: randomUUID(),
+      userId: version.userId,
+      modelId: version.modelId,
+      version: version.version,
+      stage: version.stage,
+      owners: [...version.owners],
+      lineage: version.lineage,
+      weightsFingerprint: version.weightsFingerprint,
+      fingerprint: version.fingerprint,
+      createdAt: version.now,
+    };
+    const list = this.modelVersionsByUser.get(version.userId) ?? [];
+    list.unshift(record);
+    this.modelVersionsByUser.set(version.userId, list);
+    return record;
+  }
+
+  async listModelVersions(userId: string, modelId: string, take: number): Promise<ModelVersionRecord[]> {
+    return (this.modelVersionsByUser.get(userId) ?? []).filter((v) => v.modelId === modelId).slice(0, take);
+  }
+
+  async findModelVersion(userId: string, modelId: string, version: number): Promise<ModelVersionRecord | null> {
+    const list = this.modelVersionsByUser.get(userId) ?? [];
+    return list.find((v) => v.modelId === modelId && v.version === version) ?? null;
+  }
+
+  async saveModelVersion(version: ModelVersionRecord): Promise<ModelVersionRecord> {
+    const list = this.modelVersionsByUser.get(version.userId) ?? [];
+    const idx = list.findIndex((v) => v.id === version.id);
+    if (idx === -1) return version;
+    list[idx] = version;
+    return version;
+  }
+
+  async createModelCard(card: NewModelCard): Promise<ModelCardRecord> {
+    const record: ModelCardRecord = {
+      id: randomUUID(),
+      userId: card.userId,
+      modelId: card.modelId,
+      version: card.version,
+      card: card.card,
+      cardFingerprint: card.cardFingerprint,
+      createdAt: card.now,
+    };
+    const list = this.modelCardsByUser.get(card.userId) ?? [];
+    list.unshift(record);
+    this.modelCardsByUser.set(card.userId, list);
+    return record;
+  }
+
+  async findModelCard(userId: string, modelId: string, version: number): Promise<ModelCardRecord | null> {
+    const list = this.modelCardsByUser.get(userId) ?? [];
+    return list.find((c) => c.modelId === modelId && c.version === version) ?? null;
+  }
+
+  async createModelPromotion(promotion: NewModelPromotion): Promise<ModelPromotionRecord> {
+    const record: ModelPromotionRecord = {
+      id: randomUUID(),
+      userId: promotion.userId,
+      modelId: promotion.modelId,
+      version: promotion.version,
+      fromStage: promotion.fromStage,
+      toStage: promotion.toStage,
+      promotionFingerprint: promotion.promotionFingerprint,
+      createdAt: promotion.now,
+    };
+    const list = this.modelPromotionsByUser.get(promotion.userId) ?? [];
+    list.unshift(record);
+    this.modelPromotionsByUser.set(promotion.userId, list);
+    return record;
+  }
+
+  async listModelPromotions(userId: string, modelId: string, take: number): Promise<ModelPromotionRecord[]> {
+    return (this.modelPromotionsByUser.get(userId) ?? []).filter((p) => p.modelId === modelId).slice(0, take);
+  }
+
+  async createServingPlan(plan: NewServingPlan): Promise<ServingPlanRecord> {
+    const record: ServingPlanRecord = {
+      id: randomUUID(),
+      userId: plan.userId,
+      modelId: plan.modelId,
+      kind: plan.kind,
+      plan: plan.plan,
+      fingerprint: plan.fingerprint,
+      createdAt: plan.now,
+    };
+    const list = this.servingPlansByUser.get(plan.userId) ?? [];
+    list.unshift(record);
+    this.servingPlansByUser.set(plan.userId, list);
+    return record;
+  }
+
+  async listServingPlans(userId: string, take: number): Promise<ServingPlanRecord[]> {
+    return (this.servingPlansByUser.get(userId) ?? []).slice(0, take);
+  }
+
+  async createModelOpsRecord(entry: NewModelOpsRecord): Promise<ModelOpsRecord> {
+    const record: ModelOpsRecord = {
+      id: randomUUID(),
+      userId: entry.userId,
+      kind: entry.kind,
+      modelId: entry.modelId,
+      record: entry.record,
+      createdAt: entry.now,
+    };
+    const list = this.modelOpsByUser.get(entry.userId) ?? [];
+    list.unshift(record);
+    this.modelOpsByUser.set(entry.userId, list);
+    return record;
+  }
+
+  async listModelOpsRecords(userId: string, kind: string, take: number): Promise<ModelOpsRecord[]> {
+    return (this.modelOpsByUser.get(userId) ?? []).filter((r) => r.kind === kind).slice(0, take);
+  }
+
+  async saveModelPin(pin: NewModelPin): Promise<ModelPinRecord> {
+    const list = this.modelPinsByUser.get(pin.userId) ?? [];
+    const existingIdx = list.findIndex((p) => p.modelId === pin.modelId);
+    const record: ModelPinRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: pin.userId,
+      modelId: pin.modelId,
+      version: pin.version,
+      modelTier: pin.modelTier,
+      switchedFrom: pin.switchedFrom,
+      fingerprint: pin.fingerprint,
+      createdAt: pin.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.modelPinsByUser.set(pin.userId, list);
+    }
+    return record;
+  }
+
+  async findModelPin(userId: string, modelId: string): Promise<ModelPinRecord | null> {
+    const list = this.modelPinsByUser.get(userId) ?? [];
+    return list.find((p) => p.modelId === modelId) ?? null;
+  }
+
+  async deleteModelPin(userId: string, modelId: string): Promise<boolean> {
+    const list = this.modelPinsByUser.get(userId) ?? [];
+    const idx = list.findIndex((p) => p.modelId === modelId);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    return true;
+  }
+
+  async saveInstanceReservation(reservation: NewInstanceReservation): Promise<InstanceReservationRecord> {
+    const list = this.reservationsByUser.get(reservation.userId) ?? [];
+    const existingIdx = list.findIndex((r) => r.modelId === reservation.modelId);
+    const record: InstanceReservationRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: reservation.userId,
+      modelId: reservation.modelId,
+      slots: reservation.slots,
+      poolTotal: reservation.poolTotal,
+      freeAfter: reservation.freeAfter,
+      fingerprint: reservation.fingerprint,
+      createdAt: reservation.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.reservationsByUser.set(reservation.userId, list);
+    }
+    return record;
+  }
+
+  async findInstanceReservation(userId: string, modelId: string): Promise<InstanceReservationRecord | null> {
+    const list = this.reservationsByUser.get(userId) ?? [];
+    return list.find((r) => r.modelId === modelId) ?? null;
+  }
+
+  async deleteInstanceReservation(userId: string, modelId: string): Promise<boolean> {
+    const list = this.reservationsByUser.get(userId) ?? [];
+    const idx = list.findIndex((r) => r.modelId === modelId);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    return true;
+  }
+
+  async createOnPremPackage(pkg: NewOnPremPackage): Promise<OnPremPackageRecord> {
+    const record: OnPremPackageRecord = {
+      id: randomUUID(),
+      userId: pkg.userId,
+      modelId: pkg.modelId,
+      version: pkg.version,
+      format: pkg.format,
+      weightsFingerprint: pkg.weightsFingerprint,
+      quantized: pkg.quantized,
+      licenseTerms: pkg.licenseTerms,
+      fingerprint: pkg.fingerprint,
+      createdAt: pkg.now,
+    };
+    const list = this.onPremByUser.get(pkg.userId) ?? [];
+    list.unshift(record);
+    this.onPremByUser.set(pkg.userId, list);
+    return record;
+  }
+
+  async findOnPremPackageByFingerprint(userId: string, fingerprint: string): Promise<OnPremPackageRecord | null> {
+    const list = this.onPremByUser.get(userId) ?? [];
+    return list.find((p) => p.fingerprint === fingerprint) ?? null;
+  }
+
+  async saveGatewayProvider(provider: NewGatewayProvider): Promise<GatewayProviderRecord> {
+    const list = this.providersByUser.get(provider.userId) ?? [];
+    const existingIdx = list.findIndex((p) => p.providerId === provider.providerId);
+    const record: GatewayProviderRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: provider.userId,
+      providerId: provider.providerId,
+      costPer1kIn: provider.costPer1kIn,
+      costPer1kOut: provider.costPer1kOut,
+      maxTokens: provider.maxTokens,
+      retentionDays: provider.retentionDays,
+      active: provider.active,
+      consecutiveFailures: existingIdx >= 0 ? list[existingIdx].consecutiveFailures : 0,
+      createdAt: provider.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.providersByUser.set(provider.userId, list);
+    }
+    return record;
+  }
+
+  async findGatewayProvider(userId: string, providerId: string): Promise<GatewayProviderRecord | null> {
+    const list = this.providersByUser.get(userId) ?? [];
+    return list.find((p) => p.providerId === providerId) ?? null;
+  }
+
+  async listGatewayProviders(userId: string, take: number): Promise<GatewayProviderRecord[]> {
+    return (this.providersByUser.get(userId) ?? []).slice(0, take);
+  }
+
+  async saveGatewayProviderHealth(userId: string, providerId: string, consecutiveFailures: number): Promise<GatewayProviderRecord | null> {
+    const list = this.providersByUser.get(userId) ?? [];
+    const idx = list.findIndex((p) => p.providerId === providerId);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], consecutiveFailures };
+    return list[idx];
+  }
+
+  async saveByokKey(key: NewByokKey): Promise<ByokKeyRecord> {
+    const list = this.byokByUser.get(key.userId) ?? [];
+    const existingIdx = list.findIndex((k) => k.providerId === key.providerId);
+    const record: ByokKeyRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: key.userId,
+      providerId: key.providerId,
+      keyFingerprint: key.keyFingerprint,
+      keyLength: key.keyLength,
+      createdAt: key.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.byokByUser.set(key.userId, list);
+    }
+    return record;
+  }
+
+  async findByokKey(userId: string, providerId: string): Promise<ByokKeyRecord | null> {
+    const list = this.byokByUser.get(userId) ?? [];
+    return list.find((k) => k.providerId === providerId) ?? null;
+  }
+
+  async createGatewayUsage(usage: NewGatewayUsage): Promise<GatewayUsageRecord> {
+    const record: GatewayUsageRecord = {
+      id: randomUUID(),
+      userId: usage.userId,
+      providerId: usage.providerId,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      latencyMs: usage.latencyMs,
+      ok: usage.ok,
+      createdAt: usage.now,
+    };
+    const list = this.gatewayUsageByUser.get(usage.userId) ?? [];
+    list.unshift(record);
+    this.gatewayUsageByUser.set(usage.userId, list);
+    return record;
+  }
+
+  async listGatewayUsage(userId: string, providerId: string, take: number): Promise<GatewayUsageRecord[]> {
+    return (this.gatewayUsageByUser.get(userId) ?? []).filter((u) => u.providerId === providerId).slice(0, take);
+  }
+
+  async createGatewayLog(log: NewGatewayLog): Promise<GatewayLogRecord> {
+    const record: GatewayLogRecord = {
+      id: log.id,
+      userId: log.userId,
+      providerId: log.providerId,
+      modelId: log.modelId,
+      prompt: log.prompt,
+      response: log.response,
+      redactionCount: log.redactionCount,
+      findings: log.findings,
+      contentOmitted: log.contentOmitted,
+      loggedAt: log.loggedAt,
+    };
+    const list = this.gatewayLogsByUser.get(log.userId) ?? [];
+    list.unshift(record);
+    this.gatewayLogsByUser.set(log.userId, list);
+    return record;
+  }
+
+  async listGatewayLogs(userId: string, providerId: string, take: number): Promise<GatewayLogRecord[]> {
+    return (this.gatewayLogsByUser.get(userId) ?? []).filter((l) => l.providerId === providerId).slice(0, take);
+  }
+
+  async saveCapabilityMatrix(matrix: NewCapabilityMatrix): Promise<CapabilityMatrixRecord> {
+    const list = this.capabilityByUser.get(matrix.userId) ?? [];
+    const existingIdx = list.findIndex((m) => m.fingerprint === matrix.fingerprint);
+    const record: CapabilityMatrixRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: matrix.userId,
+      modelId: matrix.modelId,
+      capabilities: [...matrix.capabilities],
+      maxContextTokens: matrix.maxContextTokens,
+      costPer1kIn: matrix.costPer1kIn,
+      costPer1kOut: matrix.costPer1kOut,
+      active: matrix.active,
+      fingerprint: matrix.fingerprint,
+      createdAt: matrix.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.capabilityByUser.set(matrix.userId, list);
+    }
+    return record;
+  }
+
+  async listCapabilityMatrices(userId: string, take: number): Promise<CapabilityMatrixRecord[]> {
+    return (this.capabilityByUser.get(userId) ?? []).slice(0, take);
+  }
+
+  async saveOutputSchema(schema: NewOutputSchema): Promise<OutputSchemaRecord> {
+    const list = this.outputSchemasByUser.get(schema.userId) ?? [];
+    const existingIdx = list.findIndex((s) => s.fingerprint === schema.fingerprint);
+    const record: OutputSchemaRecord = {
+      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      userId: schema.userId,
+      schemaId: schema.schemaId,
+      fields: schema.fields,
+      fingerprint: schema.fingerprint,
+      createdAt: schema.now,
+    };
+    if (existingIdx >= 0) list[existingIdx] = record;
+    else {
+      list.unshift(record);
+      this.outputSchemasByUser.set(schema.userId, list);
+    }
+    return record;
+  }
+
+  async findOutputSchema(userId: string, schemaId: string): Promise<OutputSchemaRecord | null> {
+    const list = this.outputSchemasByUser.get(userId) ?? [];
+    return list.find((s) => s.schemaId === schemaId) ?? null;
+  }
+
+  async listOutputSchemas(userId: string, take: number): Promise<OutputSchemaRecord[]> {
+    return (this.outputSchemasByUser.get(userId) ?? []).slice(0, take);
+  }
 }
+
