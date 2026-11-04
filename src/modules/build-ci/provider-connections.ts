@@ -25,8 +25,8 @@ export interface ProviderConnectionStore {
   find(provider: WebhookProvider, connectionId: string): Promise<ProviderConnectionRecord | null>;
   listForWorkspace(workspaceId: string): Promise<readonly ProviderConnectionRecord[]>;
   listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]>;
-  revoke(provider: WebhookProvider, connectionId: string, revokedAt?: string, actorId?: string): Promise<boolean>;
-  rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt?: string, actorId?: string): Promise<boolean>;
+  revoke(provider: WebhookProvider, connectionId: string, revokedAt: string, actorId: string): Promise<boolean>;
+  rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt: string, actorId: string): Promise<boolean>;
 }
 export interface ProviderSecretResolver { resolve(secretRef: string): Promise<string | null>; }
 interface ProviderConnectionEventRow {
@@ -124,14 +124,14 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
       .all(workspaceId, provider, connectionId) as ProviderConnectionEventRow[];
     return Object.freeze(rows.map(eventFromRow));
   }
-  async revoke(provider: WebhookProvider, connectionId: string, revokedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+  async revoke(provider: WebhookProvider, connectionId: string, revokedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); timestamp(revokedAt, 'revokedAt');
-    if (actorId !== undefined) required(actorId, 'actorId', 128);
+    required(actorId, 'actorId', 128);
     return transaction(this.db, () => {
       const updated = this.db.prepare(`UPDATE build_ci_provider_connections SET status = 'revoked', revoked_at = ?, updated_at = ?
         WHERE provider = ? AND connection_id = ? AND status = 'active'`).run(revokedAt, revokedAt, provider, connectionId);
       if (Number(updated.changes) !== 1) return false;
-      if (actorId) {
+      {
         const row = this.db.prepare(`SELECT workspace_id FROM build_ci_provider_connections WHERE provider = ? AND connection_id = ?`)
           .get(provider, connectionId) as { workspace_id: string } | undefined;
         if (!row) throw new Error('Provider connection disappeared during revocation.');
@@ -145,7 +145,7 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
     });
   }
 
-  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt = new Date().toISOString(), actorId?: string): Promise<boolean> {
+  async rotateSecretReference(provider: WebhookProvider, connectionId: string, expectedSecretRef: string, nextSecretRef: string, updatedAt: string, actorId: string): Promise<boolean> {
     required(connectionId, 'connectionId', 128); validateProvider(provider); validateSecretRef(expectedSecretRef); validateSecretRef(nextSecretRef);
     timestamp(updatedAt, 'updatedAt');
     if (actorId !== undefined) required(actorId, 'actorId', 128);
@@ -218,7 +218,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
         WHERE provider = $2 AND connection_id = $3 AND status = 'active' RETURNING workspace_id`, [revokedAt, provider, connectionId]);
       const row = updated.rows[0] as { workspace_id: string } | undefined;
       if (!row) return false;
-      if (actorId) await conn.query(`INSERT INTO build_ci_provider_connection_events
+      await conn.query(`INSERT INTO build_ci_provider_connection_events
         (event_id, provider, connection_id, workspace_id, actor_id, event_type, occurred_at, metadata_json)
         VALUES ($1, $2, $3, $4, $5, 'revoked', $6, $7)`,
       [randomUUID(), provider, connectionId, row.workspace_id, actorId, revokedAt, JSON.stringify({ revoked: true })]);
