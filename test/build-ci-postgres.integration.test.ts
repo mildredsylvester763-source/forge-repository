@@ -204,6 +204,36 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.deepEqual([version1.version, version2.version, rollback.version], [1, 2, 3]);
     assert.equal(rollback.definitionHash, version1.definitionHash);
 
+    const integrityVersion = await service.createPipeline({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      createdAt: '2026-11-04T00:04:30.000Z',
+      definition: {
+        id: 'postgres-integrity-probe',
+        name: 'Integrity probe',
+        triggers: [{ id: 'manual', kind: 'manual' as const }],
+        steps: [{ id: 'verify', task: 'quality.verify' }],
+      },
+    });
+    await testPool.pool.query('ALTER TABLE build_pipeline_versions DISABLE TRIGGER build_pipeline_versions_block_update');
+    try {
+      await testPool.pool.query(
+        'UPDATE build_pipeline_versions SET definition_json = $1 WHERE workspace_id = $2 AND pipeline_id = $3 AND version = $4',
+        [JSON.stringify({ ...integrityVersion.definition, name: 'Tampered after persistence' }),
+          'pg-workspace', integrityVersion.pipelineId, integrityVersion.version],
+      );
+    } finally {
+      await testPool.pool.query('ALTER TABLE build_pipeline_versions ENABLE TRIGGER build_pipeline_versions_block_update');
+    }
+    await assert.rejects(
+      () => store.getVersion('pg-workspace', integrityVersion.pipelineId, integrityVersion.version),
+      /failed integrity verification/,
+    );
+    await assert.rejects(
+      () => store.getLatestVersion('pg-workspace', integrityVersion.pipelineId),
+      /failed integrity verification/,
+    );
+
     const templateStore = new PostgresPipelineTemplateStore(testPool.pool);
     const template = await templateStore.create({
       templateId: 'template-pg-quality',
