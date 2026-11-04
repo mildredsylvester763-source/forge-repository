@@ -9,3 +9,4 @@ export * from './templates.ts';
 export * from './webhooks.ts';
 export * from './webhook-deliveries.ts';
 export * from './webhook-ingress.ts';
+export * from './webhook-processor.ts';
