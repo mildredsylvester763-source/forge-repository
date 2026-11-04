@@ -15,6 +15,11 @@ import {
   migrateBuildCiSqlite,
   type PipelineAuthorizer,
   type PipelineStore,
+  SqliteWorkspaceMembershipReader,
+  PostgresWorkspaceMembershipReader,
+  createWorkspacePipelineAuthorizer,
+  workspaceAccessMigrations,
+  type WorkspaceMembershipReader,
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
@@ -76,6 +81,7 @@ interface Storage {
   uow: IdentityUnitOfWork;
   buildCiDb: Database | null;
   buildCiStore: PipelineStore;
+  workspaceMemberships: WorkspaceMembershipReader;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -90,6 +96,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }),
       buildCiDb: null,
       buildCiStore: new PostgresBuildCiStore(pool),
+      workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
     };
   }
   const path = config.storage.databasePath;
@@ -98,6 +105,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'kernel', kernelMigrations);
     migrate(db, 'identity', identityMigrations);
     migrateBuildCiSqlite(db);
+    migrate(db, 'workspace_access', workspaceAccessMigrations);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -106,6 +114,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }),
       buildCiDb: null,
       buildCiStore: new SqliteBuildCiStore(db),
+      workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
     };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
@@ -114,11 +123,13 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   // Keep Build & CI persistence real even when identity/events use in-memory test adapters.
   const buildCiDb = openDatabase(':memory:');
   migrateBuildCiSqlite(buildCiDb);
+  migrate(buildCiDb, 'workspace_access', workspaceAccessMigrations);
   return {
     db: null, pool: null, events, users, sessionStore,
     uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }),
     buildCiDb,
     buildCiStore: new SqliteBuildCiStore(buildCiDb),
+    workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
   };
 }
 
@@ -131,11 +142,10 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
   const storage = buildStorage(config, clock, logger, overrides);
   const { events } = storage;
-  // Never infer workspace permissions from authentication. Until a trusted workspace policy is wired,
-  // Build & CI operations are denied by default.
+  // Workspace permissions are read from persisted membership records; identity alone grants no access.
   const buildCi = new BuildCiService({
     store: storage.buildCiStore,
-    authorize: overrides.buildCiAuthorize ?? (async () => false),
+    authorize: overrides.buildCiAuthorize ?? createWorkspacePipelineAuthorizer(storage.workspaceMemberships),
   });
 
   const hasher = new PasswordHasher({
