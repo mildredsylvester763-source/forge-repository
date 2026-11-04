@@ -101,6 +101,15 @@ export class SqliteBuildCiStore implements PipelineStore {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
           snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null);
+      if (snapshot.templateSource) {
+        this.db.prepare(`INSERT INTO build_pipeline_template_events
+          (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
+          VALUES (?, ?, 'imported', ?, ?, NULL, ?, ?, ?, ?)`).run(
+          randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
+          snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
+          JSON.stringify({ pipelineId: snapshot.pipelineId }),
+        );
+      }
       this.db.prepare('UPDATE build_pipelines SET current_version = ?, updated_at = ? WHERE workspace_id = ? AND pipeline_id = ?')
         .run(snapshot.version, now, input.workspaceId, snapshot.pipelineId);
       return snapshot;

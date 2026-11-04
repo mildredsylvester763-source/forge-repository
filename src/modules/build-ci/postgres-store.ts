@@ -103,6 +103,15 @@ export class PostgresBuildCiStore implements PipelineStore {
         input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
         snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null,
       ]);
+      if (snapshot.templateSource) {
+        await conn.query(`INSERT INTO build_pipeline_template_events
+          (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
+          VALUES ($1, $2, 'imported', $3, $4, NULL, $5, $6, $7, $8)`, [
+          randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
+          snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
+          JSON.stringify({ pipelineId: snapshot.pipelineId }),
+        ]);
+      }
       await conn.query(`UPDATE build_pipelines SET current_version = $1, updated_at = $2
         WHERE workspace_id = $3 AND pipeline_id = $4`, [snapshot.version, now, input.workspaceId, snapshot.pipelineId]);
       return snapshot;

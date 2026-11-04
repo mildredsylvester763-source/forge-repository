@@ -94,8 +94,8 @@ export class PostgresWorkspaceMembershipReader implements WorkspaceMembershipRea
 
 const PIPELINE_PERMISSIONS: Readonly<Record<WorkspaceRole, ReadonlySet<PipelineAuthorizationRequest['action']>>> = {
   owner: new Set(['read', 'create', 'rollback', 'dry_run', 'trigger', 'list_templates', 'read_template', 'publish_template', 'share_template', 'import_template', 'manage_template']),
-  admin: new Set(['read', 'create', 'rollback', 'dry_run', 'trigger', 'list_templates', 'read_template', 'publish_template', 'share_template', 'import_template']),
-  maintainer: new Set(['read', 'create', 'rollback', 'dry_run', 'trigger', 'list_templates', 'read_template', 'publish_template', 'share_template', 'import_template']),
+  admin: new Set(['read', 'create', 'rollback', 'dry_run', 'trigger', 'list_templates', 'read_template', 'publish_template', 'share_template', 'import_template', 'manage_template']),
+  maintainer: new Set(['read', 'create', 'rollback', 'dry_run', 'trigger', 'list_templates', 'read_template', 'publish_template', 'share_template', 'import_template', 'manage_template']),
   member: new Set(['read', 'dry_run', 'trigger', 'list_templates', 'read_template']),
   viewer: new Set(['read', 'dry_run', 'list_templates', 'read_template']),
 };
