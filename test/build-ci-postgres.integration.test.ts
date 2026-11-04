@@ -251,6 +251,23 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       [1, 2, 3],
     );
 
+    const concurrentRollbacks = await Promise.all([
+      service.rollbackPipeline({
+        workspaceId: 'pg-workspace', pipelineId: 'postgres-concurrent-version',
+        targetVersion: 1, actorId: 'integration-test', createdAt: '2026-11-04T00:05:10.000Z',
+      }),
+      service.rollbackPipeline({
+        workspaceId: 'pg-workspace', pipelineId: 'postgres-concurrent-version',
+        targetVersion: 2, actorId: 'integration-test', createdAt: '2026-11-04T00:05:11.000Z',
+      }),
+    ]);
+    assert.deepEqual(concurrentRollbacks.map((item) => item.version).sort((a, b) => a - b), [4, 5]);
+    assert.deepEqual(concurrentRollbacks.map((item) => item.rollbackOfVersion).sort(), [1, 2]);
+    assert.deepEqual(
+      (await store.listVersions('pg-workspace', 'postgres-concurrent-version')).map((item) => item.version),
+      [1, 2, 3, 4, 5],
+    );
+
     const templateStore = new PostgresPipelineTemplateStore(testPool.pool);
     const template = await templateStore.create({
       templateId: 'template-pg-quality',
