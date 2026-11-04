@@ -234,6 +234,23 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       /failed integrity verification/,
     );
 
+    const concurrentVersions = await Promise.all([1, 2, 3].map((number) => service.createPipeline({
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      createdAt: new Date(Date.parse('2026-11-04T00:05:00.000Z') + number * 1000).toISOString(),
+      definition: {
+        id: 'postgres-concurrent-version',
+        name: 'Concurrent version ' + number,
+        triggers: [{ id: 'manual', kind: 'manual' as const }],
+        steps: [{ id: 'verify', task: 'quality.verify' }],
+      },
+    })));
+    assert.deepEqual(concurrentVersions.map((item) => item.version).sort((a, b) => a - b), [1, 2, 3]);
+    assert.deepEqual(
+      (await store.listVersions('pg-workspace', 'postgres-concurrent-version')).map((item) => item.version),
+      [1, 2, 3],
+    );
+
     const templateStore = new PostgresPipelineTemplateStore(testPool.pool);
     const template = await templateStore.create({
       templateId: 'template-pg-quality',
