@@ -141,6 +141,18 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     });
     assert.equal(managedConnection.active, true);
     assert.equal('secretRef' in managedConnection, false);
+    await assert.rejects(
+      () => providerOperations.create({
+        workspaceId: 'pg-workspace',
+        actorId: 'integration-test',
+        deliveryActorId: 'integration-test',
+        connectionId: 'pg-managed-connection',
+        provider: 'github',
+        repository: 'team/managed-app',
+        secretRef: 'vault://forge/pg-workspace/github/managed',
+      }),
+      (error: unknown) => error instanceof Error && error.name === 'ProviderConnectionConflictError',
+    );
     assert.equal((await providerConnections.find('github', 'pg-managed-connection'))?.actorId, 'integration-test');
     const managedRotation = await providerOperations.rotateSecretReference({
       workspaceId: 'pg-workspace',
