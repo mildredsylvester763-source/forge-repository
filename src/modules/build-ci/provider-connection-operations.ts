@@ -73,7 +73,9 @@ export class ProviderConnectionOperations {
   }
 
   private async requireSecretReference(secretRef: string): Promise<void> {
-    if (typeof secretRef !== 'string' || !secretRef.trim() || secretRef.length > 512) throw new TypeError('secretRef is invalid');
+    if (typeof secretRef !== 'string' || !/^(secret|vault|kms):\\/\\/[A-Za-z0-9._:/-]{1,500}$/.test(secretRef)) {
+      throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
+    }
     let secret: string | null;
     try { secret = await this.secrets.resolve(secretRef); } catch { secret = null; }
     if (typeof secret !== 'string' || secret.length === 0) throw new ProviderSecretReferenceUnavailableError();
@@ -85,12 +87,16 @@ export class ProviderConnectionOperations {
   }
 
   async create(input: {
-    workspaceId: string; actorId: string; connectionId: string; provider: WebhookProvider;
+    workspaceId: string; actorId: string; deliveryActorId: string; connectionId: string; provider: WebhookProvider;
     repository: string; secretRef: string;
   }): Promise<ProviderConnectionSummary> {
     await this.requireManage(input.workspaceId, input.actorId);
     requiredId(input.connectionId, 'connectionId');
     validateProvider(input.provider);
+    requiredId(input.deliveryActorId, 'deliveryActorId');
+    if (!(await this.authorize({ workspaceId: input.workspaceId, pipelineId: RESOURCE_ID, actorId: input.deliveryActorId, action: 'trigger' }))) {
+      throw new PipelineAuthorizationError();
+    }
     if (typeof input.repository !== 'string' || !input.repository.trim() || input.repository.length > 256 ||
         /[\r\n\0]/.test(input.repository)) throw new TypeError('repository is invalid');
     await this.requireSecretReference(input.secretRef);
@@ -98,7 +104,8 @@ export class ProviderConnectionOperations {
       connectionId: input.connectionId,
       provider: input.provider,
       workspaceId: input.workspaceId,
-      actorId: input.actorId,
+      actorId: input.deliveryActorId,
+      createdBy: input.actorId,
       repository: input.repository,
       secretRef: input.secretRef,
       createdAt: new Date(this.now()).toISOString(),
