@@ -45,6 +45,14 @@ function requiredId(value: string, field: string): void {
 function validateProvider(value: string): asserts value is WebhookProvider {
   if (value !== 'github' && value !== 'gitlab') throw new TypeError('provider is invalid');
 }
+function validateRepository(value: string, provider: WebhookProvider): void {
+  if (typeof value !== 'string' || value.length > 256) throw new TypeError('repository is invalid');
+  const parts = value.split('/');
+  if ((provider === 'github' && parts.length !== 2) || (provider === 'gitlab' && parts.length < 2) ||
+      parts.some((part) => !/^[A-Za-z0-9_.-]{1,100}$/.test(part) || part === '.' || part === '..')) {
+    throw new TypeError(provider === 'github' ? 'GitHub repository must be owner/repo.' : 'GitLab repository must be group[/subgroup]/project.');
+  }
+}
 
 /** Workspace-authorized management of provider trust bindings. Secret values remain in the external resolver. */
 export class ProviderConnectionOperations {
@@ -99,8 +107,7 @@ export class ProviderConnectionOperations {
     if (!(await this.authorize({ workspaceId: input.workspaceId, pipelineId: RESOURCE_ID, actorId: input.deliveryActorId, action: 'trigger' }))) {
       throw new PipelineAuthorizationError();
     }
-    if (typeof input.repository !== 'string' || !input.repository.trim() || input.repository.length > 256 ||
-        /[\r\n\0]/.test(input.repository)) throw new TypeError('repository is invalid');
+    validateRepository(input.repository, input.provider);
     if (await this.connections.find(input.provider, input.connectionId)) throw new ProviderConnectionConflictError();
     await this.requireSecretReference(input.secretRef, input.workspaceId);
     let record: ProviderConnectionRecord;
