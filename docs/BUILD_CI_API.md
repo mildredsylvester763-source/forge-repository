@@ -47,6 +47,13 @@ Returns the pipeline's ordered version history.
 
 Returns one immutable version or 404.
 
+### Compare two saved versions
+
+`GET /v1/build-ci/pipelines/versions/diff?workspaceId=workspace-a&pipelineId=quality-gate&fromVersion=1&toVersion=3`
+
+Returns the two immutable content hashes and a structural diff. The diff identifies added/removed triggers and steps, changed element field names, root-level metadata fields and ordering changes. It intentionally does not return the old/new parameter values or secret references. Both versions must exist and the caller must have read access to the pipeline.
+
+
 ### Roll back
 
 `POST /v1/build-ci/pipelines/rollback`
@@ -71,7 +78,7 @@ Provide exactly one of `pipelineId` or `definition`:
 - `pipelineId`: simulate the latest saved version.
 - `definition`: simulate an unsaved candidate definition without persisting it.
 
-A dry-run may include an event fixture and an `inputs` object. For simulation, event fixtures can represent push, pull request, schedule, generic event, manual or API triggers. The fixture must include `kind`, `source` and `eventId`. Candidate definitions and their inputs are validated without saving them.
+A dry-run may include an event fixture and an `inputs` object. For simulation, event fixtures can represent push, pull request, schedule, generic event, manual or API triggers. The fixture must include `kind`, `source` and `eventId`. Candidate definitions and their inputs are validated without saving them. When a saved version with the same pipeline ID exists in the workspace, the response also contains its baseline version/hash, the candidate hash and the same value-free structural diff used by the saved-version comparison endpoint. For a new pipeline ID, baseline version/hash and diff are null.
 
 Dry-run is side-effect-free: it does not create a run, save a version, execute tasks, resolve secrets or deploy.
 
