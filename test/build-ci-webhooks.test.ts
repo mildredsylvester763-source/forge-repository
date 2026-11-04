@@ -186,3 +186,62 @@ test('verified webhook ingress enqueues once and rejects repository-binding mism
     db.close();
   }
 });
+
+test('webhook delivery claims use leases, bounded retries, and reject stale workers', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  try {
+    migrateBuildCiSqlite(db);
+    const store = new SqliteWebhookDeliveryStore(db);
+    await store.enqueue({
+      connectionId: 'lease-connection', provider: 'github', workspaceId: 'lease-workspace',
+      repository: 'team/api', deliveryId: 'lease-delivery', event: {
+        kind: 'push', source: 'github:push', eventType: 'push', eventId: 'lease-delivery', branch: 'main',
+      }, bodySha256: 'b'.repeat(64), receivedAt: '2026-11-04T10:00:00.000Z',
+    });
+
+    const first = await store.claimNext({
+      workerId: 'worker-a', now: '2026-11-04T10:01:00.000Z', leaseExpiresAt: '2026-11-04T10:02:00.000Z',
+    });
+    assert.equal(first?.status, 'processing');
+    assert.equal(first?.attempts, 1);
+    assert.equal(first?.leaseOwner, 'worker-a');
+
+    assert.equal(await store.complete(first!.deliveryRowId, 'worker-a', '2026-11-04T10:03:00.000Z'), false);
+    assert.deepEqual(await store.fail({
+      deliveryRowId: first!.deliveryRowId, workerId: 'worker-a', error: 'stale worker',
+      failedAt: '2026-11-04T10:03:00.000Z', retryAt: '2026-11-04T10:04:00.000Z', maxAttempts: 2,
+    }), { updated: false, terminal: false });
+
+    const recovered = await store.claimNext({
+      workerId: 'worker-b', now: '2026-11-04T10:03:00.000Z', leaseExpiresAt: '2026-11-04T10:05:00.000Z',
+    });
+    assert.equal(recovered?.attempts, 2);
+    assert.equal(recovered?.leaseOwner, 'worker-b');
+
+    assert.deepEqual(await store.fail({
+      deliveryRowId: recovered!.deliveryRowId, workerId: 'worker-b', error: 'temporary provider processing error',
+      failedAt: '2026-11-04T10:03:30.000Z', retryAt: '2026-11-04T10:04:00.000Z', maxAttempts: 3,
+    }), { updated: true, terminal: false });
+    assert.equal(await store.claimNext({
+      workerId: 'worker-c', now: '2026-11-04T10:03:59.000Z', leaseExpiresAt: '2026-11-04T10:06:00.000Z',
+    }), null);
+
+    const third = await store.claimNext({
+      workerId: 'worker-c', now: '2026-11-04T10:04:00.000Z', leaseExpiresAt: '2026-11-04T10:06:00.000Z',
+    });
+    assert.equal(third?.attempts, 3);
+    assert.deepEqual(await store.fail({
+      deliveryRowId: third!.deliveryRowId, workerId: 'worker-c', error: 'permanent processing failure',
+      failedAt: '2026-11-04T10:04:30.000Z', retryAt: '2026-11-04T10:05:00.000Z', maxAttempts: 3,
+    }), { updated: true, terminal: true });
+
+    const final = await store.find('lease-connection', 'lease-delivery');
+    assert.equal(final?.status, 'failed');
+    assert.equal(final?.attempts, 3);
+    assert.equal(final?.leaseOwner, undefined);
+    assert.match(final?.lastError ?? '', /permanent processing failure/);
+  } finally {
+    db.close();
+  }
+});
