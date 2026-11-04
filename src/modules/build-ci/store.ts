@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PipelineTemplateStore, PipelineTemplate, PipelineTemplateVersion, PipelineTemplateVisibility } from './templates.ts';
+import type { PipelineTemplateStore, PipelineTemplate, PipelineTemplateVersion, PipelineTemplateVisibility, PipelineTemplateEvent } from './templates.ts';
 import {
   buildDryRunPlan,
   createPipelineVersion,
@@ -79,7 +79,7 @@ export interface PipelineStore {
   getRun(workspaceId: string, pipelineId: string, runId: string): Promise<PipelineRun | null>;
 }
 
-export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger' | 'list_templates' | 'read_template' | 'publish_template' | 'share_template' | 'import_template';
+export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger' | 'list_templates' | 'read_template' | 'publish_template' | 'share_template' | 'import_template' | 'manage_template';
 
 export interface PipelineAuthorizationRequest {
   readonly workspaceId: string;
@@ -281,7 +281,7 @@ export class BuildCiService {
     const template = await this.templates.getTemplate(input.templateId);
     if (!template || template.publisherWorkspaceId !== input.workspaceId) throw new PipelineNotFoundError();
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: template.sourcePipelineId, actorId: input.actorId, action: 'share_template' });
-    await this.templates.revoke(input.templateId, input.workspaceId, input.targetWorkspaceId, input.revokedAt ?? new Date().toISOString());
+    await this.templates.revoke(input.templateId, input.workspaceId, input.targetWorkspaceId, input.actorId, input.revokedAt ?? new Date().toISOString());
   }
 
   async listTemplates(input: { workspaceId: string; actorId: string }): Promise<readonly PipelineTemplate[]> {
@@ -303,6 +303,25 @@ export class BuildCiService {
     return version;
   }
 
+  async setTemplateStatus(input: { workspaceId: string; templateId: string; status: 'deprecated' | 'revoked'; actorId: string; occurredAt?: string }): Promise<void> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.actorId, 'actorId');
+    const template = await this.templates.getTemplate(input.templateId);
+    if (!template || template.publisherWorkspaceId !== input.workspaceId) throw new PipelineNotFoundError();
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: template.sourcePipelineId, actorId: input.actorId, action: 'manage_template' });
+    await this.templates.setStatus(input.templateId, input.workspaceId, input.status, input.actorId, input.occurredAt ?? new Date().toISOString());
+  }
+
+  async listTemplateEvents(input: { workspaceId: string; templateId: string; actorId: string }): Promise<readonly PipelineTemplateEvent[]> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.actorId, 'actorId');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'read_template' });
+    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
+    return this.templates.listEvents(input.templateId, input.workspaceId);
+  }
+
   async importTemplate(input: {
     workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string; actorId: string; createdAt?: string;
   }): Promise<PipelineVersion> {
@@ -316,7 +335,7 @@ export class BuildCiService {
     if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
     const template = await this.templates.getTemplate(input.templateId);
     const source = await this.templates.getVersion(input.templateId, input.templateVersion);
-    if (!template || template.status !== 'active' || !source) throw new PipelineNotFoundError();
+    if (!template || template.status === 'revoked' || !source) throw new PipelineNotFoundError();
     const definition = validatePipelineDefinition({
       ...source.definition,
       id: input.pipelineId,
