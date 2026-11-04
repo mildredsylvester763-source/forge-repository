@@ -33,7 +33,8 @@ function timestamp(value: string, field: string): void {
 }
 function validateSecretRef(value: string): void {
   required(value, 'secretRef', 512);
-  if (!/^(secret|vault|kms):\\/\\/[A-Za-z0-9._:/-]+$/.test(value)) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
+  const scheme = value.startsWith('secret://') ? 'secret://' : value.startsWith('vault://') ? 'vault://' : value.startsWith('kms://') ? 'kms://' : '';
+  if (!scheme || !/^[A-Za-z0-9._:/-]+$/.test(value.slice(scheme.length))) throw new TypeError('secretRef must be an opaque secret://, vault:// or kms:// reference');
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
