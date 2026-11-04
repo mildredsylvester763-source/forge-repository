@@ -8,6 +8,7 @@ import { WebhookDeliveryProcessor } from '../src/modules/build-ci/webhook-proces
 import { PostgresScheduleOccurrenceStore } from '../src/modules/build-ci/schedule-occurrences.ts';
 import { ScheduleDispatcher } from '../src/modules/build-ci/schedule-dispatcher.ts';
 import { migrateBuildCiPostgres } from '../src/modules/build-ci/migrations.ts';
+import { PostgresProviderConnectionStore, StoredWebhookConnectionResolver } from '../src/modules/build-ci/provider-connections.ts';
 import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createWorkspacePipelineAuthorizer, PostgresWorkspaceMembershipReader, workspaceAccessMigrations } from '../src/modules/build-ci/workspace-access.ts';
 
@@ -16,6 +17,33 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
   const testPool = await makeBlankRealPool();
   try {
     await migrateBuildCiPostgres(testPool.pool);
+    const providerConnections = new PostgresProviderConnectionStore(testPool.pool);
+    const providerConnection = await providerConnections.create({
+      connectionId: 'pg-github-installation',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/postgres-app',
+      secretRef: 'vault://forge/pg-workspace/github/webhook',
+      createdAt: '2026-11-04T00:00:00.000Z',
+    });
+    assert.equal(providerConnection.active, true);
+    let vaultResolutions = 0;
+    const providerResolver = new StoredWebhookConnectionResolver(providerConnections, {
+      resolve: async (reference) => {
+        vaultResolutions += 1;
+        assert.equal(reference, 'vault://forge/pg-workspace/github/webhook');
+        return 'postgres-integration-secret';
+      },
+    });
+    assert.equal((await providerResolver.resolveForIngress('github', 'pg-github-installation'))?.signingSecret, 'postgres-integration-secret');
+    assert.equal((await providerResolver.resolveForDelivery('github', 'pg-github-installation'))?.actorId, 'integration-test');
+    assert.equal(vaultResolutions, 1);
+    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:01:00.000Z'), true);
+    assert.equal(await providerConnections.revoke('github', 'pg-github-installation', '2026-11-04T00:02:00.000Z'), false);
+    assert.equal(await providerResolver.resolveForIngress('github', 'pg-github-installation'), null);
+    assert.equal(await providerResolver.resolveForDelivery('github', 'pg-github-installation'), null);
+    assert.equal(vaultResolutions, 1);
     await migratePostgres(testPool.pool, 'workspace_access', workspaceAccessMigrations);
     await testPool.pool.query(
       "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
