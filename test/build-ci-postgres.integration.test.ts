@@ -28,11 +28,17 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       createdAt: '2026-11-04T00:00:00.000Z',
     });
     assert.equal(providerConnection.active, true);
+    assert.equal(await providerConnections.rotateSecretReference('github', 'pg-github-installation',
+      'vault://forge/pg-workspace/github/webhook', 'vault://forge/pg-workspace/github/webhook-v2',
+      '2026-11-04T00:00:30.000Z'), true);
+    assert.equal(await providerConnections.rotateSecretReference('github', 'pg-github-installation',
+      'vault://forge/pg-workspace/github/webhook', 'vault://forge/pg-workspace/github/webhook-v3',
+      '2026-11-04T00:00:45.000Z'), false);
     let vaultResolutions = 0;
     const providerResolver = new StoredWebhookConnectionResolver(providerConnections, {
       resolve: async (reference) => {
         vaultResolutions += 1;
-        assert.equal(reference, 'vault://forge/pg-workspace/github/webhook');
+        assert.equal(reference, 'vault://forge/pg-workspace/github/webhook-v2');
         return 'postgres-integration-secret';
       },
     });
