@@ -209,6 +209,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     await service.createPipeline({
       workspaceId: 'pg-workspace',
       actorId: 'integration-test',
+      createdAt: '2026-11-04T00:00:00.000Z',
       definition: {
         id: 'postgres-scheduled-build',
         name: 'PostgreSQL scheduled build',
