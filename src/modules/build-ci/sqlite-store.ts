@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createPipelineVersion, type PipelineVersion } from './pipeline.ts';
+import { createPipelineVersion, validatePipelineDefinition, type PipelineVersion, type PipelineTemplateSource } from './pipeline.ts';
+import { PipelineTemplateUnavailableError } from './templates.ts';
 import {
   type CreatePipelineRunInput,
   type CreatePipelineRunResult,
@@ -85,34 +86,82 @@ export class SqliteBuildCiStore implements PipelineStore {
   private readonly db: Database;
   constructor(db: Database) { this.db = db; }
 
+  private saveVersionInTransaction(input: SavePipelineVersionInput): PipelineVersion {
+    const now = input.createdAt ?? new Date().toISOString();
+    this.db.prepare(`INSERT INTO build_pipelines (workspace_id, pipeline_id, current_version, created_at, updated_at)
+      VALUES (?, ?, 0, ?, ?) ON CONFLICT (workspace_id, pipeline_id) DO NOTHING`).run(input.workspaceId, input.definition.id, now, now);
+    const current = this.db.prepare('SELECT current_version FROM build_pipelines WHERE workspace_id = ? AND pipeline_id = ?')
+      .get(input.workspaceId, input.definition.id) as { current_version: number } | undefined;
+    if (!current) throw new Error('Pipeline head row was not created.');
+    const nextVersion = Number(current.current_version) + 1;
+    const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
+    this.db.prepare(`INSERT INTO build_pipeline_versions
+      (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
+        snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null,
+        snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null,
+        snapshot.templateSource?.publisherWorkspaceId ?? null);
+    if (snapshot.templateSource) {
+      this.db.prepare(`INSERT INTO build_pipeline_template_events
+        (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
+        VALUES (?, ?, 'imported', ?, ?, NULL, ?, ?, ?, ?)`).run(
+        randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
+        snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
+        JSON.stringify({ pipelineId: snapshot.pipelineId }),
+      );
+    }
+    this.db.prepare('UPDATE build_pipelines SET current_version = ?, updated_at = ? WHERE workspace_id = ? AND pipeline_id = ?')
+      .run(snapshot.version, now, input.workspaceId, snapshot.pipelineId);
+    return snapshot;
+  }
+
   async saveVersion(input: SavePipelineVersionInput): Promise<PipelineVersion> {
     ensureScope(input.workspaceId, input.definition.id);
+    return transaction(this.db, () => this.saveVersionInTransaction(input));
+  }
+
+  async importTemplate(input: {
+    workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string;
+    createdBy: string; createdAt?: string;
+  }): Promise<PipelineVersion> {
+    ensureScope(input.workspaceId, input.pipelineId);
+    if (!Number.isSafeInteger(input.templateVersion) || input.templateVersion < 1) throw new TypeError('templateVersion must be a positive integer');
     return transaction(this.db, () => {
-      const now = input.createdAt ?? new Date().toISOString();
-      this.db.prepare(`INSERT INTO build_pipelines (workspace_id, pipeline_id, current_version, created_at, updated_at)
-        VALUES (?, ?, 0, ?, ?) ON CONFLICT (workspace_id, pipeline_id) DO NOTHING`).run(input.workspaceId, input.definition.id, now, now);
-      const current = this.db.prepare('SELECT current_version FROM build_pipelines WHERE workspace_id = ? AND pipeline_id = ?')
-        .get(input.workspaceId, input.definition.id) as { current_version: number } | undefined;
-      if (!current) throw new Error('Pipeline head row was not created.');
-      const nextVersion = Number(current.current_version) + 1;
-      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
-      this.db.prepare(`INSERT INTO build_pipeline_versions
-        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
-          snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null);
-      if (snapshot.templateSource) {
-        this.db.prepare(`INSERT INTO build_pipeline_template_events
-          (event_id, template_id, event_type, workspace_id, actor_id, target_workspace_id, template_version, template_hash, occurred_at, metadata_json)
-          VALUES (?, ?, 'imported', ?, ?, NULL, ?, ?, ?, ?)`).run(
-          randomUUID(), snapshot.templateSource.templateId, input.workspaceId, input.createdBy,
-          snapshot.templateSource.templateVersion, snapshot.templateSource.templateHash, now,
-          JSON.stringify({ pipelineId: snapshot.pipelineId }),
-        );
+      const template = this.db.prepare(`SELECT publisher_workspace_id, visibility, status FROM build_pipeline_templates WHERE template_id = ?`)
+        .get(input.templateId) as { publisher_workspace_id: string; visibility: string; status: string } | undefined;
+      if (!template || (template.status !== 'active' && template.status !== 'deprecated')) throw new PipelineTemplateUnavailableError();
+      if (template.publisher_workspace_id !== input.workspaceId) {
+        if (template.visibility !== 'shared') throw new PipelineTemplateUnavailableError();
+        const grant = this.db.prepare(`SELECT template_id FROM build_pipeline_template_grants
+          WHERE template_id = ? AND target_workspace_id = ? AND revoked_at IS NULL`).get(input.templateId, input.workspaceId);
+        if (!grant) throw new PipelineTemplateUnavailableError();
       }
-      this.db.prepare('UPDATE build_pipelines SET current_version = ?, updated_at = ? WHERE workspace_id = ? AND pipeline_id = ?')
-        .run(snapshot.version, now, input.workspaceId, snapshot.pipelineId);
-      return snapshot;
+      const row = this.db.prepare(`SELECT source_pipeline_version, definition_json, definition_hash
+        FROM build_pipeline_template_versions WHERE template_id = ? AND version = ?`).get(input.templateId, input.templateVersion) as {
+          source_pipeline_version: number; definition_json: string; definition_hash: string;
+        } | undefined;
+      if (!row) throw new PipelineTemplateUnavailableError();
+      const source = createPipelineVersion(JSON.parse(row.definition_json) as unknown, Number(row.source_pipeline_version), input.createdBy);
+      if (source.definitionHash !== row.definition_hash) throw new Error('Pipeline template release failed integrity verification.');
+      const definition = validatePipelineDefinition({
+        ...source.definition,
+        id: input.pipelineId,
+        ...(input.name ? { name: input.name } : {}),
+      });
+      const templateSource: PipelineTemplateSource = {
+        templateId: input.templateId,
+        templateVersion: input.templateVersion,
+        templateHash: row.definition_hash,
+        publisherWorkspaceId: template.publisher_workspace_id,
+      };
+      return this.saveVersionInTransaction({
+        workspaceId: input.workspaceId,
+        definition,
+        createdBy: input.createdBy,
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+        templateSource,
+      });
     });
   }
 
