@@ -145,6 +145,10 @@ test('webhook dead letters are workspace-scoped, paginated, role-gated and repla
     assert.ok(listRoute && eventsRoute && replayRoute);
     const httpList = await listRoute(requestContext({ method: 'GET', token: 'owner', query: { workspaceId: 'workspace-ops', limit: '1' } }));
     assert.equal(httpList.status, 200);
+    const listedItem = (httpList.body as { items: Record<string, unknown>[] }).items[0];
+    assert.ok(listedItem);
+    assert.equal('event' in listedItem, false, 'dead-letter list must not expose the stored webhook payload');
+    assert.equal('bodySha256' in listedItem, false, 'dead-letter list must not expose payload fingerprints');
     const denied = await replayRoute(requestContext({
       method: 'POST', token: 'member', body: { workspaceId: 'workspace-ops', deliveryRowId: secondId },
     })).catch((error: unknown) => error);
