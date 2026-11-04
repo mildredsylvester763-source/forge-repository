@@ -97,3 +97,13 @@ Implementation is on the GPT branch; the latest code CI run for the scheduler is
 - Per-trigger enabled defaults to true. A new immutable pipeline version can pause/resume a trigger. The dispatcher skips queued occurrences belonging to a superseded pipeline version and does not generate ticks before the active version's createdAt.
 - Schedule dispatch calls BuildCiService.trigger, preserving workspace authorization and run idempotency. It only creates queued runs; it does not execute steps. Overlapping occurrences are independently queued; no concurrency group is implemented.
 - Tests cover cursor scanning, repeat-scan dedupe, retries after authorization recovery, pause/resume, superseded versions, DST behavior and PostgreSQL concurrent worker claims/dispatch.
+
+
+## Optional bounded worker host — implementation candidate
+
+- Added `BuildCiWorkerHost` as an optional app-composed poller for the already durable webhook and schedule processors. It supports bounded `runOnce()` and recurring `start()/stop()`; repeated starts and overlapping cycle requests are guarded. Stop prevents another poll and waits for the in-flight processor operation before app storage closes.
+- The default poll interval is 5 seconds; each cycle claims at most 25 webhooks, processes at most 100 schedule workspaces and dispatches at most 25 schedule occurrences per workspace. Values are configurable and validated.
+- Schedule inventory uses an injected trusted keyset-paginated `ScheduleWorkspaceSource` returning workspace/service-actor pairs. Every occurrence still calls BuildCiService and rechecks authorization. No global actor is invented.
+- Database leases remain the cross-process concurrency authority; process-local single-flight only prevents overlapping cycles inside one instance. Abrupt shutdown relies on lease expiry/recovery.
+- The app constructs the worker only when `buildCiWorker` is explicitly supplied. It remains stopped unless `autoStart: true` is set. Production workspace inventory and provider secret/integration resolvers are not yet wired.
+- Tests cover bounded webhook/schedule draining, workspace pagination, single-flight cycles, graceful shutdown and source pairing. The host only creates queued runs; registered task execution, event-bus publication and operational replay/dead-letter tooling remain outstanding.

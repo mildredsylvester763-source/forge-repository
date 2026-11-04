@@ -202,3 +202,13 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - Workers claim occurrences using SQLite immediate transactions or PostgreSQL row locks with SKIP LOCKED. Dispatch calls BuildCiService.trigger, preserving workspace authorization and the run idempotency key. Failures receive bounded exponential retries. This creates queued runs only; it does not execute pipeline steps.
 - The scheduler is exposed from app composition as a workspace-scoped worker service. There is no autonomous polling/worker host yet; the caller must provide a trusted workspace actor. Overlapping occurrences are independently queued; no concurrency-group serialization is implemented.
 - Final verification: commit `d9ee14b8f9d19dfec68547950a28dbcb1f629da1`; GitHub Actions run `41814811720` passed typecheck, production build and all 186 tests against real PostgreSQL (0 failures, 0 skips). This includes cron-step parsing, pause/resume, timezone/DST, SQLite schedule processing and real PostgreSQL concurrent schedule claims.
+
+
+### 2026-11-04 optional Build & CI worker host
+
+- Added `BuildCiWorkerHost` to host the existing durable webhook and schedule processors. It supports one-shot bounded cycles and an optional recurring poll loop; it is composed only through explicit app overrides and is not started by default.
+- Default cycle bounds: 25 webhook claims, 100 scheduled workspaces, and 25 schedule occurrences per workspace; default polling interval is five seconds. Limits are validated and configurable.
+- Schedule inventory is a trusted injected keyset-paginated source of workspace/service-actor pairs. The worker does not create a global actor or bypass the BuildCiService authorization check. The provider inventory and actor resolver are still production integration responsibilities.
+- Multiple worker instances rely on atomic database claims and leases. Graceful stop waits for the active processor call; abrupt process loss is recoverable after lease expiry. App close stops the optional host before closing database connections.
+- Tests cover bounded draining, workspace-scoped dispatch, paginated workspace inventory, single-flight cycle execution, graceful stop and required trusted inventory pairing.
+- This remains queued-run dispatch only. No registered pipeline task is executed. Event publication, production resolver wiring, operational replay/alerting and the Mistral execution adapter remain outstanding.

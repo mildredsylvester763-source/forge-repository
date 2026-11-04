@@ -33,6 +33,8 @@ import {
   type WebhookDeliveryStore,
   type ScheduleOccurrenceStore,
   type WebhookConnectionResolver,
+  BuildCiWorkerHost,
+  type ScheduleWorkspaceSource,
   buildCiRoutes,
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
@@ -75,6 +77,16 @@ export interface AppOverrides {
   buildCiAuthorize?: PipelineAuthorizer;
   /** Supplied by the secrets/integrations subsystem; no webhook is accepted without a trusted binding and secret. */
   webhookConnections?: WebhookConnectionResolver;
+  /** Optional worker host; it is not started unless autoStart is explicitly true. */
+  buildCiWorker?: {
+    workerId: string;
+    scheduleWorkspaces?: ScheduleWorkspaceSource;
+    pollIntervalMs?: number;
+    maxWebhookDeliveriesPerCycle?: number;
+    maxScheduleWorkspacesPerCycle?: number;
+    maxScheduleDispatchesPerWorkspace?: number;
+    autoStart?: boolean;
+  };
 }
 
 export interface ForgeApp {
@@ -89,6 +101,8 @@ export interface ForgeApp {
   webhookProcessor?: WebhookDeliveryProcessor;
   /** Workspace-scoped durable schedule scanner and dispatcher; workers provide their trusted actor. */
   scheduleDispatcher: ScheduleDispatcher;
+  /** Present only when an explicit worker configuration is supplied. */
+  worker?: BuildCiWorkerHost;
   close(): Promise<void>;
 }
 
@@ -226,6 +240,28 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     now: clock,
   });
 
+  const worker = overrides.buildCiWorker
+    ? new BuildCiWorkerHost({
+        workerId: overrides.buildCiWorker.workerId,
+        logger,
+        ...(webhookProcessor ? { webhooks: webhookProcessor } : {}),
+        ...(overrides.buildCiWorker.scheduleWorkspaces
+          ? { schedules: scheduleDispatcher, scheduleWorkspaces: overrides.buildCiWorker.scheduleWorkspaces }
+          : {}),
+        ...(overrides.buildCiWorker.pollIntervalMs !== undefined ? { pollIntervalMs: overrides.buildCiWorker.pollIntervalMs } : {}),
+        ...(overrides.buildCiWorker.maxWebhookDeliveriesPerCycle !== undefined
+          ? { maxWebhookDeliveriesPerCycle: overrides.buildCiWorker.maxWebhookDeliveriesPerCycle }
+          : {}),
+        ...(overrides.buildCiWorker.maxScheduleWorkspacesPerCycle !== undefined
+          ? { maxScheduleWorkspacesPerCycle: overrides.buildCiWorker.maxScheduleWorkspacesPerCycle }
+          : {}),
+        ...(overrides.buildCiWorker.maxScheduleDispatchesPerWorkspace !== undefined
+          ? { maxScheduleDispatchesPerWorkspace: overrides.buildCiWorker.maxScheduleDispatchesPerWorkspace }
+          : {}),
+      })
+    : undefined;
+  if (worker && overrides.buildCiWorker?.autoStart === true) worker.start();
+
   const routes: RouteTable = {
     '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
     '/readyz': {
@@ -249,10 +285,11 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   });
 
   const close = async (): Promise<void> => {
+    await worker?.stop();
     storage.db?.close();
     storage.buildCiDb?.close();
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), scheduleDispatcher, close };
+  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), scheduleDispatcher, ...(worker ? { worker } : {}), close };
 }
