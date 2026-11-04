@@ -80,7 +80,8 @@ test('SQLite templates are immutable, explicitly shared, revocable and provenanc
     assert.ok(eventTypes.includes('version_published'));
     assert.ok(eventTypes.includes('share_granted'));
     assert.ok(eventTypes.includes('share_revoked'));
-    assert.ok(eventTypes.includes('imported'));
+    const consumerAudit = await templates.listEvents('template-quality', 'consumer');
+    assert.ok(consumerAudit.some((event) => event.eventType === 'imported'));
     assert.throws(() => db.prepare("UPDATE build_pipeline_template_events SET actor_id = 'tampered'").run());
     assert.throws(() => db.prepare('DELETE FROM build_pipeline_template_events').run());
   } finally {

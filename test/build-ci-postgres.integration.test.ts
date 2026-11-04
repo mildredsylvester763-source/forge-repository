@@ -88,7 +88,8 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.ok(templateEvents.some((event) => event.eventType === 'version_published'));
     assert.ok(templateEvents.some((event) => event.eventType === 'share_granted'));
     assert.ok(templateEvents.some((event) => event.eventType === 'share_revoked'));
-    assert.ok(templateEvents.some((event) => event.eventType === 'imported'));
+    const consumerTemplateEvents = await templateStore.listEvents('template-pg-quality', 'pg-consumer');
+    assert.ok(consumerTemplateEvents.some((event) => event.eventType === 'imported'));
     await assert.rejects(() => testPool.pool.query("UPDATE build_pipeline_template_events SET actor_id = 'tampered' WHERE template_id = $1", ['template-pg-quality']));
     await assert.rejects(() => testPool.pool.query(
       "UPDATE build_pipeline_template_versions SET changelog = 'tampered' WHERE template_id = $1 AND version = 1",
