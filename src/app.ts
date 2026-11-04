@@ -20,6 +20,7 @@ import {
   createWorkspacePipelineAuthorizer,
   workspaceAccessMigrations,
   type WorkspaceMembershipReader,
+  buildCiRoutes,
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
@@ -187,6 +188,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
+    ...buildCiRoutes(buildCi, identity, config.cookie, clock),
   };
 
   const handler = createHttpHandler({
