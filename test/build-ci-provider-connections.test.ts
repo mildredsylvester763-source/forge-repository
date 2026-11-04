@@ -49,8 +49,8 @@ test('provider metadata rejects inline credential values and malformed secret re
     const store = new SqliteProviderConnectionStore(db);
     const base = { connectionId: 'connection-invalid', provider: 'github' as const,
       workspaceId: 'workspace-alpha', actorId: 'workspace-service-1', repository: 'team/private-api' };
-    await assert.rejects(() => store.create({ ...base, secretRef: 'ghp_this-is-not-a-vault-reference' }), /opaque/);
-    await assert.rejects(() => store.create({ ...base, secretRef: 'vault://forge/path?token=inline' }), /opaque/);
+    await assert.rejects(() => store.create({ ...base, secretRef: 'ghp_this-is-not-a-vault-reference' }), /workspace-scoped/);
+    await assert.rejects(() => store.create({ ...base, secretRef: 'vault://forge/path?token=inline' }), /workspace-scoped/);
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM build_ci_provider_connections').get() as { count: number }).count, 0);
   } finally { db.close(); }
 });
