@@ -133,7 +133,7 @@ function mapError(err: unknown): never {
   throw err;
 }
 
-export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock): RouteTable {
+export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService, cookie: CookieConfig, clock: Clock, webhookIngress?: WebhookIngressService): RouteTable {
   const actor = async (ctx: RequestContext): Promise<string> => {
     const auth = await identity.authenticate(ctx.cookie(cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
