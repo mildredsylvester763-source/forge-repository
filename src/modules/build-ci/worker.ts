@@ -128,9 +128,9 @@ export class BuildCiWorkerHost {
   }
 
   /** Runs one bounded polling cycle. Concurrent calls share the same in-flight cycle. */
-  runOnce(): Promise<BuildCiWorkerCycleResult> {
+  runOnce(signal?: AbortSignal): Promise<BuildCiWorkerCycleResult> {
     if (this.cyclePromise) return this.cyclePromise;
-    const cycle = this.executeCycle();
+    const cycle = this.executeCycle(signal);
     this.cyclePromise = cycle;
     const clear = (): void => {
       if (this.cyclePromise === cycle) this.cyclePromise = null;
@@ -176,7 +176,7 @@ export class BuildCiWorkerHost {
   private async runLoop(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
-        await this.runOnce();
+        await this.runOnce(signal);
       } catch (error) {
         this.logger.error('Build & CI worker cycle failed', {
           workerId: this.workerId,
@@ -187,7 +187,7 @@ export class BuildCiWorkerHost {
     }
   }
 
-  private async executeCycle(): Promise<BuildCiWorkerCycleResult> {
+  private async executeCycle(signal?: AbortSignal): Promise<BuildCiWorkerCycleResult> {
     let webhookClaims = 0;
     let webhookProcessed = 0;
     let scheduleWorkspacesScanned = 0;
@@ -200,6 +200,7 @@ export class BuildCiWorkerHost {
 
     if (this.webhooks) {
       for (let index = 0; index < this.maxWebhookDeliveriesPerCycle; index += 1) {
+        if (signal?.aborted) break;
         try {
           const result = await this.webhooks.processNext(this.workerId);
           if (!result.claimed) break;
@@ -216,7 +217,7 @@ export class BuildCiWorkerHost {
       }
     }
 
-    if (this.schedules && this.scheduleWorkspaces) {
+    if (this.schedules && this.scheduleWorkspaces && !signal?.aborted) {
       let page: ScheduleWorkspacePage;
       try {
         page = await this.scheduleWorkspaces.listWorkspaces({
@@ -238,11 +239,13 @@ export class BuildCiWorkerHost {
           workerId: this.workerId,
           errorKind: errorKind(error),
         });
+        this.scheduleWorkspaceCursor = undefined;
         page = { workspaces: [] };
       }
 
       const seen = new Set<string>();
       for (const workspace of page.workspaces) {
+        if (signal?.aborted) break;
         if (!workspace || typeof workspace.workspaceId !== 'string' ||
             !workspace.workspaceId.trim() || workspace.workspaceId.length > 128 ||
             typeof workspace.actorId !== 'string' || !workspace.actorId.trim() || workspace.actorId.length > 128 ||
@@ -271,6 +274,7 @@ export class BuildCiWorkerHost {
         }
 
         for (let index = 0; index < this.maxScheduleDispatchesPerWorkspace; index += 1) {
+          if (signal?.aborted) break;
           try {
             const result = await this.schedules.processNext({
               workspaceId: workspace.workspaceId,

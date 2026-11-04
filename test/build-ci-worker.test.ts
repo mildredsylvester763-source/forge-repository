@@ -153,7 +153,7 @@ test('stop waits for an in-flight worker operation and prevents another poll cyc
   const stopping = worker.stop().then(() => { stopped = true; });
   await Promise.resolve();
   assert.equal(stopped, false);
-  release.resolve({ claimed: false, processed: false });
+  release.resolve({ claimed: true, processed: true });
   await stopping;
   assert.equal(stopped, true);
   assert.equal(calls, 1);
