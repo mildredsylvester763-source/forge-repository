@@ -684,6 +684,13 @@ export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerE
   return deepFreeze({ dryRun: true as const, pipelineId: definition.id, triggered, triggerEvaluations, parallelGroups: groups, steps, sideEffects: false as const, resolvedInputs });
 }
 
+export interface PipelineTemplateSource {
+  readonly templateId: string;
+  readonly templateVersion: number;
+  readonly templateHash: string;
+  readonly publisherWorkspaceId: string;
+}
+
 export interface PipelineVersion {
   readonly pipelineId: string;
   readonly version: number;
@@ -692,6 +699,7 @@ export interface PipelineVersion {
   readonly createdAt: string;
   readonly createdBy: string;
   readonly rollbackOfVersion?: number;
+  readonly templateSource?: PipelineTemplateSource;
 }
 
 function canonicalJson(value: unknown): string {
@@ -701,13 +709,14 @@ function canonicalJson(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
 }
 
-export function createPipelineVersion(definitionInput: unknown, version: number, createdBy: string, createdAt = new Date().toISOString(), rollbackOfVersion?: number): PipelineVersion {
+export function createPipelineVersion(definitionInput: unknown, version: number, createdBy: string, createdAt = new Date().toISOString(), rollbackOfVersion?: number, templateSource?: PipelineTemplateSource): PipelineVersion {
   if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('version must be a positive safe integer');
   if (!createdBy.trim()) throw new TypeError('createdBy is required');
   if (!Number.isFinite(Date.parse(createdAt))) throw new TypeError('createdAt must be a valid ISO date');
   if (rollbackOfVersion !== undefined && (!Number.isSafeInteger(rollbackOfVersion) || rollbackOfVersion < 1 || rollbackOfVersion >= version)) {
     throw new TypeError('rollbackOfVersion must identify an earlier positive version');
   }
+  if (templateSource && (!templateSource.templateId.trim() || !templateSource.publisherWorkspaceId.trim() || !Number.isSafeInteger(templateSource.templateVersion) || templateSource.templateVersion < 1 || !/^[a-f0-9]{64}$/.test(templateSource.templateHash))) throw new TypeError('templateSource is invalid');
   const definition = validatePipelineDefinition(definitionInput);
   const hash = createHash('sha256').update(canonicalJson(definition)).digest('hex');
   return deepFreeze({
@@ -718,6 +727,7 @@ export function createPipelineVersion(definitionInput: unknown, version: number,
     createdAt: new Date(createdAt).toISOString(),
     createdBy,
     ...(rollbackOfVersion !== undefined ? { rollbackOfVersion } : {}),
+    ...(templateSource ? { templateSource: Object.freeze({ ...templateSource }) } : {}),
   });
 }
 
@@ -732,7 +742,7 @@ export function createRollbackVersion(history: readonly PipelineVersion[], targe
   if (!target) throw new TypeError(`version ${targetVersion} does not exist`);
   const latest = Math.max(...history.map((item) => item.version));
   if (!Number.isSafeInteger(latest) || latest < 1) throw new TypeError('invalid version history');
-  return createPipelineVersion(target.definition, latest + 1, createdBy, createdAt, targetVersion);
+  return createPipelineVersion(target.definition, latest + 1, createdBy, createdAt, targetVersion, target.templateSource);
 }
 
 export function newPipelineId(): string {

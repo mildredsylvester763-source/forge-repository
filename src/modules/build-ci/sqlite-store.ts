@@ -18,6 +18,10 @@ interface VersionRow {
   created_at: string;
   created_by: string;
   rollback_of_version: number | null;
+  template_id: string | null;
+  template_version: number | null;
+  template_hash: string | null;
+  template_publisher_workspace_id: string | null;
 }
 
 interface RunRow {
@@ -43,6 +47,7 @@ function versionFromRow(row: VersionRow): PipelineVersion {
     row.created_by,
     row.created_at,
     row.rollback_of_version === null ? undefined : Number(row.rollback_of_version),
+    row.template_id && row.template_version !== null && row.template_hash && row.template_publisher_workspace_id ? { templateId: row.template_id, templateVersion: Number(row.template_version), templateHash: row.template_hash, publisherWorkspaceId: row.template_publisher_workspace_id } : undefined,
   );
   if (version.pipelineId !== row.pipeline_id || version.definitionHash !== row.definition_hash) {
     throw new Error(`Stored pipeline version ${row.pipeline_id}@${row.version} failed integrity verification.`);
@@ -88,10 +93,10 @@ export class SqliteBuildCiStore implements PipelineStore {
       const nextVersion = Number(current.current_version) + 1;
       const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion);
       this.db.prepare(`INSERT INTO build_pipeline_versions
-        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
-          snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null);
+          snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null);
       this.db.prepare('UPDATE build_pipelines SET current_version = ?, updated_at = ? WHERE workspace_id = ? AND pipeline_id = ?')
         .run(snapshot.version, now, input.workspaceId, snapshot.pipelineId);
       return snapshot;

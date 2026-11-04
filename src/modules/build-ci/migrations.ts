@@ -58,7 +58,56 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
       CREATE INDEX build_pipeline_runs_pipeline_idx ON build_pipeline_runs (workspace_id, pipeline_id, created_at);
     `,
   },
-];
+
+  {
+    version: 2,
+    name: 'shareable_pipeline_templates_and_import_provenance',
+    sql: `
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_id TEXT;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_version INTEGER;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_hash TEXT;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_publisher_workspace_id TEXT;
+      CREATE TABLE build_pipeline_templates (
+        template_id TEXT PRIMARY KEY,
+        publisher_workspace_id TEXT NOT NULL,
+        source_pipeline_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        visibility TEXT NOT NULL CHECK (visibility IN ('workspace', 'shared')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'deprecated', 'revoked')),
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        current_version INTEGER NOT NULL CHECK (current_version >= 1)
+      ) STRICT;
+      CREATE TABLE build_pipeline_template_versions (
+        template_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version >= 1),
+        source_pipeline_version INTEGER NOT NULL CHECK (source_pipeline_version >= 1),
+        definition_json TEXT NOT NULL,
+        definition_hash TEXT NOT NULL CHECK (length(definition_hash) = 64),
+        changelog TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (template_id, version),
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      ) STRICT;
+      CREATE TRIGGER build_pipeline_template_versions_block_update BEFORE UPDATE ON build_pipeline_template_versions
+        BEGIN SELECT RAISE(ABORT, 'pipeline template versions are immutable'); END;
+      CREATE TRIGGER build_pipeline_template_versions_block_delete BEFORE DELETE ON build_pipeline_template_versions
+        BEGIN SELECT RAISE(ABORT, 'pipeline template versions are immutable'); END;
+      CREATE TABLE build_pipeline_template_grants (
+        template_id TEXT NOT NULL,
+        target_workspace_id TEXT NOT NULL,
+        granted_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT,
+        PRIMARY KEY (template_id, target_workspace_id),
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      ) STRICT;
+      CREATE INDEX build_pipeline_template_grants_target_idx ON build_pipeline_template_grants (target_workspace_id, revoked_at);
+    `,
+  },
+]; 
 
 export const buildCiPostgresMigrations: readonly Migration[] = [
   {
@@ -121,7 +170,61 @@ export const buildCiPostgresMigrations: readonly Migration[] = [
       CREATE INDEX build_pipeline_runs_pipeline_idx ON build_pipeline_runs (workspace_id, pipeline_id, created_at);
     `,
   },
-];
+
+  {
+    version: 2,
+    name: 'shareable_pipeline_templates_and_import_provenance',
+    sql: `
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_id TEXT;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_version INTEGER;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_hash TEXT;
+      ALTER TABLE build_pipeline_versions ADD COLUMN template_publisher_workspace_id TEXT;
+      CREATE TABLE build_pipeline_templates (
+        template_id TEXT PRIMARY KEY,
+        publisher_workspace_id TEXT NOT NULL,
+        source_pipeline_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        visibility TEXT NOT NULL CHECK (visibility IN ('workspace', 'shared')),
+        status TEXT NOT NULL CHECK (status IN ('active', 'deprecated', 'revoked')),
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        current_version INTEGER NOT NULL CHECK (current_version >= 1)
+      );
+      CREATE TABLE build_pipeline_template_versions (
+        template_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version >= 1),
+        source_pipeline_version INTEGER NOT NULL CHECK (source_pipeline_version >= 1),
+        definition_json TEXT NOT NULL,
+        definition_hash TEXT NOT NULL CHECK (length(definition_hash) = 64),
+        changelog TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (template_id, version),
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      );
+      CREATE FUNCTION build_pipeline_template_versions_block_change() RETURNS trigger LANGUAGE plpgsql AS $
+      BEGIN RAISE EXCEPTION 'pipeline template versions are immutable'; END;
+      $;
+      CREATE TRIGGER build_pipeline_template_versions_block_update BEFORE UPDATE ON build_pipeline_template_versions
+        FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_versions_block_change();
+      CREATE TRIGGER build_pipeline_template_versions_block_delete BEFORE DELETE ON build_pipeline_template_versions
+        FOR EACH ROW EXECUTE FUNCTION build_pipeline_template_versions_block_change();
+      CREATE TRIGGER build_pipeline_template_versions_block_truncate BEFORE TRUNCATE ON build_pipeline_template_versions
+        FOR EACH STATEMENT EXECUTE FUNCTION build_pipeline_template_versions_block_change();
+      CREATE TABLE build_pipeline_template_grants (
+        template_id TEXT NOT NULL,
+        target_workspace_id TEXT NOT NULL,
+        granted_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT,
+        PRIMARY KEY (template_id, target_workspace_id),
+        FOREIGN KEY (template_id) REFERENCES build_pipeline_templates (template_id)
+      );
+      CREATE INDEX build_pipeline_template_grants_target_idx ON build_pipeline_template_grants (target_workspace_id, revoked_at);
+    `,
+  },
+]; 
 
 export function migrateBuildCiSqlite(db: Database): number[] {
   return migrateSqlite(db, 'build_ci', buildCiSqliteMigrations);

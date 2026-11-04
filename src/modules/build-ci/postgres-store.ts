@@ -18,6 +18,10 @@ interface VersionRow {
   created_at: string;
   created_by: string;
   rollback_of_version: number | string | null;
+  template_id: string | null;
+  template_version: number | string | null;
+  template_hash: string | null;
+  template_publisher_workspace_id: string | null;
 }
 
 interface RunRow {
@@ -43,6 +47,7 @@ function versionFromRow(row: VersionRow): PipelineVersion {
     row.created_by,
     row.created_at,
     row.rollback_of_version === null ? undefined : Number(row.rollback_of_version),
+    row.template_id && row.template_version !== null && row.template_hash && row.template_publisher_workspace_id ? { templateId: row.template_id, templateVersion: Number(row.template_version), templateHash: row.template_hash, publisherWorkspaceId: row.template_publisher_workspace_id } : undefined,
   );
   if (version.pipelineId !== row.pipeline_id || version.definitionHash !== row.definition_hash) {
     throw new Error(`Stored pipeline version ${row.pipeline_id}@${row.version} failed integrity verification.`);
@@ -92,7 +97,7 @@ export class PostgresBuildCiStore implements PipelineStore {
         (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [
         input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
-        snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null,
+        snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null,
       ]);
       await conn.query(`UPDATE build_pipelines SET current_version = $1, updated_at = $2
         WHERE workspace_id = $3 AND pipeline_id = $4`, [snapshot.version, now, input.workspaceId, snapshot.pipelineId]);
