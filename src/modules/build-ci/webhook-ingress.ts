@@ -31,10 +31,16 @@ export interface WebhookIngressConnection extends WebhookConnectionBinding {
  * Split lookup contract: ingress may resolve a signing secret, while background delivery
  * processing must use resolveForDelivery and must never retrieve secret material.
  */
-export interface WebhookConnectionResolver {
+export interface WebhookIngressConnectionResolver {
   resolveForIngress(provider: WebhookProvider, connectionId: string): Promise<WebhookIngressConnection | null>;
+}
+
+export interface WebhookDeliveryConnectionResolver {
   resolveForDelivery(provider: WebhookProvider, connectionId: string): Promise<WebhookConnectionBinding | null>;
 }
+
+/** Complete adapter implemented by the trusted provider-integration subsystem. */
+export interface WebhookConnectionResolver extends WebhookIngressConnectionResolver, WebhookDeliveryConnectionResolver {}
 
 export type WebhookIngressErrorCode = 'connection_unavailable' | 'invalid_signature' | 'repository_mismatch';
 
@@ -55,12 +61,12 @@ export interface WebhookIngressResult {
 }
 
 export class WebhookIngressService {
-  private readonly connections: WebhookConnectionResolver;
+  private readonly connections: WebhookIngressConnectionResolver;
   private readonly deliveries: WebhookDeliveryStore;
   private readonly now: () => number;
 
   constructor(options: {
-    connections: WebhookConnectionResolver;
+    connections: WebhookIngressConnectionResolver;
     deliveries: WebhookDeliveryStore;
     now?: () => number;
   }) {

@@ -1,10 +1,10 @@
 import type { BuildCiService } from './store.ts';
 import type { WebhookDeliveryStore } from './webhook-deliveries.ts';
-import type { WebhookConnectionResolver } from './webhook-ingress.ts';
+import type { WebhookDeliveryConnectionResolver } from './webhook-ingress.ts';
 
 export interface WebhookProcessorOptions {
   readonly deliveries: WebhookDeliveryStore;
-  readonly connections: WebhookConnectionResolver;
+  readonly connections: WebhookDeliveryConnectionResolver;
   readonly buildCi: BuildCiService;
   readonly now?: () => number;
   readonly leaseMs?: number;
@@ -31,7 +31,7 @@ export interface WebhookProcessResult {
  */
 export class WebhookDeliveryProcessor {
   private readonly deliveries: WebhookDeliveryStore;
-  private readonly connections: WebhookConnectionResolver;
+  private readonly connections: WebhookDeliveryConnectionResolver;
   private readonly buildCi: BuildCiService;
   private readonly now: () => number;
   private readonly leaseMs: number;
