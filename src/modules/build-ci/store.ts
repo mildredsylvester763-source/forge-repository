@@ -318,7 +318,8 @@ export class BuildCiService {
     requiredId(input.templateId, 'templateId');
     requiredId(input.actorId, 'actorId');
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'read_template' });
-    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
+    const template = await this.templates.getTemplate(input.templateId);
+    if (!template || (template.publisherWorkspaceId !== input.workspaceId && !(await this.templates.canAccess(input.templateId, input.workspaceId)))) throw new PipelineNotFoundError();
     return this.templates.listEvents(input.templateId, input.workspaceId);
   }
 

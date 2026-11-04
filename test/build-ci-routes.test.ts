@@ -65,7 +65,9 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     const revokeTemplateShare = routes['/v1/build-ci/templates/revoke-share']?.POST;
     const importTemplate = routes['/v1/build-ci/templates/import']?.POST;
     const readTemplateVersion = routes['/v1/build-ci/templates/version']?.GET;
-    assert.ok(publishTemplate && listTemplates && shareTemplate && revokeTemplateShare && importTemplate && readTemplateVersion);
+    const setTemplateStatus = routes['/v1/build-ci/templates/status']?.POST;
+    const listTemplateEvents = routes['/v1/build-ci/templates/events']?.GET;
+    assert.ok(publishTemplate && listTemplates && shareTemplate && revokeTemplateShare && importTemplate && readTemplateVersion && setTemplateStatus && listTemplateEvents);
     const published = await publishTemplate(context({
       workspaceId: 'workspace-a', pipelineId: 'http-pipeline', name: 'Quality gate template',
       visibility: 'workspace', changelog: 'Initial reviewed release',
@@ -114,6 +116,31 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     assert.equal(revoked.status, 200);
     const afterRevoke = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
     assert.equal((afterRevoke.body as { templates: unknown[] }).templates.length, 0);
+    const consumerEvents = await listTemplateEvents(context({}, 'valid-session', { workspaceId: 'workspace-b', templateId: template.templateId }));
+    const consumerEventTypes = (consumerEvents.body as { events: { eventType: string }[] }).events.map((event) => event.eventType);
+    assert.ok(consumerEventTypes.includes('share_granted'));
+    assert.ok(consumerEventTypes.includes('imported'));
+
+    const deprecated = await setTemplateStatus(context({
+      workspaceId: 'workspace-a', templateId: template.templateId, status: 'deprecated',
+    }, 'valid-session'));
+    assert.equal(deprecated.status, 200);
+    const publisherTemplates = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-a' }));
+    assert.equal((publisherTemplates.body as { templates: { status: string }[] }).templates[0]?.status, 'deprecated');
+    const revokedStatus = await setTemplateStatus(context({
+      workspaceId: 'workspace-a', templateId: template.templateId, status: 'revoked',
+    }, 'valid-session'));
+    assert.equal(revokedStatus.status, 200);
+    const publisherEvents = await listTemplateEvents(context({}, 'valid-session', { workspaceId: 'workspace-a', templateId: template.templateId }));
+    const publisherEventTypes = (publisherEvents.body as { events: { eventType: string }[] }).events.map((event) => event.eventType);
+    assert.ok(publisherEventTypes.includes('created'));
+    assert.ok(publisherEventTypes.includes('version_published'));
+    assert.ok(publisherEventTypes.includes('share_revoked'));
+    assert.ok(publisherEventTypes.includes('deprecated'));
+    assert.ok(publisherEventTypes.includes('revoked'));
+    await assert.rejects(() => readTemplateVersion(context({}, 'valid-session', {
+      workspaceId: 'workspace-a', templateId: template.templateId, version: '1',
+    })));
     await assert.rejects(() => importTemplate(context({
       workspaceId: 'workspace-b', templateId: template.templateId, templateVersion: 1, pipelineId: 'blocked-import',
     }, 'valid-session')));

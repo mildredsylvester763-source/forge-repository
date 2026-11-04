@@ -324,6 +324,37 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
         } catch (err) { return mapError(err); }
       },
     },
+
+    '/v1/build-ci/templates/status': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'templateId', 'status'], ['workspaceId', 'templateId', 'status']);
+        if (body.status !== 'deprecated' && body.status !== 'revoked') throw new AppError(400, 'invalid_request', 'status must be deprecated or revoked.');
+        try {
+          await buildCi.setTemplateStatus({
+            workspaceId: id(body.workspaceId, 'workspaceId'),
+            templateId: id(body.templateId, 'templateId'),
+            status: body.status,
+            actorId,
+          });
+          return { status: 200, body: { status: body.status } };
+        } catch (err) { return mapError(err); }
+      },
+    },
+    '/v1/build-ci/templates/events': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const events = await buildCi.listTemplateEvents({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            templateId: id(ctx.query('templateId'), 'templateId'),
+            actorId,
+          });
+          return { status: 200, body: { events } };
+        } catch (err) { return mapError(err); }
+      },
+    },
     '/v1/build-ci/templates/import': {
       POST: async (ctx) => {
         const actorId = await actor(ctx);
