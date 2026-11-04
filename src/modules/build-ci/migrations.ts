@@ -231,6 +231,29 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
       CREATE INDEX build_ci_provider_connections_workspace_idx ON build_ci_provider_connections (workspace_id, provider, status);
     `,
   },
+
+  {
+    version: 8,
+    name: 'audited_webhook_dead_letter_replay',
+    sql: `
+      CREATE TABLE build_ci_webhook_delivery_events (
+        event_id TEXT PRIMARY KEY,
+        delivery_row_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('replayed')),
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY (delivery_row_id) REFERENCES build_ci_webhook_deliveries (delivery_row_id)
+      ) STRICT;
+      CREATE INDEX build_ci_webhook_delivery_events_scope_idx
+        ON build_ci_webhook_delivery_events (workspace_id, delivery_row_id, occurred_at);
+      CREATE TRIGGER build_ci_webhook_delivery_events_block_update BEFORE UPDATE ON build_ci_webhook_delivery_events
+        BEGIN SELECT RAISE(ABORT, 'webhook delivery events are append-only'); END;
+      CREATE TRIGGER build_ci_webhook_delivery_events_block_delete BEFORE DELETE ON build_ci_webhook_delivery_events
+        BEGIN SELECT RAISE(ABORT, 'webhook delivery events are append-only'); END;
+    `,
+  },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
   {
     version: 1,
@@ -474,6 +497,33 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         CHECK ((status = 'active' AND revoked_at IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL))
       );
       CREATE INDEX build_ci_provider_connections_workspace_idx ON build_ci_provider_connections (workspace_id, provider, status);
+    `,
+  },
+
+  {
+    version: 8,
+    name: 'audited_webhook_dead_letter_replay',
+    sql: `
+      CREATE TABLE build_ci_webhook_delivery_events (
+        event_id TEXT PRIMARY KEY,
+        delivery_row_id TEXT NOT NULL REFERENCES build_ci_webhook_deliveries (delivery_row_id),
+        workspace_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN ('replayed')),
+        occurred_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL
+      );
+      CREATE INDEX build_ci_webhook_delivery_events_scope_idx
+        ON build_ci_webhook_delivery_events (workspace_id, delivery_row_id, occurred_at);
+      CREATE FUNCTION build_ci_webhook_delivery_events_block_change() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'webhook delivery events are append-only'; END;
+      $$;
+      CREATE TRIGGER build_ci_webhook_delivery_events_block_update BEFORE UPDATE ON build_ci_webhook_delivery_events
+        FOR EACH ROW EXECUTE FUNCTION build_ci_webhook_delivery_events_block_change();
+      CREATE TRIGGER build_ci_webhook_delivery_events_block_delete BEFORE DELETE ON build_ci_webhook_delivery_events
+        FOR EACH ROW EXECUTE FUNCTION build_ci_webhook_delivery_events_block_change();
+      CREATE TRIGGER build_ci_webhook_delivery_events_block_truncate BEFORE TRUNCATE ON build_ci_webhook_delivery_events
+        FOR EACH STATEMENT EXECUTE FUNCTION build_ci_webhook_delivery_events_block_change();
     `,
   },
 ]; 
