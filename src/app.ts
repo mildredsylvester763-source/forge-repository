@@ -12,9 +12,12 @@ import {
   BuildCiService,
   PostgresBuildCiStore,
   SqliteBuildCiStore,
+  PostgresPipelineTemplateStore,
+  SqlitePipelineTemplateStore,
   migrateBuildCiSqlite,
   type PipelineAuthorizer,
   type PipelineStore,
+  type PipelineTemplateStore,
   SqliteWorkspaceMembershipReader,
   PostgresWorkspaceMembershipReader,
   createWorkspacePipelineAuthorizer,
@@ -82,6 +85,7 @@ interface Storage {
   uow: IdentityUnitOfWork;
   buildCiDb: Database | null;
   buildCiStore: PipelineStore;
+  buildCiTemplates: PipelineTemplateStore;
   workspaceMemberships: WorkspaceMembershipReader;
 }
 
@@ -97,6 +101,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }),
       buildCiDb: null,
       buildCiStore: new PostgresBuildCiStore(pool),
+      buildCiTemplates: new PostgresPipelineTemplateStore(pool),
       workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
     };
   }
@@ -115,6 +120,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }),
       buildCiDb: null,
       buildCiStore: new SqliteBuildCiStore(db),
+      buildCiTemplates: new SqlitePipelineTemplateStore(db),
       workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
     };
   }
@@ -130,6 +136,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }),
     buildCiDb,
     buildCiStore: new SqliteBuildCiStore(buildCiDb),
+    buildCiTemplates: new SqlitePipelineTemplateStore(buildCiDb),
     workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
   };
 }
@@ -146,6 +153,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   // Workspace permissions are read from persisted membership records; identity alone grants no access.
   const buildCi = new BuildCiService({
     store: storage.buildCiStore,
+    templates: storage.buildCiTemplates,
     authorize: overrides.buildCiAuthorize ?? createWorkspacePipelineAuthorizer(storage.workspaceMemberships),
   });
 

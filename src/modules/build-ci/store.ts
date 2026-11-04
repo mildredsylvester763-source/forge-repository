@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PipelineTemplateStore, PipelineTemplate, PipelineTemplateVersion, PipelineTemplateVisibility } from './templates.ts';
 import {
   buildDryRunPlan,
   createPipelineVersion,
@@ -8,6 +9,7 @@ import {
   validatePipelineDefinition,
   type PipelineDefinition,
   type PipelineVersion,
+  type PipelineTemplateSource,
   type TriggerEvent,
   type TriggerEvaluation,
   resolvePipelineInputs,
@@ -50,6 +52,7 @@ export interface SavePipelineVersionInput {
   readonly createdBy: string;
   readonly createdAt?: string;
   readonly rollbackOfVersion?: number;
+  readonly templateSource?: PipelineTemplateSource;
 }
 
 export interface CreatePipelineRunInput {
@@ -76,7 +79,7 @@ export interface PipelineStore {
   getRun(workspaceId: string, pipelineId: string, runId: string): Promise<PipelineRun | null>;
 }
 
-export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger';
+export type PipelineAction = 'read' | 'create' | 'rollback' | 'dry_run' | 'trigger' | 'list_templates' | 'read_template' | 'publish_template' | 'share_template' | 'import_template';
 
 export interface PipelineAuthorizationRequest {
   readonly workspaceId: string;
@@ -118,9 +121,11 @@ function requiredId(value: string, field: string): void {
 export class BuildCiService {
   private readonly store: PipelineStore;
   private readonly authorize: PipelineAuthorizer;
+  private readonly templates: PipelineTemplateStore;
 
-  constructor(options: { store: PipelineStore; authorize: PipelineAuthorizer }) {
+  constructor(options: { store: PipelineStore; templates: PipelineTemplateStore; authorize: PipelineAuthorizer }) {
     this.store = options.store;
+    this.templates = options.templates;
     this.authorize = options.authorize;
   }
 
@@ -158,6 +163,7 @@ export class BuildCiService {
       createdBy: input.actorId,
       createdAt: rollback.createdAt,
       rollbackOfVersion: rollback.rollbackOfVersion,
+      ...(rollback.templateSource ? { templateSource: rollback.templateSource } : {}),
     });
   }
 
@@ -208,6 +214,126 @@ export class BuildCiService {
     const definition = validatePipelineDefinition(input.definition);
     await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: definition.id, actorId: input.actorId, action: 'dry_run' });
     return buildDryRunPlan(definition, input.event, input.inputs);
+  }
+
+  async publishTemplate(input: {
+    workspaceId: string; pipelineId: string; actorId: string; name: string; description?: string;
+    sourceVersion?: number; visibility?: PipelineTemplateVisibility; changelog: string; createdAt?: string;
+  }): Promise<PipelineTemplateVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    requiredId(input.name, 'name');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'publish_template' });
+    const source = input.sourceVersion === undefined
+      ? await this.store.getLatestVersion(input.workspaceId, input.pipelineId)
+      : await this.store.getVersion(input.workspaceId, input.pipelineId, input.sourceVersion);
+    if (!source) throw new PipelineNotFoundError();
+    return this.templates.create({
+      templateId: randomUUID(),
+      publisherWorkspaceId: input.workspaceId,
+      source,
+      name: input.name,
+      ...(input.description ? { description: input.description } : {}),
+      visibility: input.visibility ?? 'workspace',
+      changelog: input.changelog,
+      createdBy: input.actorId,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+    });
+  }
+
+  async publishTemplateVersion(input: {
+    workspaceId: string; templateId: string; actorId: string; sourceVersion?: number; changelog: string; createdAt?: string;
+  }): Promise<PipelineTemplateVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.actorId, 'actorId');
+    const template = await this.templates.getTemplate(input.templateId);
+    if (!template || template.publisherWorkspaceId !== input.workspaceId || template.status !== 'active') throw new PipelineNotFoundError();
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: template.sourcePipelineId, actorId: input.actorId, action: 'publish_template' });
+    const source = input.sourceVersion === undefined
+      ? await this.store.getLatestVersion(input.workspaceId, template.sourcePipelineId)
+      : await this.store.getVersion(input.workspaceId, template.sourcePipelineId, input.sourceVersion);
+    if (!source) throw new PipelineNotFoundError();
+    return this.templates.publishVersion({
+      templateId: input.templateId, publisherWorkspaceId: input.workspaceId, source,
+      changelog: input.changelog, createdBy: input.actorId, createdAt: input.createdAt ?? new Date().toISOString(),
+    });
+  }
+
+  async shareTemplate(input: { workspaceId: string; templateId: string; targetWorkspaceId: string; actorId: string; createdAt?: string }): Promise<void> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.targetWorkspaceId, 'targetWorkspaceId');
+    requiredId(input.actorId, 'actorId');
+    if (input.targetWorkspaceId === input.workspaceId) throw new TypeError('targetWorkspaceId must be a different workspace');
+    const template = await this.templates.getTemplate(input.templateId);
+    if (!template || template.publisherWorkspaceId !== input.workspaceId) throw new PipelineNotFoundError();
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: template.sourcePipelineId, actorId: input.actorId, action: 'share_template' });
+    await this.templates.grant(input.templateId, input.workspaceId, input.targetWorkspaceId, input.actorId, input.createdAt ?? new Date().toISOString());
+  }
+
+  async revokeTemplateShare(input: { workspaceId: string; templateId: string; targetWorkspaceId: string; actorId: string; revokedAt?: string }): Promise<void> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.targetWorkspaceId, 'targetWorkspaceId');
+    requiredId(input.actorId, 'actorId');
+    const template = await this.templates.getTemplate(input.templateId);
+    if (!template || template.publisherWorkspaceId !== input.workspaceId) throw new PipelineNotFoundError();
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: template.sourcePipelineId, actorId: input.actorId, action: 'share_template' });
+    await this.templates.revoke(input.templateId, input.workspaceId, input.targetWorkspaceId, input.revokedAt ?? new Date().toISOString());
+  }
+
+  async listTemplates(input: { workspaceId: string; actorId: string }): Promise<readonly PipelineTemplate[]> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.actorId, 'actorId');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: 'template-catalog', actorId: input.actorId, action: 'list_templates' });
+    return this.templates.listAccessible(input.workspaceId);
+  }
+
+  async getTemplateVersion(input: { workspaceId: string; templateId: string; version: number; actorId: string }): Promise<PipelineTemplateVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.actorId, 'actorId');
+    if (!Number.isSafeInteger(input.version) || input.version < 1) throw new TypeError('version must be a positive integer');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'read_template' });
+    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
+    const version = await this.templates.getVersion(input.templateId, input.version);
+    if (!version) throw new PipelineNotFoundError();
+    return version;
+  }
+
+  async importTemplate(input: {
+    workspaceId: string; templateId: string; templateVersion: number; pipelineId: string; name?: string; actorId: string; createdAt?: string;
+  }): Promise<PipelineVersion> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    if (!Number.isSafeInteger(input.templateVersion) || input.templateVersion < 1) throw new TypeError('templateVersion must be a positive integer');
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'create' });
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'import_template' });
+    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
+    const template = await this.templates.getTemplate(input.templateId);
+    const source = await this.templates.getVersion(input.templateId, input.templateVersion);
+    if (!template || template.status !== 'active' || !source) throw new PipelineNotFoundError();
+    const definition = validatePipelineDefinition({
+      ...source.definition,
+      id: input.pipelineId,
+      ...(input.name ? { name: input.name } : {}),
+    });
+    return this.store.saveVersion({
+      workspaceId: input.workspaceId,
+      definition,
+      createdBy: input.actorId,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      templateSource: {
+        templateId: input.templateId,
+        templateVersion: source.version,
+        templateHash: source.definitionHash,
+        publisherWorkspaceId: template.publisherWorkspaceId,
+      },
+    });
   }
 
   async trigger(input: { workspaceId: string; pipelineId: string; actorId: string; event: TriggerEvent; inputs?: unknown; createdAt?: string }): Promise<TriggerPipelineResult> {

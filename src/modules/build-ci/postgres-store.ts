@@ -92,10 +92,10 @@ export class PostgresBuildCiStore implements PipelineStore {
       const current = head.rows[0];
       if (!current) throw new Error('Pipeline head row was not created.');
       const nextVersion = Number(current.current_version) + 1;
-      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion);
+      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
       await conn.query(`INSERT INTO build_pipeline_versions
-        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [
+        (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [
         input.workspaceId, snapshot.pipelineId, snapshot.version, JSON.stringify(snapshot.definition), snapshot.definitionHash,
         snapshot.createdAt, snapshot.createdBy, snapshot.rollbackOfVersion ?? null, snapshot.templateSource?.templateId ?? null, snapshot.templateSource?.templateVersion ?? null, snapshot.templateSource?.templateHash ?? null, snapshot.templateSource?.publisherWorkspaceId ?? null,
       ]);

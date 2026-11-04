@@ -91,7 +91,7 @@ export class SqliteBuildCiStore implements PipelineStore {
         .get(input.workspaceId, input.definition.id) as { current_version: number } | undefined;
       if (!current) throw new Error('Pipeline head row was not created.');
       const nextVersion = Number(current.current_version) + 1;
-      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion);
+      const snapshot = createPipelineVersion(input.definition, nextVersion, input.createdBy, now, input.rollbackOfVersion, input.templateSource);
       this.db.prepare(`INSERT INTO build_pipeline_versions
         (workspace_id, pipeline_id, version, definition_json, definition_hash, created_at, created_by, rollback_of_version, template_id, template_version, template_hash, template_publisher_workspace_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
