@@ -91,6 +91,7 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     });
     assert.deepEqual(events.map((event) => event.eventType), ['created', 'secret_reference_rotated', 'revoked']);
     assert.equal(events.every((event) => event.actorId === 'owner-a'), true);
+    assert.equal((await store.find('github', 'github-app-1'))?.actorId, 'member-a');
     assert.deepEqual(events[1]?.metadata, { secretReferenceChanged: true });
     assert.equal(JSON.stringify(events).includes('vault://'), false, 'audit metadata must not disclose secret references');
     assert.throws(
