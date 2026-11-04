@@ -1,7 +1,7 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { RouteTable, RequestContext } from '../../kernel/http.ts';
-import type { IdentityService, CookieSettings as Never } from '../identity/identity-service.ts';
+import type { IdentityService } from '../identity/identity-service.ts';
 import type { BuildCiService } from './store.ts';
 import type { JsonValue, TriggerEvent } from './pipeline.ts';
 
