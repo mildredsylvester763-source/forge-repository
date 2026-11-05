@@ -25,6 +25,22 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
   private readonly sessions: InMemorySessionStore;
   private readonly events: EventStore;
   private readonly clock: Clock;
+  private readonly locks = new Map<string, Promise<void>>();
+
+  private async exclusive<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => gate);
+    this.locks.set(key, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.locks.get(key) === tail) this.locks.delete(key);
+    }
+  }
 
   constructor(options: { users: InMemoryUserStore; sessions: InMemorySessionStore; events: EventStore; clock: Clock }) {
     this.users = options.users;
