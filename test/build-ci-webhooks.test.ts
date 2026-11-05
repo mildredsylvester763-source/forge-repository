@@ -241,7 +241,7 @@ test('webhook delivery claims use leases, bounded retries, and reject stale work
     assert.equal(final?.status, 'failed');
     assert.equal(final?.attempts, 3);
     assert.equal(final?.leaseOwner, undefined);
-    assert.match(final?.lastError ?? '', /permanent processing failure/);
+    assert.equal(final?.lastError, 'Webhook delivery processing failed.');
   } finally {
     db.close();
   }
