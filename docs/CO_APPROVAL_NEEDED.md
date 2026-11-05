@@ -95,3 +95,27 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 - CO-091, CO-093 and CO-096 remain partial with bounded, tested implementations only; deployment dependencies and owner decisions are listed above.
 - CO-100 remains owner-blocked until the exact catalogue wording and conflict authority/merge/delete policy are supplied. No offline synchronization behavior was guessed.
 - CO-092, CO-094, CO-095 and CO-097–CO-099 have no individual feature descriptions in the repository; exact acceptance text is needed before implementation.
+
+## CO-006 feature delta and sealed carry-forward register (2026-11-05)
+
+**Feature transition:** CO-001 foundation → CO-006 session manager implementation candidate.
+
+**CO-006 owner approval state: NOT GRANTED.** The owner authorized continuous Core implementation, but the exact original CO-006 acceptance text is not present in this repository snapshot. The routes and field projection in `docs/features/CO-006.md` are a provisional engineering contract, not proof of catalogue equivalence or positive owner acceptance. No approval is inferred from silence.
+
+| Ref | Originating feature/range | Current relevance | Approval / external state | Carry-forward rule |
+| --- | --- | --- | --- | --- |
+| CO-002 / CO-003 | Identity extension | Passkey/social sign-in follow-on | Product provider scope remains acceptance-text-dependent; production origins and OAuth client credentials are not supplied and are activation-time items | Keep attached to their own feature work; do not drop when CO-006 closes |
+| CO-004 | Identity extension | Enterprise SSO | Customer issuer metadata, certificates and tenant federation settings are not supplied; protocol implementation may proceed from verified requirements | Carry all trust-material requirements to the first customer SSO activation |
+| CO-005–014 | Identity extension | MFA, native tokens, recovery, agent identity and anomaly work | Exact per-feature acceptance text and any unresolved native-token/agent lifecycle semantics remain unverified; email delivery credentials are activation-time | Keep each dependency mapped to its actual CO feature; no cross-feature assumption |
+| CO-015–028 / CO-017 | Workspace and tenancy | Required before downstream tenant-scoped sessions/policy | App-side tenant scope is the recorded direction; PostgreSQL RLS as a second lock remains owner decision NOT GRANTED | Carry RLS decision into tenant isolation and downstream authorization; don't block unrelated work |
+| CO-018 | Workspace/security | Encryption at rest and backup key custody | KMS/key source, rotation, recovery and backup encryption boundary NOT APPROVED | Preserve until the encryption design is ready |
+| CO-029–044 | Permissions and policy | Future authorization of sessions/resources/workspaces | Canonical role vocabulary, delegation and policy precedence NOT APPROVED; exact catalogue text absent | Do not apply invented roles to CO-006; carry unchanged to policy implementation |
+| CO-045–050 | Project intelligence graph | First six graph IDs | Node/edge ontology, provenance, visibility, deletion and retention semantics NOT APPROVED; exact IDs' titles unavailable | Carry all ontology decisions forward; no graph schema is inferred from CO-006 |
+| CO-063/064/076 | Event backbone | Auditing session actions depends on internal event append; tail truncation protection is separate | Independent anchor destination, retention and credentials NOT SUPPLIED / NOT APPROVED | Session audit events do not close the external anchor requirement |
+| CO-065 | Atomic event writes | CO-006 individual revocation now uses the identity UOW | Durable subscriber outbox, offsets, retries and dead-letter behavior remain NOT APPROVED | Transactional source write does not close subscriber-delivery design |
+| CO-091 / CO-093 / CO-096 | Platform reliability | Deployment and operations | SLOs, shared rate-limit store/abuse budget, R2 credentials and backup RPO/RTO NOT SUPPLIED / NOT APPROVED | Preserve for the corresponding production reliability features |
+| CO-100 | Offline sync | Not needed for CO-006 | Exact catalogue criteria and merge/delete/authority policy NOT APPROVED | Remains explicitly owner-blocked; never infer sync semantics |
+
+**CO-006 external dependency result:** none is required to exercise the local session listing/revocation backend. Production deployment still inherits the existing PostgreSQL, email, key-custody and operational dependency records above; none is considered supplied by this feature.
+
+The register is append-only in meaning: a feature completion may change an item's current relevance or next target, but it must not erase the original requirement, evidence, approval state or external credential requirement. A status may change to APPROVED only after explicit owner approval is captured.
