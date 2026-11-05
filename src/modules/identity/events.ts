@@ -7,6 +7,7 @@ export const IdentityEvents = {
   UserRegistered: 'identity.user.registered',
   RegistrationRejected: 'identity.registration.rejected',
   SignInSucceeded: 'identity.sign_in.succeeded',
+  SignInAnomalyObserved: 'identity.sign_in.anomaly_observed',
   SignInFailed: 'identity.sign_in.failed',
   SignInThrottled: 'identity.sign_in.throttled',
   SignedOut: 'identity.sign_out.completed',
