@@ -124,3 +124,37 @@ test('provider path adapter rejects malformed repository identities before makin
   await assert.rejects(() => resolver.resolve({ ...githubInput, provider: 'gitlab', repository: 'team//api' }), /repository/);
   assert.equal(calls, 0);
 });
+
+
+test('GitHub adapter probes the next page when a full page arrives without pagination headers', async () => {
+  const pages: string[] = [];
+  const transport: ProviderApiTransport = {
+    get: async (_path, query) => {
+      pages.push(query.page!);
+      return query.page === '1'
+        ? { status: 200, headers: {}, body: Array.from({ length: 100 }, (_, index) => ({ filename: `src/file-${index}.ts` })) }
+        : { status: 200, headers: {}, body: [] };
+    },
+  };
+  const result = await makeResolver(transport).resolve(githubInput);
+  assert.deepEqual(pages, ['1', '2']);
+  assert.equal(result.paths.length, 100);
+  assert.equal(result.complete, true);
+});
+
+test('provider adapter reports incomplete data when pagination exceeds its configured page budget', async () => {
+  const transport: ProviderApiTransport = {
+    get: async () => ({
+      status: 200,
+      headers: { Link: '<https://api.github.com/repos/team/api/pulls/42/files?page=2>; rel="next"' },
+      body: Array.from({ length: 100 }, (_, index) => ({ filename: `src/file-${index}.ts` })),
+    }),
+  };
+  const resolver = new ProviderPullRequestChangedFilesResolver({
+    resolve: async () => transport,
+  }, { maxPages: 1 });
+  const result = await resolver.resolve(githubInput);
+  assert.equal(result.paths.length, 100);
+  assert.equal(result.complete, false);
+  assert.equal(result.reason, 'provider_limit');
+});
