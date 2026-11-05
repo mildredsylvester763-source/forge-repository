@@ -201,3 +201,18 @@ The role/person dependencies above are retained as durable records. Advancing to
 - Customer activation inputs remain: issuer/IdP metadata, signing certificates or JWKS trust material, entity ID/client ID and secret where applicable, callback/ACS URLs, tenant mapping, and a test IdP account. Supply these through deployment/customer configuration, never source control.
 - Safe independent work resumes once the protocol and provisioning contract are verified. The CO-003 provider-neutral OIDC authorization transaction is not SSO and must not be counted as CO-004.
 - No owner approval is inferred; the approval state remains **NOT GRANTED**.
+
+
+## CO-008–CO-014 individual owner-dependency register (2026-11-05)
+
+| Feature | Required input / approval | Why it is required | Carry-forward state |
+| --- | --- | --- | --- |
+| CO-008 | Exact recovery/verification acceptance text; token lifetime, replay, account-enumeration and identity-proofing policy; session handling after recovery; mail provider account, sender/domain verification and API credentials | Account recovery can transfer account control. The service must not invent a weaker proofing path or expose account existence. Email delivery credentials are required only for live activation. | NOT SUPPLIED / NOT APPROVED |
+| CO-009 | Exact desktop token contract: intended client audience, device registration (if any), token expiry/revocation and secure-storage requirements | CO-007 native bearer transport explicitly does not close the separate desktop-token feature. | NOT SUPPLIED / NOT APPROVED |
+| CO-010 | Exact CO-010 Part 01 description and acceptance criteria | No feature title or behavior is evidenced in the repository; guessing would fabricate requirements. | NOT SUPPLIED |
+| CO-011 | Exact agent identity requirements; agent principal types, credential issuance and rotation authority, scopes, delegation and revocation rules | Event actor kind `agent` is only audit metadata; it does not authenticate an agent. | NOT SUPPLIED / NOT APPROVED |
+| CO-012 | Exact anomaly acceptance criteria; explicit approval for any score threshold, alert recipient, challenge/lockout/revocation action or new historical telemetry retention | Current implementation is observe-only and uses currently active session metadata. | NOT SUPPLIED / NOT APPROVED |
+| CO-013 | Exact CO-013 Part 01 description and acceptance criteria | No feature title or behavior is evidenced in the repository; guessing would fabricate requirements. | NOT SUPPLIED |
+| CO-014 | Exact CO-014 Part 01 description and acceptance criteria | No feature title or behavior is evidenced in the repository; guessing would fabricate requirements. | NOT SUPPLIED |
+
+The existing mail-provider, KMS/key-custody and external IdP dependencies remain in the register. These entries do not replace or discharge those earlier dependencies.
