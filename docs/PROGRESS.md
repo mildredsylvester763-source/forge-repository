@@ -490,3 +490,12 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - **Classification:** implementation candidate present, but catalogue acceptance remains unverified until the exact owner-supplied CO-006 wording is available. Do not mark CO-006 as owner-accepted solely because the implementation exists.
 - **Verification boundary:** CO-focused workflow now typechecks the kernel/identity slice and directly imported tests without importing `src/app.ts`, which pulls in the unrelated AI module. The full repository CI still has a separate AI TypeScript syntax blocker in `src/modules/ai-training/sqlite-stores.ts`; no AI files were changed here. A real PostgreSQL connection is still not configured in the CO workflow, so the PostgreSQL adapter fallback is not native PostgreSQL proof.
 - **Delta carry-forward:** no CO-002/003 provider origins or credentials, CO-004 SSO trust metadata, CO-005/007/008/009 identity contracts, CO-017 RLS decision, CO-018 key custody, policy vocabulary, graph ontology, external event anchor, durable event-delivery policy, or CO-093/096 production deployment dependencies were removed or silently approved. They remain in `docs/CO_APPROVAL_NEEDED.md`.
+
+## CO-012 sign-in anomaly detection delta (2026-11-05)
+
+- Built an observe-only identity anomaly detector on top of the active-session query added for CO-006.
+- After a valid password check, the service compares the current IP/user-agent pair against that account's currently active sessions. It emits only signal names and a baseline label; raw IP and user-agent values are not copied into the anomaly event.
+- A missing baseline, incomplete metadata or detector/store failure does not block sign-in. The implementation does not create risk scores, challenge thresholds, lockouts, session revocations, geolocation conclusions or notification actions.
+- Added unit coverage for same-device, new-IP, new-user-agent, device-pair change, no baseline, insufficient metadata and value non-disclosure. Added a service-level test for the emitted value-safe event and successful sign-in.
+- **Classification:** partial implementation only. Current-session comparison is not a complete behavioral anomaly system; exact CO-012 catalogue criteria and owner-approved alert/challenge/retention semantics remain outstanding.
+- **Delta dependency:** depends on CO-006 session-store active-session enumeration. CO-006's owner-approval state remains unchanged until exact CO-006 catalog wording is reconciled.
