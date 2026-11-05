@@ -28,6 +28,7 @@
     "test/passkey-service.test.ts",
     "test/passkey-routes.test.ts",
     "test/config.test.ts",
-    "test/oidc-authorization.test.ts"
+    "test/oidc-authorization.test.ts",
+    "test/totp.test.ts"
   ]
 }
