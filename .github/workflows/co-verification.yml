@@ -1,0 +1,36 @@
+name: CO focused verification
+
+on:
+  push:
+    branches:
+      - mistral
+    paths:
+      - 'src/kernel/**'
+      - 'src/modules/identity/**'
+      - 'test/co-065-atomic-signout.test.ts'
+      - 'test/backup.test.ts'
+      - 'test/rate-limit.test.ts'
+      - 'test/identity-throttle.test.ts'
+      - '.github/workflows/co-verification.yml'
+  pull_request:
+    branches:
+      - mistral
+
+permissions:
+  contents: read
+
+jobs:
+  co-focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run independent CO kernel and identity regressions
+        run: |
+          node --test \
+            test/co-065-atomic-signout.test.ts \
+            test/backup.test.ts \
+            test/rate-limit.test.ts \
+            test/identity-throttle.test.ts
