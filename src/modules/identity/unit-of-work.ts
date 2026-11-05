@@ -71,6 +71,9 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
+      throw new Error('session user update must target the session user');
+    }
     await this.exclusive(`user:${args.session.userId}`, async () => {
       const previousUser = args.userUpdate ? await this.users.findById(args.userUpdate.userId) : null;
       if (args.userUpdate && !previousUser) throw new Error('user not found');
