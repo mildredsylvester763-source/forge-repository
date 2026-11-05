@@ -26,6 +26,7 @@ on:
       - 'test/passkey-routes.test.ts'
       - 'test/config.test.ts'
       - 'test/oidc-authorization.test.ts'
+      - 'test/totp.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-007-native-token.test.ts'
@@ -70,6 +71,7 @@ jobs:
             test/passkey-routes.test.ts \
             test/config.test.ts \
             test/oidc-authorization.test.ts \
+            test/totp.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
