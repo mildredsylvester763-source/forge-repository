@@ -117,8 +117,8 @@ describe('breach checking', () => {
       'not-a-range-row',
       `${suffix}:12garbage`,
       `${suffix}:9007199254740992`,
-      `${suffix}:0\\nmalformed-row`,
-      `${suffix}:0\\n${suffix}:0`,
+      `${suffix}:0\nmalformed-row`,
+      `${suffix}:0\n${suffix}:0`,
     ];
 
     for (const body of invalidBodies) {
