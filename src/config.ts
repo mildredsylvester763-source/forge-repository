@@ -22,6 +22,7 @@ export interface ForgeConfig {
     hashQueue: number;
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
+  passkeys: { rpId: string | null; origins: readonly string[]; rpName: string };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
     databaseUrl: string | null;
@@ -117,6 +118,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     if (production && !origin.startsWith('https://')) throw new ConfigError(`production origins must use https: ${origin}`);
   }
 
+  // WebAuthn is optional until deployment supplies its relying-party hostname and exact browser origins.
+  // Keep the backend implementation available in every environment without inventing production values.
+  const webAuthnRpId = env.FORGE_WEBAUTHN_RP_ID?.trim() || null;
+  const webAuthnOrigins = (env.FORGE_WEBAUTHN_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  const webAuthnRpName = env.FORGE_WEBAUTHN_RP_NAME?.trim() || 'FORGE';
+
   const logN = int(env, 'FORGE_SCRYPT_LOG_N', 17, 10, 22);
   if (production && logN < 17) throw new ConfigError('FORGE_SCRYPT_LOG_N must be at least 17 in production');
 
@@ -174,6 +184,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       baseUrl: env.FORGE_BREACH_URL ?? 'https://api.pwnedpasswords.com',
       timeoutMs: int(env, 'FORGE_BREACH_TIMEOUT_MS', 3000, 100, 30_000),
       checkOnSignIn: env.FORGE_BREACH_ON_SIGN_IN !== 'false',
+    },
+    passkeys: {
+      rpId: webAuthnRpId,
+      origins: webAuthnOrigins,
+      rpName: webAuthnRpName,
     },
     storage: {
       databaseUrl,
