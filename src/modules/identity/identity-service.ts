@@ -195,9 +195,18 @@ export class IdentityService {
     if (!compromised && this.d.checkBreachOnSignIn) {
       const breach = await this.d.breach.check(password);
       if (breach.status === 'breached') {
-        current = await this.d.users.update(current.id, { passwordCompromisedAt: now }, now);
-        compromised = true;
-        await this.emitBestEffort(IdentityEvents.PasswordCompromisedDetected, { kind: 'user', id: current.id }, { type: 'user', id: current.id }, { exposures: breach.count }, meta);
+        current = await this.d.uow.markPasswordCompromised({
+          userId: current.id,
+          now,
+          event: (marked) => this.draft(
+            IdentityEvents.PasswordCompromisedDetected,
+            { kind: 'user', id: marked.id },
+            { type: 'user', id: marked.id },
+            { exposures: breach.count },
+            meta,
+          ),
+        });
+        compromised = current.passwordCompromisedAt !== null;
       }
     }
 
