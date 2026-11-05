@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { LogLevel } from './kernel/logger.ts';
+import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
 
@@ -126,6 +127,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
   const webAuthnRpName = env.FORGE_WEBAUTHN_RP_NAME?.trim() || 'FORGE';
+  if ((webAuthnRpId === null) !== (webAuthnOrigins.length === 0)) {
+    throw new ConfigError('FORGE_WEBAUTHN_RP_ID and FORGE_WEBAUTHN_ORIGINS must be configured together');
+  }
+  if (webAuthnRpId !== null) {
+    try {
+      validateWebAuthnConfig({ rpId: webAuthnRpId, origins: webAuthnOrigins, rpName: webAuthnRpName });
+    } catch (error) {
+      const reason = error instanceof WebAuthnError ? error.code : 'invalid_configuration';
+      throw new ConfigError(`WebAuthn relying-party configuration is invalid: ${reason}`);
+    }
+  }
 
   const logN = int(env, 'FORGE_SCRYPT_LOG_N', 17, 10, 22);
   if (production && logN < 17) throw new ConfigError('FORGE_SCRYPT_LOG_N must be at least 17 in production');
