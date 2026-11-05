@@ -156,6 +156,24 @@ export class SessionService {
     return record;
   }
 
+  /** List only sessions that are active under both absolute and idle expiry rules. */
+  async listActiveForUser(userId: string): Promise<SessionRecord[]> {
+    const now = this.clock();
+    const records = await this.store.listActiveByUser(userId, now);
+    return records
+      .filter((record) => record.revokedAt === null && record.expiresAt > now && now - record.lastSeenAt < this.config.idleTimeoutMs)
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt || b.createdAt - a.createdAt || a.idHash.localeCompare(b.idHash));
+  }
+
+  /** Look up an active session only when it belongs to the authenticated account. */
+  async findActiveForUser(userId: string, idHash: string): Promise<SessionRecord | null> {
+    const record = await this.store.findByHash(idHash);
+    if (!record || record.userId !== userId || record.revokedAt !== null) return null;
+    const now = this.clock();
+    if (record.expiresAt <= now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
+    return record;
+  }
+
   /** Validate token shape and derive its storage key without mutating session state. */
   prepareRevoke(token: string | undefined): { idHash: string; now: number } | null {
     if (!token || !TOKEN_FORMAT.test(token)) return null;
