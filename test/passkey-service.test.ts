@@ -9,6 +9,7 @@ import { InMemoryPasskeyStore } from '../src/modules/identity/passkey-store.ts';
 import { PasskeyService } from '../src/modules/identity/passkey-service.ts';
 import type { IdentityService, PublicUser, SignInResult } from '../src/modules/identity/identity-service.ts';
 import type { StoredPasskey } from '../src/modules/identity/webauthn.ts';
+import type { LoginThrottle } from '../src/modules/identity/throttle.ts';
 
 const now = 1_800_000_100_000;
 const user: PublicUser = {
@@ -19,6 +20,7 @@ const user: PublicUser = {
 };
 const config = { rpId: 'forge.example', origins: ['https://forge.example'], rpName: 'FORGE' };
 const meta = { ip: '192.0.2.9', userAgent: 'CO-002 test', requestId: 'co-002-service-test' };
+const throttle = { checkIp: () => ({ allowed: true, retryAfterMs: 0 }) } as unknown as LoginThrottle;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest();
 function assertAppError(operation: () => Promise<unknown>, status: number, code: string) {
   return assert.rejects(operation, (error: unknown) =>
@@ -42,10 +44,10 @@ describe('CO-002 passkey service lifecycle', () => {
     const store = new InMemoryPasskeyStore(events);
     const identity = { signInWithPasskey: async () => { throw new Error('not used'); } } as unknown as IdentityService;
     const service = new PasskeyService({
-      store, identity, clock: () => now,
+      store, identity, throttle, clock: () => now,
       config: { rpId: null, origins: [], rpName: 'FORGE' },
     });
-    await assertAppError(() => service.beginAuthentication(), 503, 'passkeys_not_configured');
+    await assertAppError(() => service.beginAuthentication(meta), 503, 'passkeys_not_configured');
   });
 
   it('issues owner-bound registration challenges and consumes them after a failed response', async () => {
@@ -53,7 +55,7 @@ describe('CO-002 passkey service lifecycle', () => {
     const store = new InMemoryPasskeyStore(events);
     const identity = { signInWithPasskey: async () => { throw new Error('not used'); } } as unknown as IdentityService;
     const service = new PasskeyService({ store, identity, clock: () => now, config });
-    const options = await service.beginRegistration(user);
+    const options = await service.beginRegistration(user, meta);
     assert.equal(options.rp.id, config.rpId);
     assert.equal(options.user.name, user.email);
     assert.equal(options.timeout, 120_000);
@@ -116,7 +118,7 @@ describe('CO-002 passkey service lifecycle', () => {
         return session;
       },
     } as unknown as IdentityService;
-    const service = new PasskeyService({ store, identity, clock: () => now + 1000, config });
+    const service = new PasskeyService({ store, identity, throttle, clock: () => now + 1000, config });
     const options = await service.beginAuthentication();
     const client = clientData(options.challenge);
     const authData = authenticatorData(config.rpId, 1);
