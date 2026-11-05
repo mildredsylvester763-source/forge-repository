@@ -51,9 +51,37 @@ export function computeHash(envelope: Omit<EventEnvelope, 'hash'>): string {
   return createHash('sha256').update(canonicalJson(envelope)).digest('hex');
 }
 
+const ACTOR_KINDS: readonly ActorKind[] = ['user', 'agent', 'service', 'system', 'anonymous'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 export function validateDraft(draft: EventDraft): void {
-  if (!EVENT_TYPE.test(draft.type)) throw new TypeError(`invalid event type: ${draft.type}`);
-  if (!Number.isInteger(draft.version) || draft.version < 1) throw new TypeError('event version must be >= 1');
+  if (!isRecord(draft)) throw new TypeError('event draft must be an object');
+  if (typeof draft.type !== 'string' || !EVENT_TYPE.test(draft.type)) {
+    throw new TypeError(`invalid event type: ${String(draft.type)}`);
+  }
+  if (!Number.isSafeInteger(draft.version) || draft.version < 1) {
+    throw new TypeError('event version must be a positive safe integer');
+  }
+  if (!isRecord(draft.actor) || !ACTOR_KINDS.includes(draft.actor.kind as ActorKind)) {
+    throw new TypeError('event actor kind is invalid');
+  }
+  if (typeof draft.actor.id !== 'string') throw new TypeError('event actor id must be a string');
+  if (!isRecord(draft.subject)) throw new TypeError('event subject must be an object');
+  if (typeof draft.subject.type !== 'string' || typeof draft.subject.id !== 'string') {
+    throw new TypeError('event subject type and id must be strings');
+  }
+  if (!isRecord(draft.payload)) throw new TypeError('event payload must be a JSON object');
+  if (draft.correlationId !== undefined && typeof draft.correlationId !== 'string') {
+    throw new TypeError('event correlationId must be a string');
+  }
+  if (draft.causationId !== undefined && draft.causationId !== null && typeof draft.causationId !== 'string') {
+    throw new TypeError('event causationId must be a string or null');
+  }
 }
 
 export function freezeDeep<T>(value: T): T {
@@ -67,12 +95,19 @@ export function freezeDeep<T>(value: T): T {
 /** Pure: turns a draft into the next sealed event. Shared by every store so the hash rules cannot drift. */
 export function buildEnvelope(draft: EventDraft, prev: { seq: number; hash: string } | null, occurredAtMs: number): EventEnvelope {
   validateDraft(draft);
+  if (typeof occurredAtMs !== 'number' || !Number.isFinite(occurredAtMs)) {
+    throw new TypeError('event timestamp must be a finite millisecond value');
+  }
+  const occurredAt = new Date(occurredAtMs);
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new TypeError('event timestamp is outside the supported date range');
+  }
   const body = {
     id: randomUUID(),
     seq: (prev?.seq ?? 0) + 1,
     type: draft.type,
     version: draft.version,
-    occurredAt: new Date(occurredAtMs).toISOString(),
+    occurredAt: occurredAt.toISOString(),
     actor: { kind: draft.actor.kind, id: draft.actor.id },
     subject: { type: draft.subject.type, id: draft.subject.id },
     payload: structuredClone(draft.payload) as Payload,
