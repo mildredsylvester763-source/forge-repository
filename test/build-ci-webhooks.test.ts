@@ -47,7 +47,7 @@ test('GitHub push normalization preserves branch, commit and changed paths', () 
     after: '0123456789abcdef',
     commits: [
       { added: ['src/new.ts'], modified: ['src/app.ts'], removed: ['old.txt'] },
-      { modified: ['src/app.ts'] },
+      { added: [], modified: ['src/app.ts'], removed: [] },
     ],
     sender: { login: 'maintainer' },
   }));
