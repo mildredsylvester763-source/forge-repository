@@ -172,6 +172,16 @@ export class PostgresSessionStore implements SessionStore {
     await conn.query('UPDATE sessions SET revoked_at = $1, revoked_reason = $2 WHERE id_hash = $3 AND revoked_at IS NULL', [now, reason, idHash]);
   }
 
+  async listActiveByUserIn(conn: SqlConn, userId: string, now: number): Promise<SessionRecord[]> {
+    // Cleanup and selection share the caller's transaction and user-row lock.
+    await conn.query('DELETE FROM sessions WHERE user_id = $1 AND expires_at < $2', [userId, now - DAY_MS]);
+    const active = await conn.query<SessionRow>(
+      'SELECT * FROM sessions WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2',
+      [userId, now],
+    );
+    return active.rows.map(toSession);
+  }
+
   async insert(record: SessionRecord): Promise<void> {
     await withTransaction(this.pool, (conn) => this.insertIn(conn, record));
   }
@@ -229,18 +239,28 @@ export class PostgresIdentityUnitOfWork implements IdentityUnitOfWork {
 
   async startSession(args: {
     session: SessionRecord;
-    revokeIdHashes: readonly string[];
+    maxPerUser: number;
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (!Number.isSafeInteger(args.maxPerUser) || args.maxPerUser < 1) {
+      throw new Error('maxPerUser must be a positive safe integer');
+    }
     if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
       throw new Error('session user update must target the session user');
     }
     const committed = await withTransaction(this.pool, async (conn) => {
+      // Serialize concurrent sign-ins for one account before reading its active-session set.
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [args.session.userId]);
+      if (!owner.rows[0]) throw new Error('user not found');
       if (args.userUpdate) await this.users.updateIn(conn, args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
-      await this.sessions.insertIn(conn, args.session);
       const now = this.clock();
-      for (const idHash of args.revokeIdHashes) await this.sessions.revokeIn(conn, idHash, 'session_limit', now);
+      const active = await this.sessions.listActiveByUserIn(conn, args.session.userId, now);
+      const surplus = [...active]
+        .sort((a, b) => a.lastSeenAt - b.lastSeenAt || a.createdAt - b.createdAt || a.idHash.localeCompare(b.idHash))
+        .slice(0, Math.max(0, active.length - args.maxPerUser + 1));
+      await this.sessions.insertIn(conn, args.session);
+      for (const previous of surplus) await this.sessions.revokeIn(conn, previous.idHash, 'session_limit', now);
       return this.events.appendIn(conn, args.event);
     });
     this.events.notify(committed);
