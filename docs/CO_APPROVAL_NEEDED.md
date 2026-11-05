@@ -61,3 +61,9 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 - CO-030 is partial: identity session validation exists for `GET /v1/auth/me`, but this is not proof of resource-level or tenant-level authorization.
 - CO-029 and CO-031–CO-044 have no dedicated CO permissions/policy implementation evidence in either branch. The AI web-search domain-policy engine is not CO and is not counted.
 - Exact feature-level catalogue wording and the owner's role, permission, delegation and policy-precedence decisions are required before adding authorization rules.
+
+
+## Project intelligence graph audit note (2026-11-05)
+
+- CO-045–CO-062 have no dedicated CO graph implementation evidence in either branch. The TQ test-generation integration graph is not a project intelligence graph and is excluded.
+- Exact Part 01 feature descriptions and owner-approved graph node/edge ontology, source-of-truth, visibility, deletion and retention rules are required before schema or query code is safe to add.

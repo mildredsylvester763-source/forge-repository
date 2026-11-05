@@ -384,3 +384,27 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-043: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-044: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
 - The approval register still blocks security-sensitive policy implementation on exact catalogue wording and the owner's role, permission, delegation and precedence model. No roles, inheritance rules or allow precedence were invented. No safe independent CO policy code change is currently defined by the repository documents.
+
+
+### CO-045–CO-062 project intelligence graph audit (2026-11-05)
+- Compared the current `main` and `mistral` source trees before this audit. Neither contains a CO project-intelligence graph module, graph schema/migration, graph store or graph query route. The only graph-named Mistral source file found is `src/modules/test-generation/engine/integration-graph.ts`, which belongs to TQ test generation and is excluded from CO.
+- Individual evidence-based classifications:
+  - CO-045: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-046: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-047: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-048: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-049: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-050: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-051: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-052: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-053: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-054: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-055: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-056: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-057: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-058: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-059: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-060: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-061: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-062: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+- No graph ontology, node/edge types, source-of-truth rules, visibility, deletion or retention semantics were invented. These are owner-dependent product/data decisions and the exact Part 01 wording is absent; the approval register records the specific decisions needed.
