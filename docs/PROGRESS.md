@@ -164,3 +164,13 @@ The full app spans up to about 30 files of features. Part 01 is only one of them
 - Exact original Part 01 catalogue descriptions for CO-002–CO-100 are not present in this repository snapshot; only section ranges and selected notes are present. Do not fabricate feature acceptance criteria. Continue safe work grounded in the explicit project notes and record this acceptance-criteria limitation.
 
 See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
+
+
+### CO-093 bounded-key rate-limiter hardening (2026-11-05)
+- Compared `src/kernel/rate-limit.ts` on main and mistral before editing; both branches had the same implementation (blob `7506cb7f200cb75e6d8e90f66ee37d362e337ad3`).
+- Defect found: when the key map reached `maxKeys`, the limiter evicted the least-recently-used key even if its sliding-window attempts were still live. A client could regain a fresh budget by causing key churn. A zero/invalid capacity could also cause all counters to be immediately discarded.
+- Mistral change: validate positive safe-integer limit/window/capacity; validate bounded non-empty keys and finite clock values; reclaim only an expired least-recently-used key; fail closed for a new key when capacity is full and the oldest key is still live. Existing tracked keys continue to be enforced.
+- Added `test/rate-limit.test.ts` covering exact limits, window expiry, capacity-churn protection, expired-key reclamation, invalid configuration and key bounds.
+- Commits: limiter fix `8ed83602111353b76c9014392515f0136089f737`; tests `bcf58c36a55b23bf6f1ac9b72d6b41cccee7ee8e`.
+- Status remains PARTIAL: this limiter is process-local. It does not provide atomic shared limits across multiple application replicas. A shared Postgres/Redis implementation and policy are tracked in docs/CO_APPROVAL_NEEDED.md. No claim of distributed production protection is made.
+- Verification: GitHub Actions run for the code commit was still in progress at the time of this entry; local tests/typecheck were not run in this environment. Record final CI result before declaring this slice verified.
