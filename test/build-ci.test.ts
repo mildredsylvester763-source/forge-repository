@@ -483,8 +483,8 @@ test('pipeline definition diffs report added, removed, changed and reordered ele
   assert.deepEqual(diff.steps.added, [{ id: 'scan', task: 'security.scan' }]);
   assert.deepEqual(diff.steps.removed, [{ id: 'package', task: 'build.package' }]);
   assert.deepEqual(diff.steps.changed, [
-    { id: 'test', changedFields: ['task'] },
     { id: 'lint', changedFields: ['task'] },
+    { id: 'test', changedFields: ['task'] },
   ]);
   assert.equal(diff.steps.orderChanged, true);
   assert.equal(diff.hasChanges, true);
