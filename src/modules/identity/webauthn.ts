@@ -15,6 +15,7 @@ export interface RegistrationOptionsInput {
   readonly rpId: string;
   readonly rpName: string;
   readonly timeoutMs?: number;
+  readonly excludeCredentials?: readonly { readonly id: string; readonly transports?: readonly string[] }[];
 }
 export interface AuthenticationOptionsInput {
   readonly challenge: string;
@@ -186,6 +187,18 @@ export function createPasskeyRegistrationOptions(input: RegistrationOptionsInput
   if (!input.rpName || input.rpName.length > 64) fail('invalid_rp_name', 'Relying-party display name must be 1 to 64 characters');
   const timeout = input.timeoutMs ?? 60_000;
   validateTimeout(timeout);
+  const exclude = input.excludeCredentials ?? [];
+  if (!Array.isArray(exclude) || exclude.length > 100) fail('invalid_excluded_credentials', 'At most 100 existing credentials may be excluded from registration');
+  const excludeCredentials = exclude.map((credential) => {
+    const id = canonicalBase64Url(credential.id, 'excluded credential ID', CREDENTIAL_ID_MAX);
+    if (id.length < CREDENTIAL_ID_MIN) fail('invalid_excluded_credentials', 'Excluded credential ID is too short');
+    const transports = credential.transports ?? [];
+    if (!Array.isArray(transports) || transports.length > 6 ||
+      transports.some((transport) => !ALLOWED_TRANSPORTS.has(transport))) {
+      fail('invalid_excluded_credentials', 'Excluded credential transports are invalid');
+    }
+    return { type: 'public-key' as const, id: credential.id, ...(transports.length ? { transports: [...transports] } : {}) };
+  });
   return {
     challenge: input.challenge,
     rp: { id: input.rpId, name: input.rpName },
@@ -201,7 +214,7 @@ export function createPasskeyRegistrationOptions(input: RegistrationOptionsInput
       requireResidentKey: true,
       userVerification: 'required' as const,
     },
-    excludeCredentials: [],
+    excludeCredentials,
   };
 }
 export function createPasskeyAuthenticationOptions(input: AuthenticationOptionsInput) {
