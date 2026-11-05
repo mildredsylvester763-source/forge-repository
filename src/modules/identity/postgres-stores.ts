@@ -213,4 +213,20 @@ export class PostgresIdentityUnitOfWork implements IdentityUnitOfWork {
     });
     this.events.notify(committed);
   }
+
+  async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
+    const result = await withTransaction(this.pool, async (conn) => {
+      const revoked = await conn.query<SessionRow>(
+        `UPDATE sessions SET revoked_at = $1, revoked_reason = $2
+         WHERE id_hash = $3 AND revoked_at IS NULL RETURNING *`,
+        [args.now, 'user_sign_out', args.idHash],
+      );
+      const row = revoked.rows[0];
+      if (!row) return { session: null, committed: null };
+      const session = toSession(row);
+      return { session, committed: await this.events.appendIn(conn, args.event(session)) };
+    });
+    if (result.committed) this.events.notify(result.committed);
+    return result.session;
+  }
 }
