@@ -745,3 +745,31 @@ Compared candidate CO context modules and stores in Mistral and main. No dedicat
 - Any sensitive-data handling, access logging and export requirements.
 
 No context schema, retention period or source priority was invented. This range remains missing pending exact acceptance text and approved privacy/lifecycle rules; unrelated Core work continues.
+
+
+## CO-091–CO-100 individual platform reliability audit (2026-11-05)
+
+Compared Mistral and main health, limiter, identity throttle, backup and focused-test paths before classification. Mistral has targeted hardening relative to main for the limiter and backup verifier. The exact individual Part 01 descriptions remain unavailable for this range.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+
+| CO-091 | **PARTIAL** | `src/kernel/health.ts` exposes storage-independent `/healthz` and `/readyz` which checks `EventStore.head()`. `test/co-091-readiness.test.ts` verifies ready and unavailable-storage responses. It does not probe every external dependency or establish SLOs. |
+| CO-092 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-093 | **PARTIAL** | `src/kernel/rate-limit.ts` and `src/modules/identity/throttle.ts` provide bounded process-local sliding windows and account lockout. Mistral fixes fail-open key eviction and validates bounds; focused tests cover capacity churn. There is no shared atomic multi-replica store. |
+| CO-094 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-095 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-096 | **PARTIAL** | `src/kernel/backup.ts` creates/verifies SQLite snapshots with required checksum sidecar, SQLite integrity and event-chain checks. `test/backup.test.ts` covers missing/invalid/mismatched checksum cases. Automated PostgreSQL/offsite backup and restore are not implemented. |
+| CO-097 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-098 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-099 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
+| CO-100 | **MISSING / OWNER-BLOCKED** | Project docs explicitly flag offline sync conflict resolution as high risk. Exact catalogue criteria and conflict authority/merge/delete/offline replay semantics are absent; no offline sync engine is evidenced. |
+
+
+### Verification and owner dependencies
+- CO-focused workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) completed isolated typecheck and tests, 88/88 passing. This is focused-slice evidence, not full-repository typecheck or production deployment proof.
+- CO-093 requires a shared atomic Postgres or Redis limiter store decision and configured service. Current limiter/account lockout remain process-local and cannot enforce a common budget across replicas.
+- CO-096 requires R2 account/bucket/credentials, PostgreSQL backup/restore implementation, offsite copy policy and owner-approved RPO/RTO/retention. Current verified backups are SQLite-only.
+- CO-100 requires exact feature criteria and owner-approved conflict authority, merge/delete semantics, version-vector/clock strategy (if required), offline replay and conflict UX. No sync algorithm is guessed.
+- CO-091 needs approved operational dependency coverage and SLO thresholds before it can be called comprehensive readiness.
+- CO-092, CO-094, CO-095 and CO-097–CO-099 remain unclassified beyond missing evidence until exact descriptions are supplied; no feature title is invented.
