@@ -280,3 +280,21 @@ No external anchor account, database secret or owner approval was supplied in th
 - Product owner must define expiry, retention, summarization, versioning and recovery behavior before persistent context data is introduced.
 - Current audit found no dedicated CO context engine/service/store in either branch at the inspected paths. AI workspace retrieval and AI memory modules are outside this CO range and are not substitutes.
 - Approval state: **NOT SUPPLIED / NOT APPROVED**. Do not create context tables or retention defaults from assumptions.
+
+
+## CO-091–CO-100 reliability approvals and external dependencies (2026-11-05)
+
+| Feature | Required owner / external input | Why / next action |
+| --- | --- | --- |
+| CO-091 | Required dependency list and readiness/liveness contract; SLO/latency/error thresholds | Current readiness only checks the event-store/database path. Do not claim full-system readiness without the accepted dependency model. |
+| CO-092 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-093 | Owner choice of shared Postgres-backed limiter or Redis; connection/service configuration and approved per-action abuse budgets | Process-local counters are not consistent across multiple application replicas. Do not claim distributed enforcement. |
+| CO-094 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-095 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-096 | Cloudflare account ID, R2 bucket, access key ID/secret, PostgreSQL backup source/credentials, retention and owner-approved RPO/RTO | Current verified backup path covers SQLite only; production offsite PostgreSQL backup/restore is absent. |
+| CO-097 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-098 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-099 | Exact Part 01 description and acceptance criteria | No feature title or implementation contract is evidenced. |
+| CO-100 | Exact Part 01 description; conflict authority, merge/delete rules, offline replay and user-visible resolution policy | Conflict resolution can silently lose or overwrite user work if semantics are guessed. No sync implementation is added until approved. |
+
+All items remain NOT SUPPLIED / NOT APPROVED where applicable. The existing R2, database, limiter and operational dependencies remain preserved in this register.
