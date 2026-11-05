@@ -341,6 +341,67 @@ export class IdentityService {
     };
   }
 
+  /** Complete a passkey-authenticated sign-in without running password-only checks. */
+  async signInWithPasskey(userId: string, meta: RequestMeta): Promise<SignInResult> {
+    const anon: Actor = { kind: 'anonymous', id: meta.ip };
+    const ipGate = this.d.throttle.checkIp('signin', meta.ip);
+    if (!ipGate.allowed) {
+      await this.emitBestEffort(IdentityEvents.SignInThrottled, anon, { type: 'ip', id: meta.ip }, { scope: 'ip' }, meta);
+      throw tooManyAttempts(ipGate.retryAfterMs);
+    }
+
+    const fingerprint = this.fingerprint('passkey:' + userId);
+    const subject: Subject = { type: 'account_fingerprint', id: fingerprint };
+    const lock = this.d.throttle.checkAccount(fingerprint);
+    if (lock.locked) {
+      await this.emitBestEffort(IdentityEvents.SignInThrottled, anon, subject, { scope: 'account' }, meta);
+      throw tooManyAttempts(lock.retryAfterMs);
+    }
+
+    const user = await this.d.users.findById(userId);
+    if (!user || user.status !== 'active') {
+      this.d.throttle.recordFailure(fingerprint);
+      await this.emitBestEffort(IdentityEvents.SignInFailed, anon, subject, { reason: 'invalid_passkey_account' }, meta);
+      throw INVALID_CREDENTIALS();
+    }
+    this.d.throttle.recordSuccess(fingerprint);
+
+    let anomaly: SignInAnomalyAssessment = { baseline: 'none', signals: [] };
+    try {
+      const activeSessions = await this.d.sessions.listActiveForUser(user.id);
+      anomaly = assessSignInAnomaly({ ip: meta.ip, userAgent: meta.userAgent }, activeSessions);
+    } catch (err) {
+      anomaly = { baseline: 'insufficient_metadata', signals: [] };
+      this.d.logger.error('passkey sign-in anomaly assessment unavailable', { err });
+    }
+
+    const { token, session, maxPerUser } = await this.d.sessions.prepare(user.id, { ip: meta.ip, userAgent: meta.userAgent });
+    const passwordChangeRequired = user.passwordCompromisedAt !== null;
+    await this.d.uow.startSession({
+      session,
+      maxPerUser,
+      event: this.draft(
+        IdentityEvents.SignInSucceeded,
+        { kind: 'user', id: user.id },
+        { type: 'user', id: user.id },
+        { sessionRef: session.idHash.slice(0, 12), rehashed: false, passwordChangeRequired, authenticationMethod: 'passkey' },
+        meta,
+      ),
+    });
+
+    if (anomaly.signals.length > 0) {
+      await this.emitBestEffort(
+        IdentityEvents.SignInAnomalyObserved,
+        { kind: 'user', id: user.id },
+        { type: 'user', id: user.id },
+        { baseline: anomaly.baseline, signals: anomaly.signals },
+        meta,
+      );
+    }
+
+    return { user: toPublicUser(user), sessionToken: token, sessionExpiresAt: session.expiresAt, passwordChangeRequired };
+  }
+
   /** Server-side session check used by every protected route (CO-030). Returns null for any failure. */
   async authenticate(token: string | undefined): Promise<{ user: PublicUser; sessionExpiresAt: number } | null> {
     const session = await this.d.sessions.validate(token);
