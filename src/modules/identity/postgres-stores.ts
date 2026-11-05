@@ -103,19 +103,23 @@ export class PostgresUserStore implements UserStore {
 
   /** Marks a password compromised once, returning the locked current record for repeat detections. */
   async markPasswordCompromisedIn(conn: SqlConn, id: string, now: number): Promise<{ user: UserRecord; changed: boolean }> {
-    const updated = await conn.query<UserRow>(
-      `UPDATE users
-       SET password_compromised_at = $1, updated_at = $1, version = version + 1
-       WHERE id = $2 AND password_compromised_at IS NULL
-       RETURNING *`,
-      [now, id],
-    );
-    if (updated.rows[0]) return { user: toUser(updated.rows[0]), changed: true };
-
     const existing = await conn.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id]);
     const row = existing.rows[0];
     if (!row) throw new Error('user not found');
-    return { user: toUser(row), changed: false };
+    const current = toUser(row);
+    if (current.passwordCompromisedAt !== null) return { user: current, changed: false };
+
+    const updated: UserRecord = {
+      ...current,
+      passwordCompromisedAt: now,
+      updatedAt: now,
+      version: current.version + 1,
+    };
+    await conn.query(
+      'UPDATE users SET password_compromised_at = $1, updated_at = $2, version = $3 WHERE id = $4',
+      [updated.passwordCompromisedAt, updated.updatedAt, updated.version, id],
+    );
+    return { user: updated, changed: true };
   }
 
   async update(id: string, patch: UserPatch, now: number): Promise<UserRecord> {
