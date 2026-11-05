@@ -233,6 +233,9 @@ export class PostgresIdentityUnitOfWork implements IdentityUnitOfWork {
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
+      throw new Error('session user update must target the session user');
+    }
     const committed = await withTransaction(this.pool, async (conn) => {
       if (args.userUpdate) await this.users.updateIn(conn, args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
       await this.sessions.insertIn(conn, args.session);
