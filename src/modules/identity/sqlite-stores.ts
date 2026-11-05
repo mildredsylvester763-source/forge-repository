@@ -222,8 +222,14 @@ export class SqliteIdentityUnitOfWork implements IdentityUnitOfWork {
     return created;
   }
 
-  async startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void> {
+  async startSession(args: {
+    session: SessionRecord;
+    revokeIdHashes: readonly string[];
+    event: EventDraft;
+    userUpdate?: { userId: string; patch: UserPatch; now: number };
+  }): Promise<void> {
     const committed = transaction(this.db, () => {
+      if (args.userUpdate) this.users.updateSync(args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
       this.sessions.insertSync(args.session);
       const now = this.clock();
       for (const idHash of args.revokeIdHashes) this.sessions.revokeSync(idHash, 'session_limit', now);
