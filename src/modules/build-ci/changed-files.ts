@@ -59,7 +59,7 @@ function header(headers: Readonly<Record<string, string | undefined>>, name: str
 
 function validPath(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0 || value.length > 1024 ||
-      value.startsWith('/') || value.includes('\\') || /[\\r\\n\\0]/.test(value)) return null;
+      value.startsWith('/') || value.includes('\\') || /[\r\n\0]/.test(value)) return null;
   const segments = value.split('/');
   if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return null;
   return value;
@@ -67,11 +67,11 @@ function validPath(value: unknown): string | null {
 
 function githubNextPage(link: string | undefined, resultCount: number, currentPage: number): number | null | 'invalid' {
   if (!link) return resultCount === PAGE_SIZE ? currentPage + 1 : null;
-  const next = link.split(',').find((part) => /;\\s*rel="?next"?/i.test(part));
+  const next = link.split(',').find((part) => /;\s*rel="?next"?/i.test(part));
   if (!next) return null;
   const url = /<([^>]+)>/.exec(next)?.[1];
   if (!url) return 'invalid';
-  const pageText = /[?&]page=(\\d+)/.exec(url)?.[1];
+  const pageText = /[?&]page=(\d+)/.exec(url)?.[1];
   if (!pageText) return 'invalid';
   const page = Number(pageText);
   return Number.isSafeInteger(page) && page > 0 ? page : 'invalid';
