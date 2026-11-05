@@ -194,3 +194,9 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Commits: implementation `219cae33696748d5ca59302d4c0171921b5f70da`; tests `c6e9bf6613dbea0ddac49a828dbfcfd6c295a591`.
 - Operational trade-off: at account-state capacity, previously unseen fingerprints are temporarily denied until an expired entry can be reclaimed. This is intentional fail-closed behavior; alerting/operational tuning and a shared persistent limiter remain future work.
 - CI status at the last completed run: typecheck fails before tests because of existing parse errors in `src/modules/ai-training/sqlite-stores.ts`; no CO tests have been executed by that run. AI remains out of scope and untouched.
+
+
+### CI verification checkpoint (2026-11-05 09:25 Africa/Lagos)
+- Latest feature-test workflow run inspected: [41994200934](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41994200934), commit `c6e9bf6613dbea0ddac49a828dbfcfd6c295a591`.
+- Dependency installation completed; `npm run typecheck` failed; the workflow skipped the test step. The emitted TypeScript parse errors are all in `src/modules/ai-training/sqlite-stores.ts` at lines 503–657. This file is outside CO scope and has not been modified.
+- Therefore the new CO test files have not yet been executed by CI. The CO changes are pushed but not CI-verified. Re-run the full CI after the pre-existing AI parse blocker is resolved by the owner/AI workstream; do not modify AI here.
