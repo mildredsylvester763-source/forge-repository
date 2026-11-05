@@ -429,6 +429,36 @@ export class BuildCiService {
     return version;
   }
 
+  async diffTemplateVersions(input: {
+    workspaceId: string; templateId: string; fromVersion: number; toVersion: number; actorId: string;
+  }): Promise<{
+    templateId: string; fromVersion: number; toVersion: number; fromHash: string; toHash: string;
+    diff: ReturnType<typeof comparePipelineDefinitions>;
+  }> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.templateId, 'templateId');
+    requiredId(input.actorId, 'actorId');
+    if (!Number.isSafeInteger(input.fromVersion) || input.fromVersion < 1 ||
+        !Number.isSafeInteger(input.toVersion) || input.toVersion < 1) {
+      throw new TypeError('fromVersion and toVersion must be positive integers');
+    }
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.templateId, actorId: input.actorId, action: 'read_template' });
+    if (!(await this.templates.canAccess(input.templateId, input.workspaceId))) throw new PipelineNotFoundError();
+    const [from, to] = await Promise.all([
+      this.templates.getVersion(input.templateId, input.fromVersion),
+      this.templates.getVersion(input.templateId, input.toVersion),
+    ]);
+    if (!from || !to) throw new PipelineNotFoundError();
+    return Object.freeze({
+      templateId: input.templateId,
+      fromVersion: from.version,
+      toVersion: to.version,
+      fromHash: from.definitionHash,
+      toHash: to.definitionHash,
+      diff: comparePipelineDefinitions(from.definition, to.definition),
+    });
+  }
+
   async setTemplateStatus(input: { workspaceId: string; templateId: string; status: 'deprecated' | 'revoked'; actorId: string; occurredAt?: string }): Promise<void> {
     requiredId(input.workspaceId, 'workspaceId');
     requiredId(input.templateId, 'templateId');
