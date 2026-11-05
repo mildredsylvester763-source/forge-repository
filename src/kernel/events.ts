@@ -120,7 +120,7 @@ export interface EventStore {
   subscribe(prefix: string, handler: EventHandler): () => void;
 }
 
-/** At-least-once, in-process delivery. A failing subscriber never blocks the writer or other subscribers. */
+/** Best-effort, in-process delivery. There is no durable queue or retry; a failing subscriber is logged and does not block other subscribers. */
 export class EventDispatcher {
   private readonly subscribers: Array<{ prefix: string; handler: EventHandler }> = [];
   private readonly logger: Logger;
