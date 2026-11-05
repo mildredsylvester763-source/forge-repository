@@ -342,3 +342,23 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-012: MISSING anomaly-detection implementation. Identity sign-in events exist and are subscribable, but no anomaly detector/subscriber exists.
   - CO-013 and CO-014: MISSING implementation evidence; individual feature names and acceptance criteria are not present in repository documentation.
 - No CO-002–CO-014 implementation was guessed. Owner-dependent provider, origin, SSO, MFA/recovery, native-token and agent-identity decisions remain isolated in `docs/CO_APPROVAL_NEEDED.md`; unrelated CO work continues.
+
+
+### CO-015–CO-028 workspace and tenancy audit (2026-11-05)
+- Compared the current `main` and `mistral` source trees before this audit. Neither branch contains a CO workspace/tenant, membership, invitation or ownership module, route set or migration set. Mistral's only `workspace` source tree is `src/modules/workspace-retrieval`, the AI workspace-retrieval feature range; it is explicitly excluded from CO and is not counted as workspace tenancy.
+- Individual evidence-based classifications:
+  - CO-015: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-016: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-017: MISSING tenant-isolation implementation evidence; owner decision on application scoping versus PostgreSQL RLS is still required.
+  - CO-018: MISSING application-level encryption-at-rest implementation evidence; owner must define KMS/key source, rotation and backup-recovery boundary before custom encryption is designed.
+  - CO-019: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-020: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-021: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-022: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-023: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-024: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-025: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-026: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-027: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-028: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+- No guessed membership, invitation, transfer, deletion, billing-owner or tenant-lifecycle semantics were implemented. The approval register records the missing catalogue text and the owner decisions that would change schema/security behavior. There is no safe feature-level code change to make until those contracts are supplied; independent CO work remains available elsewhere.

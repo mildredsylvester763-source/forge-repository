@@ -48,3 +48,9 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 - CO-006 is partial, not complete: active-session listing/revocation primitives and transactional session-cap enforcement exist, but no user-facing session manager route or accepted device/revocation behavior is documented.
 - CO-011 is partial, not complete: the event actor enum includes `agent`, but there is no per-agent credential or identity lifecycle.
 - CO-005–CO-014 exact individual catalogue descriptions remain unavailable. Do not infer the unnamed IDs from the section heading. The safe work is to fix existing demonstrable defects and wait for the exact acceptance text or owner-approved semantics before adding security-sensitive flows.
+
+
+## Workspace and tenancy audit note (2026-11-05)
+
+- CO-015–CO-028 have no dedicated workspace/tenant implementation evidence in either branch. The Mistral `workspace-retrieval` module is an AI retrieval feature and is excluded from CO.
+- CO-017 remains owner-blocked on the application-only versus PostgreSQL RLS decision. CO-018 remains owner-blocked on the KMS/key source, rotation and recovery boundary. The exact original feature wording for the other IDs in this range is absent; do not invent membership, invitation, ownership-transfer, deletion or billing semantics.
