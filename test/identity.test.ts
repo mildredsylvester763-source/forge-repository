@@ -85,6 +85,36 @@ describe('sign-in, session and sign-out', () => {
     assert.equal((await h.get('/v1/auth/me', { cookie })).status, 401);
   });
 
+  it('rolls back sign-out when its audit event cannot be committed', async () => {
+    const sqlite = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const created = await sqlite.post('/v1/auth/register', { email: 'atomic-signout@example.com', password: GOOD_PASSWORD });
+      assert.equal(created.status, 201);
+      const signedIn = await sqlite.post('/v1/auth/sign-in', { email: 'atomic-signout@example.com', password: GOOD_PASSWORD });
+      assert.equal(signedIn.status, 200);
+      const cookie = sessionCookie(signedIn);
+      const db = sqlite.app.db;
+      assert.ok(db, 'SQLite database should be active for this test');
+
+      db.exec(`CREATE TRIGGER fail_sign_out_audit BEFORE INSERT ON events
+        WHEN NEW.type = 'identity.sign_out.completed'
+        BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END;`);
+      const failed = await sqlite.post('/v1/auth/sign-out', {}, { cookie });
+      assert.equal(failed.status, 500);
+      assert.equal((await sqlite.get('/v1/auth/me', { cookie })).status, 200, 'session revocation must roll back with the failed event');
+      assert.equal((await sqlite.app.events.readFrom(1, 100)).filter((e) => e.type === 'identity.sign_out.completed').length, 0);
+
+      db.exec('DROP TRIGGER fail_sign_out_audit');
+      const signedOut = await sqlite.post('/v1/auth/sign-out', {}, { cookie });
+      assert.equal(signedOut.status, 204);
+      assert.equal((await sqlite.get('/v1/auth/me', { cookie })).status, 401);
+      assert.equal((await sqlite.post('/v1/auth/sign-out', {}, { cookie })).status, 204, 'repeat sign-out should be idempotent');
+      assert.equal((await sqlite.app.events.readFrom(1, 100)).filter((e) => e.type === 'identity.sign_out.completed').length, 1);
+    } finally {
+      await sqlite.close();
+    }
+  });
+
   it('gives the same answer for an unknown account and a wrong password', async () => {
     const { address } = await register();
     const wrong = await h.post('/v1/auth/sign-in', { email: address, password: 'definitely-wrong-password' });
