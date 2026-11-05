@@ -87,20 +87,39 @@ export class PostgresUserStore implements UserStore {
     return withTransaction(this.pool, (conn) => this.createIn(conn, user));
   }
 
+  async updateIn(conn: SqlConn, id: string, patch: UserPatch, now: number): Promise<UserRecord> {
+    const found = await conn.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id]);
+    const row = found.rows[0];
+    if (!row) throw new Error('user not found');
+    const current = toUser(row);
+    const next: UserRecord = { ...current, ...patch, updatedAt: now, version: current.version + 1 };
+    await conn.query(
+      `UPDATE users SET display_name = $1, password_hash = $2, status = $3, password_compromised_at = $4,
+         updated_at = $5, version = $6 WHERE id = $7`,
+      [next.displayName, next.passwordHash, next.status, next.passwordCompromisedAt, next.updatedAt, next.version, id],
+    );
+    return next;
+  }
+
+  /** Marks a password compromised once, returning the locked current record for repeat detections. */
+  async markPasswordCompromisedIn(conn: SqlConn, id: string, now: number): Promise<{ user: UserRecord; changed: boolean }> {
+    const updated = await conn.query<UserRow>(
+      `UPDATE users
+       SET password_compromised_at = $1, updated_at = $1, version = version + 1
+       WHERE id = $2 AND password_compromised_at IS NULL
+       RETURNING *`,
+      [now, id],
+    );
+    if (updated.rows[0]) return { user: toUser(updated.rows[0]), changed: true };
+
+    const existing = await conn.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id]);
+    const row = existing.rows[0];
+    if (!row) throw new Error('user not found');
+    return { user: toUser(row), changed: false };
+  }
+
   async update(id: string, patch: UserPatch, now: number): Promise<UserRecord> {
-    return withTransaction(this.pool, async (conn) => {
-      const found = await conn.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id]);
-      const row = found.rows[0];
-      if (!row) throw new Error('user not found');
-      const current = toUser(row);
-      const next: UserRecord = { ...current, ...patch, updatedAt: now, version: current.version + 1 };
-      await conn.query(
-        `UPDATE users SET display_name = $1, password_hash = $2, status = $3, password_compromised_at = $4,
-           updated_at = $5, version = $6 WHERE id = $7`,
-        [next.displayName, next.passwordHash, next.status, next.passwordCompromisedAt, next.updatedAt, next.version, id],
-      );
-      return next;
-    });
+    return withTransaction(this.pool, (conn) => this.updateIn(conn, id, patch, now));
   }
 }
 
