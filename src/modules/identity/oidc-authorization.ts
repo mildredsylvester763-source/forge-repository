@@ -37,8 +37,6 @@ export interface OidcTransactionStore {
 export interface OidcAuthorizationStart {
   authorizationUrl: string;
   state: string;
-  /** Returned to the server-side callback handler only; never expose in browser UI or logs. */
-  transaction: OidcConsumedTransaction;
   expiresAt: string;
 }
 
@@ -155,12 +153,6 @@ export class OidcAuthorizationService {
     return {
       authorizationUrl: authorizationUrl.toString(),
       state,
-      transaction: {
-        providerId: config.providerId,
-        nonceHash: sha256Hex(nonce),
-        codeVerifier,
-        redirectUri: config.redirectUri,
-      },
       expiresAt: new Date(expiresAt).toISOString(),
     };
   }
