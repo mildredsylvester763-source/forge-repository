@@ -19,7 +19,7 @@ const user: PublicUser = {
 };
 const config = { rpId: 'forge.example', origins: ['https://forge.example'], rpName: 'FORGE' };
 const meta = { ip: '192.0.2.9', userAgent: 'CO-002 test', requestId: 'co-002-service-test' };
-const hash = (value: string) => createHash('sha256').update(value).digest();
+const hash = (value: string | Buffer) => createHash('sha256').update(value).digest();
 function assertAppError(operation: () => Promise<unknown>, status: number, code: string) {
   return assert.rejects(operation, (error: unknown) =>
     error instanceof AppError && error.status === status && error.code === code
