@@ -246,6 +246,59 @@ describe('CO-065 atomic identity audit writes', () => {
     assert.equal((await events.verify()).ok, true);
   });
 
+  it('serializes in-memory sign-ins under the per-user session cap and rolls back failed audit writes', async () => {
+    const now = 1_800_000_350_000;
+    const users = new InMemoryUserStore();
+    const sessions = new InMemorySessionStore();
+    const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
+    const uow = new InMemoryIdentityUnitOfWork({ users, sessions, events, clock: () => now });
+    const user = await users.create({ email: 'memory-session-cap@example.com', displayName: 'Memory Cap', passwordHash: 'test', now });
+    const records: SessionRecord[] = ['3', '4'].map((letter) => ({
+      idHash: letter.repeat(64),
+      userId: user.id,
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + 60_000,
+      ip: '127.0.0.1',
+      userAgent: 'in-memory session cap test',
+      revokedAt: null,
+      revokedReason: null,
+    }));
+    const event = (record: SessionRecord): EventDraft => ({
+      type: 'identity.sign_in.succeeded',
+      version: 1,
+      actor: { kind: 'user', id: record.userId },
+      subject: { type: 'user', id: record.userId },
+      payload: { sessionRef: record.idHash.slice(0, 12), rehashed: false, passwordChangeRequired: false },
+      correlationId: `co-001-memory-session-cap-${record.idHash.slice(0, 4)}`,
+    });
+
+    await Promise.all(records.map((session) => uow.startSession({
+      session,
+      maxPerUser: 1,
+      event: event(session),
+    })));
+    assert.equal((await sessions.listActiveByUser(user.id, now)).length, 1);
+
+    const failedSession: SessionRecord = {
+      ...records[0]!,
+      idHash: '5'.repeat(64),
+      createdAt: now + 1,
+      lastSeenAt: now + 1,
+    };
+    await assert.rejects(
+      () => uow.startSession({
+        session: failedSession,
+        maxPerUser: 1,
+        event: { ...event(failedSession), type: 'INVALID EVENT TYPE' },
+      }),
+      /invalid event type/,
+    );
+    assert.equal(await sessions.findByHash(failedSession.idHash), null);
+    assert.equal((await sessions.listActiveByUser(user.id, now)).length, 1);
+    assert.equal((await events.verify()).ok, true);
+  });
+
   it('restores the exact in-memory password state if the compromise audit append fails', async () => {
     const now = 1_800_000_300_000;
     const users = new InMemoryUserStore();
