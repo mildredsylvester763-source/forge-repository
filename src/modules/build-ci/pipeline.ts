@@ -611,8 +611,16 @@ export function evaluateTrigger(trigger: PipelineTrigger, event: TriggerEvent): 
   }
   const pathResult = evaluatePathFilter(trigger.paths, event.changedFiles, event.changedFilesComplete);
   if (!pathResult.matched) reasons.push(pathResult.reason ?? 'path_filter_mismatch');
-  if (pathResult.degraded) reasons.push(pathResult.reason === 'changed_files_incomplete' ? 'changed_files_incomplete_fail_open' : 'changed_files_unavailable_fail_open');
-  return { triggerId: trigger.id, matched: reasons.every((reason) => reason === 'changed_files_unavailable_fail_open'), degraded: pathResult.degraded, reasons };
+  const failOpenReason = pathResult.reason === 'changed_files_incomplete'
+    ? 'changed_files_incomplete_fail_open'
+    : 'changed_files_unavailable_fail_open';
+  if (pathResult.degraded) reasons.push(failOpenReason);
+  return {
+    triggerId: trigger.id,
+    matched: reasons.every((reason) => reason === failOpenReason),
+    degraded: pathResult.degraded,
+    reasons,
+  };
 }
 
 export function evaluatePipelineTriggers(triggers: readonly PipelineTrigger[], event: TriggerEvent): readonly TriggerEvaluation[] {
