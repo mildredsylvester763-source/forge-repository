@@ -74,6 +74,8 @@ function parseTransports(raw: string): string[] {
 export class InMemoryPasskeyStore implements PasskeyStore {
   private readonly challenges = new Map<string, PasskeyChallengeRecord>();
   private readonly credentials = new Map<string, PasskeyCredentialRecord>();
+  private readonly pendingCredentials = new Set<string>();
+  private readonly pendingRemovals = new Set<string>();
   private readonly events: EventStore;
   private queue: Promise<void> = Promise.resolve();
   constructor(events: EventStore) { this.events = events; }
@@ -104,9 +106,16 @@ export class InMemoryPasskeyStore implements PasskeyStore {
   }
   async createCredential(record: PasskeyCredentialRecord, event: EventDraft): Promise<void> {
     validateCredential(record);
-    if (this.credentials.has(record.credentialId)) throw new PasskeyCredentialExistsError();
-    await this.events.append(event);
-    this.credentials.set(record.credentialId, record);
+    if (this.credentials.has(record.credentialId) || this.pendingCredentials.has(record.credentialId)) {
+      throw new PasskeyCredentialExistsError();
+    }
+    this.pendingCredentials.add(record.credentialId);
+    try {
+      await this.events.append(event);
+      this.credentials.set(record.credentialId, record);
+    } finally {
+      this.pendingCredentials.delete(record.credentialId);
+    }
   }
   async findCredentialById(id: string): Promise<PasskeyCredentialRecord | null> { return this.credentials.get(id) ?? null; }
   async listCredentialsForUser(userId: string): Promise<PasskeyCredentialRecord[]> {
@@ -130,10 +139,15 @@ export class InMemoryPasskeyStore implements PasskeyStore {
   }
   async deleteCredentialForUser(userId: string, id: string, event: EventDraft): Promise<boolean> {
     const current = this.credentials.get(id);
-    if (!current || current.userId !== userId) return false;
-    await this.events.append(event);
-    this.credentials.delete(id);
-    return true;
+    if (!current || current.userId !== userId || this.pendingRemovals.has(id)) return false;
+    this.pendingRemovals.add(id);
+    try {
+      await this.events.append(event);
+      this.credentials.delete(id);
+      return true;
+    } finally {
+      this.pendingRemovals.delete(id);
+    }
   }
 }
 
@@ -271,6 +285,8 @@ export class PostgresPasskeyStore implements PasskeyStore {
   async createChallenge(record: PasskeyChallengeRecord): Promise<void> {
     validateChallenge(record);
     await withTransaction(this.pool, async (conn) => {
+      // Serialize capacity checks across processes so concurrent requests cannot exceed the challenge cap.
+      await conn.query('SELECT pg_advisory_xact_lock($1::bigint)', [7_165_003]);
       await conn.query('DELETE FROM passkey_challenges WHERE expires_at <= $1', [record.createdAt]);
       const count = await conn.query<{ count: number | string }>('SELECT COUNT(*) AS count FROM passkey_challenges WHERE expires_at > $1', [record.createdAt]);
       if (Number(count.rows[0]?.count ?? 0) >= MAX_ACTIVE_CHALLENGES) throw new Error('passkey challenge capacity is exhausted');
