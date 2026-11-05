@@ -144,6 +144,69 @@ export function verifyChain(events: readonly EventEnvelope[]): VerifyReport {
   return { ok: true, count: events.length, headHash: prevHash };
 }
 
+/** A checkpoint read from a trusted store independent of the event database. */
+export interface EventChainAnchor {
+  readonly seq: number;
+  readonly hash: string;
+}
+
+export type AnchoredVerifyReport = VerifyReport | {
+  ok: false;
+  count: number;
+  reason:
+    | 'anchor_unavailable'
+    | 'anchor_invalid_sequence'
+    | 'anchor_invalid_hash'
+    | 'anchor_sequence_mismatch'
+    | 'anchor_hash_mismatch';
+  expectedSeq?: number;
+  actualSeq?: number;
+  expectedHash?: string;
+  actualHash?: string;
+};
+
+/**
+ * Requires the verified local head to equal the latest trusted external checkpoint.
+ * A stale checkpoint fails closed: it cannot prove that the newest event suffix is present.
+ */
+export function verifyChainAgainstAnchor(
+  report: VerifyReport,
+  anchor: EventChainAnchor | null,
+): AnchoredVerifyReport {
+  if (!report.ok) return report;
+  if (!isRecord(anchor)) {
+    return { ok: false, count: report.count, reason: 'anchor_unavailable' };
+  }
+
+  const seq = anchor.seq;
+  const hash = anchor.hash;
+  if (!Number.isSafeInteger(seq) || (seq as number) < 0) {
+    return { ok: false, count: report.count, reason: 'anchor_invalid_sequence' };
+  }
+  if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) {
+    return { ok: false, count: report.count, reason: 'anchor_invalid_hash' };
+  }
+  if (report.count !== seq) {
+    return {
+      ok: false,
+      count: report.count,
+      reason: 'anchor_sequence_mismatch',
+      expectedSeq: seq as number,
+      actualSeq: report.count,
+    };
+  }
+  if (report.headHash !== hash) {
+    return {
+      ok: false,
+      count: report.count,
+      reason: 'anchor_hash_mismatch',
+      expectedHash: hash,
+      actualHash: report.headHash,
+    };
+  }
+  return report;
+}
+
 export type EventHandler = (event: EventEnvelope) => Promise<void> | void;
 
 export interface EventStore {

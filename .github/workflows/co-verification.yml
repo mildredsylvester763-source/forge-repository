@@ -9,6 +9,7 @@ on:
       - 'src/modules/identity/**'
       - 'tsconfig.co.json'
       - 'test/co-063-canonical-payload.test.ts'
+      - 'test/co-076-anchor-verification.test.ts'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
       - 'test/sqlite-pool.ts'
