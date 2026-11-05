@@ -3,6 +3,8 @@ export { IdentityService, toPublicUser } from './identity-service.ts';
 export type { IdentityDeps, PublicUser, PublicSession, RevokeSessionResult, RequestMeta, SignInResult } from './identity-service.ts';
 export { IdentityEvents, IDENTITY_EVENT_VERSION } from './events.ts';
 export type { IdentityEventType } from './events.ts';
+export { assessSignInAnomaly } from './identity-anomaly.ts';
+export type { SignInAnomalyAssessment, SignInAnomalySignal, SignInFingerprint } from './identity-anomaly.ts';
 export { identityRoutes } from './routes.ts';
 export { PasswordHasher } from './password-hasher.ts';
 export type { HasherConfig, ScryptParams } from './password-hasher.ts';
