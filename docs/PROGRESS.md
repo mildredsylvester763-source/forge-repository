@@ -683,3 +683,38 @@ Compared Mistral and main at candidate graph/service paths. No dedicated `src/mo
 - Query semantics, indexing and expected scale once the catalogue requirements are known.
 
 No graph schema or service was invented from the section heading. The range remains missing pending exact feature requirements and the owner-approved ontology; unrelated Core work continues.
+
+
+## CO-063–CO-080 individual event backbone / audit ledger audit (2026-11-05)
+
+Compared event store, canonicalization, migration, identity event registry and focused test files between Mistral and main. Core event-store files are inherited in both branches; Mistral-specific canonicalization hardening and focused regressions are additional changes. The exact individual Part 01 descriptions are unavailable for this range; classifications below reflect only concrete code and explicit project documentation.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+
+| CO-063 | **IMPLEMENTED FOUNDATION** | `src/kernel/canonical.ts` and `src/kernel/events.ts` provide deterministic JSON canonicalization and runtime-validated event envelopes. Mistral adds sparse-array/cycle/prototype rejection and runtime shape checks; focused test `test/co-063-canonical-payload.test.ts` covers these cases. Exact catalogue acceptance remains unavailable. |
+| CO-064 | **PARTIAL** | SQLite/PostgreSQL append-only hash-chained stores and migrations exist. PostgreSQL event writes serialize chain extension with an advisory transaction lock; SQLite/PostgreSQL migrations protect UPDATE/DELETE, and PostgreSQL also blocks TRUNCATE. Native PostgreSQL execution is not proven: `test/pg-helpers.ts` falls back to a SQLite-backed pool unless `FORGE_TEST_POSTGRES_URL` is set. |
+| CO-065 | **PARTIAL** | Transactional event coupling is implemented and regression-tested for identity session creation/sign-out/password-compromise writes in `src/modules/identity/unit-of-work.ts`, SQLite and PostgreSQL adapters. No global transactional outbox, durable subscriber delivery, consumer offsets, retry/dead-letter lifecycle or proof for other domains is present. |
+| CO-066 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-067 | **PARTIAL** | `src/modules/identity/events.ts` defines a versioned identity event-name contract. This is an identity-only registry, not a global schema registry or compatibility/deprecation lifecycle. |
+| CO-068 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-069 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-070 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-071 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-072 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-073 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-074 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-075 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-076 | **PARTIAL** | `verifyChain()`, `verifyEventsTable()`, `PostgresEventStore.verify()` and `verifyChainAgainstAnchor()` verify internal chain integrity and compare a supplied trusted head checkpoint. The external anchor storage/writer, independent credentials and monotonic persistence are not integrated. |
+| CO-077 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-078 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-079 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+| CO-080 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
+
+### Verification boundary and owner-dependent work
+- The CO-focused workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) completed its isolated CO typecheck and test step successfully. This is not native PostgreSQL proof.
+- `test/pg-helpers.ts` explicitly selects `createSqliteBackedPool()` when `FORGE_TEST_POSTGRES_URL` is absent. The workflow references that secret, but no configured real database is evidenced. The PostgreSQL unit-of-work test can therefore pass against the stand-in.
+- CO-064 remains partial until native PostgreSQL migration, append, concurrency, verification and privilege/trigger behavior are exercised against a real PostgreSQL service.
+- CO-065 remains partial until durable subscriber-delivery semantics are specified and implemented; the transactional source write alone does not establish delivery guarantees.
+- CO-076's verifier can compare a trusted checkpoint but cannot create trust. The owner must approve the independent anchor destination, retention/availability policy and credentials. A checkpoint in the same event database does not protect against database-level truncation.
+- CO-067 remains identity-scoped. Do not infer a global event registry from the existing identity event constants.
