@@ -115,14 +115,14 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
   async listForWorkspace(workspaceId: string): Promise<readonly ProviderConnectionRecord[]> {
     validateWorkspaceId(workspaceId);
     const rows = this.db.prepare(`SELECT ${COLUMNS} FROM build_ci_provider_connections
-      WHERE workspace_id = ? ORDER BY created_at DESC, provider, connection_id`).all(workspaceId) as ConnectionRow[];
+      WHERE workspace_id = ? ORDER BY created_at DESC, provider, connection_id`).all(workspaceId) as unknown as ConnectionRow[];
     return Object.freeze(rows.map(fromRow));
   }
   async listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]> {
     validateWorkspaceId(workspaceId); validateProvider(provider); required(connectionId, 'connectionId', 128);
     const rows = this.db.prepare(`SELECT ${EVENT_COLUMNS} FROM build_ci_provider_connection_events
       WHERE workspace_id = ? AND provider = ? AND connection_id = ? ORDER BY occurred_at, event_id`)
-      .all(workspaceId, provider, connectionId) as ProviderConnectionEventRow[];
+      .all(workspaceId, provider, connectionId) as unknown as ProviderConnectionEventRow[];
     return Object.freeze(rows.map(eventFromRow));
   }
   async revoke(provider: WebhookProvider, connectionId: string, revokedAt: string, actorId: string): Promise<boolean> {
