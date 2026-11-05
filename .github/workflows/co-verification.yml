@@ -19,6 +19,8 @@ on:
       - 'test/rate-limit.test.ts'
       - 'test/identity-throttle.test.ts'
       - 'test/password.test.ts'
+      - 'src/modules/identity/webauthn.ts'
+      - 'test/webauthn.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-012-anomaly.test.ts'
@@ -56,6 +58,7 @@ jobs:
             test/rate-limit.test.ts \
             test/identity-throttle.test.ts \
             test/password.test.ts \
+            test/webauthn.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-012-anomaly.test.ts
