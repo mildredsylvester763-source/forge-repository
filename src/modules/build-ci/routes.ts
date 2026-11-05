@@ -77,7 +77,7 @@ function jsonValue(value: unknown, depth = 0): value is JsonValue {
 
 function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent {
   if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
-  const allowed = ['kind', 'source', 'eventId', 'branch', 'baseBranch', 'changedFiles', 'scheduleId', 'commitSha', 'pullRequestNumber', 'payload', 'eventType'];
+  const allowed = ['kind', 'source', 'eventId', 'branch', 'baseBranch', 'changedFiles', 'changedFilesComplete', 'scheduleId', 'commitSha', 'pullRequestNumber', 'payload', 'eventType'];
   exact(value, allowed, ['kind', 'source', 'eventId']);
   const kinds: readonly TriggerKind[] = ['push', 'pull_request', 'schedule', 'event', 'manual', 'api'];
   if (typeof value.kind !== 'string' || !kinds.includes(value.kind as TriggerKind)) {
@@ -97,8 +97,12 @@ function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent 
     ...(value.commitSha !== undefined ? { commitSha: id(value.commitSha, 'event.commitSha') } : {}),
     ...(value.pullRequestNumber !== undefined ? { pullRequestNumber: value.pullRequestNumber as number } : {}),
     ...(value.changedFiles !== undefined ? { changedFiles: value.changedFiles as string[] } : {}),
+    ...(value.changedFilesComplete !== undefined ? { changedFilesComplete: value.changedFilesComplete as boolean } : {}),
     ...(value.payload !== undefined ? { payload: value.payload as { readonly [key: string]: JsonValue } } : {}),
   };
+  if (event.changedFilesComplete !== undefined && typeof event.changedFilesComplete !== 'boolean') {
+    throw new AppError(400, 'invalid_request', 'event.changedFilesComplete must be a boolean.');
+  }
   if (event.pullRequestNumber !== undefined && (!Number.isSafeInteger(event.pullRequestNumber) || event.pullRequestNumber < 1)) {
     throw new AppError(400, 'invalid_request', 'event.pullRequestNumber must be a positive integer.');
   }
