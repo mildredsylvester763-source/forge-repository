@@ -219,10 +219,19 @@ export class IdentityService {
   }
 
   async signOut(token: string | undefined, meta: RequestMeta): Promise<void> {
-    const record = await this.d.sessions.revoke(token, 'user_sign_out');
-    if (record) {
-      await this.emitBestEffort(IdentityEvents.SignedOut, { kind: 'user', id: record.userId }, { type: 'user', id: record.userId }, { sessionRef: record.idHash.slice(0, 12) }, meta);
-    }
+    const prepared = this.d.sessions.prepareRevoke(token);
+    if (!prepared) return;
+    await this.d.uow.endSession({
+      idHash: prepared.idHash,
+      now: prepared.now,
+      event: (session) => this.draft(
+        IdentityEvents.SignedOut,
+        { kind: 'user', id: session.userId },
+        { type: 'user', id: session.userId },
+        { sessionRef: session.idHash.slice(0, 12) },
+        meta,
+      ),
+    });
   }
 
   /** Server-side session check used by every protected route (CO-030). Returns null for any failure. */
