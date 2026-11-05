@@ -174,3 +174,13 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Commits: limiter fix `8ed83602111353b76c9014392515f0136089f737`; tests `bcf58c36a55b23bf6f1ac9b72d6b41cccee7ee8e`.
 - Status remains PARTIAL: this limiter is process-local. It does not provide atomic shared limits across multiple application replicas. A shared Postgres/Redis implementation and policy are tracked in docs/CO_APPROVAL_NEEDED.md. No claim of distributed production protection is made.
 - Verification: GitHub Actions run for the code commit was still in progress at the time of this entry; local tests/typecheck were not run in this environment. Record final CI result before declaring this slice verified.
+
+
+### CO-096 SQLite backup verification hardening (2026-11-05)
+- Compared `src/kernel/backup.ts` on main and mistral before editing; both branches shared blob `f71e281be948fee5ec26fb9122432fa4a7d42a32`.
+- Defect found: `verifyBackup()` accepted a backup when its `.sha256` sidecar was missing, because checksum comparison was conditional on sidecar existence. This contradicted the stated checksum-verification guarantee.
+- Mistral change: checksum sidecar is now mandatory; unreadable checksum metadata, malformed non-64-character lowercase hex digests, and digest mismatches return explicit failed checks rather than accepting the backup.
+- Added `test/backup.test.ts` covering a valid generated backup, missing sidecar, malformed digest, mismatched digest and restored valid sidecar.
+- Commits: implementation `cc9f79f734be3e26005eea4148aab5c66ae9c034`; tests `175c8d6bbec4d0385e32ac515ae22af2b77d9560`.
+- Status remains PARTIAL: this is SQLite local backup verification only. PostgreSQL/off-site backup, scheduled R2 transfer and restore objectives remain owner/deployment dependent as listed in docs/CO_APPROVAL_NEEDED.md.
+- Verification: CI for the preceding CO commits fails before test execution because of pre-existing TypeScript parse errors in `src/modules/ai-training/sqlite-stores.ts` (outside CO). The backup test has therefore not yet run in GitHub Actions. Local execution is unavailable in this environment.
