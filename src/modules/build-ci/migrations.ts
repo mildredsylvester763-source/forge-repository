@@ -581,6 +581,16 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         FOR EACH STATEMENT EXECUTE FUNCTION build_ci_provider_connection_events_block_change();
     `,
   },
+  {
+    version: 10,
+    name: 'provider_connection_event_append_order',
+    sql: `
+      ALTER TABLE build_ci_provider_connection_events
+        ADD COLUMN event_order BIGINT GENERATED ALWAYS AS IDENTITY;
+      CREATE UNIQUE INDEX build_ci_provider_connection_events_order_idx
+        ON build_ci_provider_connection_events (provider, connection_id, event_order);
+    `,
+  },
 ]; 
 
 export function migrateBuildCiSqlite(db: Database): number[] {
