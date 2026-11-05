@@ -53,7 +53,7 @@ describe('CO-002 passkey storage', () => {
     assert.equal(await store.consumeChallenge(challenge('registration-one', 'registration', 'user-a').challengeHash, 'registration', 'user-b', now), null);
     const used = await store.consumeChallenge(challenge('registration-one', 'registration', 'user-a').challengeHash, 'registration', 'user-a', now);
     assert.equal(used?.userId, 'user-a');
-    assert.equal(await store.consumeChallenge(challenge('registration-one').challengeHash, 'registration', 'user-a', now), null);
+    assert.equal(await store.consumeChallenge(challenge('registration-one', 'registration', 'user-a').challengeHash, 'registration', 'user-a', now), null);
   });
 
   it('expires challenges and rejects malformed challenge metadata', async () => {
@@ -96,9 +96,9 @@ describe('CO-002 passkey storage', () => {
       assert.equal((await store.findCredentialById(record.credentialId))?.userId, 'user-a');
       assert.equal((await store.listCredentialsForUser('user-a')).length, 1);
 
-      db.exec(`CREATE TRIGGER reject_passkey_audit BEFORE INSERT ON events
-        WHEN NEW.type = 'identity.passkey.registered'
-        BEGIN SELECT RAISE(ABORT, 'injected passkey audit failure'); END;`);
+      db.exec("CREATE TRIGGER reject_passkey_audit BEFORE INSERT ON events " +
+        "WHEN NEW.type = 'identity.passkey.registered' " +
+        "BEGIN SELECT RAISE(ABORT, 'injected passkey audit failure'); END;");
       const rejected = credential('user-a');
       await assert.rejects(
         () => store.createCredential(rejected, event('identity.passkey.registered', 'user-a')),
@@ -107,9 +107,9 @@ describe('CO-002 passkey storage', () => {
       assert.equal(await store.findCredentialById(rejected.credentialId), null, 'failed audit append must roll back the credential');
       db.exec('DROP TRIGGER reject_passkey_audit');
 
-      db.exec(`CREATE TRIGGER reject_passkey_counter_audit BEFORE INSERT ON events
-        WHEN NEW.type = 'identity.passkey.authenticated'
-        BEGIN SELECT RAISE(ABORT, 'injected passkey counter audit failure'); END;`);
+      db.exec("CREATE TRIGGER reject_passkey_counter_audit BEFORE INSERT ON events " +
+        "WHEN NEW.type = 'identity.passkey.authenticated' " +
+        "BEGIN SELECT RAISE(ABORT, 'injected passkey counter audit failure'); END;");
       await assert.rejects(
         () => store.updateAfterAssertion({
           userId: 'user-a', credentialId: record.credentialId, signCount: 4, backedUp: false, now: now + 10,
