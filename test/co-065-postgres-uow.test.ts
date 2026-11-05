@@ -128,6 +128,7 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
 
       const stored = await events.readFrom(1, 100);
       assert.equal(stored.filter((event) => event.type === 'identity.password.compromised_detected').length, 1);
+      assert.equal(stored.filter((event) => event.type === 'identity.sign_in.succeeded').length, 1);
       assert.equal(stored.filter((event) => event.type === 'identity.sign_out.completed').length, 1);
       assert.equal((await events.verify()).ok, true);
     } finally {
