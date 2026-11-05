@@ -21,6 +21,7 @@
     "test/identity-service.test.ts",
     "test/co-006-session-manager.test.ts",
     "test/co-012-anomaly.test.ts",
-    "test/co-007-native-token.test.ts"
+    "test/co-007-native-token.test.ts",
+    "test/webauthn.test.ts"
   ]
 }
