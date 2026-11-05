@@ -117,6 +117,22 @@ export function passkeyRoutes(
         };
       },
     },
+    '/v1/auth/native/passkeys/authentication/complete': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const response = assertionResponse(await ctx.json());
+        const result = await passkeys.completeAuthentication(response, meta(ctx));
+        return {
+          status: 200,
+          body: {
+            user: result.user,
+            tokenType: 'Bearer',
+            sessionToken: result.sessionToken,
+            expiresAt: new Date(result.sessionExpiresAt).toISOString(),
+            passwordChangeRequired: result.passwordChangeRequired,
+          },
+        };
+      },
+    },
     '/v1/auth/passkeys/remove': {
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
