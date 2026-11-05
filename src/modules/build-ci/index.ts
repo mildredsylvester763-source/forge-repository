@@ -10,6 +10,7 @@ export * from './webhooks.ts';
 export * from './webhook-deliveries.ts';
 export * from './webhook-ingress.ts';
 export * from './webhook-processor.ts';
+export * from './changed-files.ts';
 export * from './cron.ts';
 export * from './schedule-occurrences.ts';
 export * from './schedule-dispatcher.ts';
