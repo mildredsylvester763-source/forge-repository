@@ -19,9 +19,7 @@ on:
       - 'test/rate-limit.test.ts'
       - 'test/identity-throttle.test.ts'
       - 'test/password.test.ts'
-      - 'test/identity.test.ts'
-      - 'test/identity.sqlite.test.ts'
-      - 'test/identity.postgres.test.ts'
+      - 'test/identity-service.test.ts'
       - '.github/workflows/co-verification.yml'
   pull_request:
     branches:
@@ -56,6 +54,4 @@ jobs:
             test/rate-limit.test.ts \
             test/identity-throttle.test.ts \
             test/password.test.ts \
-            test/identity.test.ts \
-            test/identity.sqlite.test.ts \
-            test/identity.postgres.test.ts
+            test/identity-service.test.ts
