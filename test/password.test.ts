@@ -109,6 +109,34 @@ describe('breach checking', () => {
     assert.deepEqual(await new HibpBreachChecker({ fetchImpl }).check(password), { status: 'clean' });
   });
 
+  it('fails closed on empty or malformed successful range responses', async () => {
+    const password = 'strict-range-response-passphrase';
+    const suffix = sha1(password).slice(5);
+    const invalidBodies = [
+      '',
+      'not-a-range-row',
+      `${suffix}:12garbage`,
+      `${suffix}:9007199254740992`,
+      `${suffix}:0\\nmalformed-row`,
+      `${suffix}:0\\n${suffix}:0`,
+    ];
+
+    for (const body of invalidBodies) {
+      const fetchImpl = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+      assert.deepEqual(
+        await new HibpBreachChecker({ fetchImpl }).check(password),
+        { status: 'unavailable', reason: 'invalid_range_response' },
+        body,
+      );
+    }
+
+    const noBodyFetch = (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+    assert.deepEqual(
+      await new HibpBreachChecker({ fetchImpl: noBodyFetch }).check(password),
+      { status: 'unavailable', reason: 'bad_response' },
+    );
+  });
+
   it('reports unavailable on network errors, timeouts, bad status and oversized replies', async () => {
     const fail = (impl: unknown) => new HibpBreachChecker({ fetchImpl: impl as typeof fetch, maxBytes: 100 }).check('whatever-password');
     assert.equal((await fail(async () => { throw new TypeError('down'); })).status, 'unavailable');
