@@ -23,6 +23,7 @@ on:
       - 'test/webauthn.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
+      - 'test/co-007-native-token.test.ts'
       - 'test/co-012-anomaly.test.ts'
       - '.github/workflows/co-verification.yml'
   pull_request:
@@ -61,4 +62,5 @@ jobs:
             test/webauthn.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
+            test/co-007-native-token.test.ts \
             test/co-012-anomaly.test.ts
