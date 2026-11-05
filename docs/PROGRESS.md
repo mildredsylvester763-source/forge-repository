@@ -184,3 +184,13 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Commits: implementation `cc9f79f734be3e26005eea4148aab5c66ae9c034`; tests `175c8d6bbec4d0385e32ac515ae22af2b77d9560`.
 - Status remains PARTIAL: this is SQLite local backup verification only. PostgreSQL/off-site backup, scheduled R2 transfer and restore objectives remain owner/deployment dependent as listed in docs/CO_APPROVAL_NEEDED.md.
 - Verification: CI for the preceding CO commits fails before test execution because of pre-existing TypeScript parse errors in `src/modules/ai-training/sqlite-stores.ts` (outside CO). The backup test has therefore not yet run in GitHub Actions. Local execution is unavailable in this environment.
+
+
+### CO-093 account-lockout capacity hardening (2026-11-05)
+- Compared `src/modules/identity/throttle.ts` on main and mistral before editing; both branches had identical blob `e652001cf2e4fd68b940ff6a335d92f3b15f9af5`.
+- Defect found: the per-account exponential-lockout map evicted its oldest entry whenever it exceeded `maxEntries`, even if the entry still represented a live lockout. Distinct-account key churn could erase a victim's lockout.
+- Mistral change: known fingerprints are refreshed in LRU order; expired entries may be reclaimed; when capacity is full of live entries, unknown fingerprints fail closed instead of evicting an existing lockout. A defensive guard also prevents direct recordFailure() calls from evicting live state.
+- Added `test/identity-throttle.test.ts` for lockout retention under key churn, stale-entry reclamation and expiry behavior.
+- Commits: implementation `219cae33696748d5ca59302d4c0171921b5f70da`; tests `c6e9bf6613dbea0ddac49a828dbfcfd6c295a591`.
+- Operational trade-off: at account-state capacity, previously unseen fingerprints are temporarily denied until an expired entry can be reclaimed. This is intentional fail-closed behavior; alerting/operational tuning and a shared persistent limiter remain future work.
+- CI status at the last completed run: typecheck fails before tests because of existing parse errors in `src/modules/ai-training/sqlite-stores.ts`; no CO tests have been executed by that run. AI remains out of scope and untouched.
