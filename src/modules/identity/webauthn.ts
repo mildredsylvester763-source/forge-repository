@@ -172,6 +172,29 @@ function validateTimeout(timeout: number): void {
   }
 }
 
+export function validateWebAuthnConfig(config: WebAuthnConfig): void {
+  if (!config || typeof config.rpName !== 'string' || config.rpName.trim().length < 1 || config.rpName.length > 64) {
+    fail('invalid_rp_name', 'Relying-party display name must be 1 to 64 characters');
+  }
+  validateRpOriginPair(config.rpId, config.origins);
+}
+
+export function extractPasskeyChallenge(
+  response: PasskeyRegistrationResponse | PasskeyAssertionResponse,
+): string {
+  const raw = canonicalBase64Url(response.response.clientDataJSON, 'clientDataJSON', MAX_CLIENT_DATA_BYTES);
+  let data: unknown;
+  try { data = JSON.parse(decoder.decode(raw)); }
+  catch { fail('invalid_client_data', 'clientDataJSON must be valid UTF-8 JSON'); }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    fail('invalid_client_data', 'clientDataJSON must be an object');
+  }
+  const challenge = (data as Record<string, unknown>).challenge;
+  if (typeof challenge !== 'string') fail('invalid_client_data', 'Client data challenge is missing');
+  validateChallenge(challenge);
+  return challenge;
+}
+
 export function createPasskeyChallenge(): string {
   return randomBytes(CHALLENGE_BYTES).toString('base64url');
 }
