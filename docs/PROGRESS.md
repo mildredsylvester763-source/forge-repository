@@ -520,3 +520,13 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - The CO-focused workflow runs typecheck and identity/Core regressions independently of the unrelated AI import path.
 - Full repository CI still fails at global typecheck due existing syntax errors in src/modules/ai-training/sqlite-stores.ts; this is outside the Core identity changes. No AI file was modified.
 - The CO workflow has no real PostgreSQL test connection secret configured. PostgreSQL adapter paths are not claimed as native PostgreSQL integration proof.
+
+## CO-002 verified implementation delta (2026-11-05, supersedes protocol-only summary)
+
+- Added persisted, owner/purpose-bound, one-time registration/authentication challenges; public-key credential records; in-memory, SQLite and PostgreSQL store adapters; owner-scoped registration/list/removal; discoverable authentication; counter/backup metadata validation; and browser/native completion routes.
+- Creation, assertion counter updates and removal are transactionally coupled to audit append in the SQLite and PostgreSQL stores. In-memory credential mutations are serialized to avoid concurrent duplicate, stale-counter and delete/update races.
+- Added a separate passkey IP throttle bucket and strict startup validation requiring `FORGE_WEBAUTHN_RP_ID` and `FORGE_WEBAUTHN_ORIGINS` as a valid pair. Production RP values are not set in source.
+- Focused run [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) passed the CO-focused typecheck and **88 tests (88 passed, 0 failed)** at commit `b0297ee5c6c89748a57d9aa0439dd3724f830b00`.
+- **Classification:** implementation-complete for the currently coded backend ceremony/lifecycle; not owner-accepted and not production-activated. Exact catalogue acceptance text is still unavailable. PostgreSQL adapter has not yet been exercised against a real PostgreSQL CI service. Shared/distributed throttle enforcement remains CO-093 work.
+- **Activation hold:** relying-party production domain/origins, customer domain-control evidence, accepted authenticator/attestation policy and production database proof remain attached to CO-002. None was supplied or inferred.
+- **Feature transition:** the native bearer completion path is recorded under CO-007 as an integration dependency, but it does not transfer or close CO-007 token audience/refresh/device decisions. CO-002 retains its own RP and authenticator dependencies.
