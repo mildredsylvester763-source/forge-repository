@@ -21,6 +21,7 @@ on:
       - 'test/password.test.ts'
       - 'src/modules/identity/webauthn.ts'
       - 'test/webauthn.test.ts'
+      - 'test/passkey-store.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-007-native-token.test.ts'
@@ -60,6 +61,7 @@ jobs:
             test/identity-throttle.test.ts \
             test/password.test.ts \
             test/webauthn.test.ts \
+            test/passkey-store.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
