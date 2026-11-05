@@ -97,15 +97,16 @@ export class SqliteUserStore implements UserStore {
     return transaction(this.db, () => this.createSync(user));
   }
 
+  updateSync(id: string, patch: UserPatch, now: number): UserRecord {
+    const current = this.findByIdSync(id);
+    if (!current) throw new Error('user not found');
+    const next: UserRecord = { ...current, ...patch, updatedAt: now, version: current.version + 1 };
+    this.updateUser.run(next.displayName, next.passwordHash, next.status, next.passwordCompromisedAt, next.updatedAt, next.version, id);
+    return next;
+  }
+
   async update(id: string, patch: UserPatch, now: number): Promise<UserRecord> {
-    return transaction(this.db, () => {
-      const row = this.byId.get(id) as unknown as UserRow | undefined;
-      if (!row) throw new Error('user not found');
-      const current = toUser(row);
-      const next: UserRecord = { ...current, ...patch, updatedAt: now, version: current.version + 1 };
-      this.updateUser.run(next.displayName, next.passwordHash, next.status, next.passwordCompromisedAt, next.updatedAt, next.version, id);
-      return next;
-    });
+    return transaction(this.db, () => this.updateSync(id, patch, now));
   }
 }
 
