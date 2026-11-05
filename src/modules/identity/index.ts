@@ -1,4 +1,6 @@
 /** Public surface of the identity module. Other modules import from here and nowhere deeper. */
+export { OidcAuthorizationService, InMemoryOidcTransactionStore, validateOidcProviderConfig } from './oidc-authorization.ts';
+export type { OidcProviderConfig, OidcTransactionRecord, OidcTransactionStore, OidcConsumedTransaction, OidcAuthorizationStart } from './oidc-authorization.ts';
 export { IdentityService, toPublicUser } from './identity-service.ts';
 export type { IdentityDeps, PublicUser, PublicSession, RevokeSessionResult, RequestMeta, SignInResult } from './identity-service.ts';
 export { IdentityEvents, IDENTITY_EVENT_VERSION } from './events.ts';
