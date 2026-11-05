@@ -61,6 +61,7 @@ test('GitHub push normalization preserves branch, commit and changed paths', () 
   assert.equal(normalized.event.branch, 'main');
   assert.equal(normalized.event.commitSha, '0123456789abcdef');
   assert.deepEqual(normalized.event.changedFiles, ['src/new.ts', 'src/app.ts', 'old.txt']);
+  assert.equal(normalized.event.changedFilesComplete, true);
   assert.equal(normalized.event.eventId, 'gh-delivery-1');
 });
 
@@ -87,11 +88,43 @@ test('GitHub pull request normalization uses the target branch and does not inve
   assert.equal(normalized.event.changedFiles, undefined);
 });
 
+test('provider push normalizers mark capped or count-mismatched file lists as incomplete', () => {
+  const githubPayload = {
+    repository: { full_name: 'team/api' },
+    ref: 'refs/heads/main',
+    after: 'abcdef',
+    commits: Array.from({ length: 2048 }, (_, index) => ({
+      added: [`src/${index}.ts`], modified: [], removed: [],
+    })),
+  };
+  const github = normalizeGitHubWebhook(Buffer.from(JSON.stringify(githubPayload)), {
+    'x-github-event': 'push', 'x-github-delivery': 'gh-capped-push',
+  });
+  assert.equal(github.event.changedFiles?.length, 2048);
+  assert.equal(github.event.changedFilesComplete, false);
+
+  const gitlabPayload = {
+    project: { path_with_namespace: 'team/api' },
+    ref: 'refs/heads/main',
+    checkout_sha: 'abcdef',
+    total_commits_count: 21,
+    commits: Array.from({ length: 20 }, (_, index) => ({
+      added: [`src/${index}.ts`], modified: [], removed: [],
+    })),
+  };
+  const gitlab = normalizeGitLabWebhook(Buffer.from(JSON.stringify(gitlabPayload)), {
+    'x-gitlab-event': 'Push Hook', 'webhook-id': 'gl-capped-push',
+  });
+  assert.equal(gitlab.event.changedFiles?.length, 20);
+  assert.equal(gitlab.event.changedFilesComplete, false);
+});
+
 test('GitLab push and merge-request hooks normalize into FORGE trigger events', () => {
   const push = normalizeGitLabWebhook(Buffer.from(JSON.stringify({
     project: { path_with_namespace: 'team/api' },
     ref: 'refs/heads/release',
     checkout_sha: 'deadbeef',
+    total_commits_count: 1,
     commits: [{ added: ['dist/app.js'], modified: [], removed: [] }],
   })), {
     'X-Gitlab-Event': 'Push Hook',
@@ -100,6 +133,7 @@ test('GitLab push and merge-request hooks normalize into FORGE trigger events', 
   assert.equal(push.event.kind, 'push');
   assert.equal(push.event.branch, 'release');
   assert.deepEqual(push.event.changedFiles, ['dist/app.js']);
+  assert.equal(push.event.changedFilesComplete, true);
 
   const mergeRequest = normalizeGitLabWebhook(Buffer.from(JSON.stringify({
     project: { path_with_namespace: 'team/api' },
