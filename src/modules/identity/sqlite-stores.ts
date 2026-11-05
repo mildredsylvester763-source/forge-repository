@@ -192,9 +192,13 @@ export class SqliteSessionStore implements SessionStore {
     return Number(this.revokeAll.run(now, reason, userId).changes);
   }
 
-  async listActiveByUser(userId: string, now: number): Promise<SessionRecord[]> {
+  listActiveByUserSync(userId: string, now: number): SessionRecord[] {
     this.purge.run(userId, now - DAY_MS); // long-dead sessions are deleted so the table cannot grow forever
     return (this.active.all(userId, now) as unknown as SessionRow[]).map(toSession);
+  }
+
+  async listActiveByUser(userId: string, now: number): Promise<SessionRecord[]> {
+    return this.listActiveByUserSync(userId, now);
   }
 }
 
@@ -224,18 +228,26 @@ export class SqliteIdentityUnitOfWork implements IdentityUnitOfWork {
 
   async startSession(args: {
     session: SessionRecord;
-    revokeIdHashes: readonly string[];
+    maxPerUser: number;
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (!Number.isSafeInteger(args.maxPerUser) || args.maxPerUser < 1) {
+      throw new Error('maxPerUser must be a positive safe integer');
+    }
     if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
       throw new Error('session user update must target the session user');
     }
     const committed = transaction(this.db, () => {
+      if (!this.users.findByIdSync(args.session.userId)) throw new Error('user not found');
       if (args.userUpdate) this.users.updateSync(args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
-      this.sessions.insertSync(args.session);
       const now = this.clock();
-      for (const idHash of args.revokeIdHashes) this.sessions.revokeSync(idHash, 'session_limit', now);
+      const active = this.sessions.listActiveByUserSync(args.session.userId, now);
+      const surplus = [...active]
+        .sort((a, b) => a.lastSeenAt - b.lastSeenAt || a.createdAt - b.createdAt || a.idHash.localeCompare(b.idHash))
+        .slice(0, Math.max(0, active.length - args.maxPerUser + 1));
+      this.sessions.insertSync(args.session);
+      for (const previous of surplus) this.sessions.revokeSync(previous.idHash, 'session_limit', now);
       return this.events.appendSync(args.event);
     });
     this.events.notify(committed);
