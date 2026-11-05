@@ -495,7 +495,7 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
         }
         try {
           const seen = new Set<string>();
-          const scenarios = body.scenarios.map((entry, index) => {
+          const scenarios = body.scenarios.map((entry) => {
             if (!isRecord(entry)) throw new AppError(400, 'invalid_request', 'Each scenario must be an object.');
             exact(entry, ['id', 'event', 'inputs'], ['id', 'event']);
             const scenarioId = id(entry.id, 'scenario.id');
