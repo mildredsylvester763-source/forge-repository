@@ -164,7 +164,7 @@ describe('CO-006 owner-scoped session manager', () => {
 
       const revoked = await h.sessionStore.findByHash(h.secondary.record.idHash);
       assert.equal(revoked?.revokedReason, 'session_manager');
-      assert.ok(revoked?.revokedAt !== null);
+      assert.ok(revoked && revoked.revokedAt !== null);
       const audit = (await h.events.readFrom(1, 100)).filter((item) => item.type === IdentityEvents.SessionRevoked);
       assert.equal(audit.length, 1);
       assert.deepEqual(audit[0]?.payload, { sessionRef: h.secondary.record.idHash.slice(0, 12), reason: 'session_manager' });
