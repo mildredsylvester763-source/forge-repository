@@ -135,10 +135,10 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 
 | ID | Current status | Remaining catalogue scope / integration |
 |---|---|---|
-| BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance and append-only lifecycle audit implemented | Runtime task-registry compatibility, structured template diff/upgrade flow and any public/global catalogue policy |
+| BD-001 | Declarative schema, typed inputs, immutable versions, controlled workspace template publishing/sharing/revocation, pinned import, source provenance, append-only lifecycle audit and value-free template-release comparison implemented | Runtime task-registry compatibility and an explicit, local-change-safe template upgrade workflow; public/global catalogue remains disabled pending policy |
 | BD-016 | Trigger model, pause/resume, branch/path matching, durable timezone-aware schedules, verified GitHub/GitLab ingress, leased delivery processing, bounded retry, redacted failure persistence, dead-letter inspection/replay, append-only replay audit, workspace-authorized provider connection create/list/rotate/revoke APIs and immutable lifecycle audit implemented on GPT branch | Concrete vault/KMS adapter and provisioning/retirement workflow, production delivery identity/service-principal policy, event-bus publication, production worker/workspace-inventory wiring, per-pipeline concurrency controls and execution of registered pipeline tasks; continuation changes await CI verification |
 | BD-017 | Safe condition AST, branch/path filters, ordered include/exclude rules and explainable dry-run evaluation implemented | Real provider changed-file adapters and broader compatibility/edge-case test matrix |
-| BD-029 | Saved and unsaved candidate dry-run service/API; candidate definitions remain unpersisted. Candidate responses now include baseline/candidate hashes and a value-free structural diff. Saved-version diff service and authenticated HTTP endpoint report added/removed/changed triggers and steps, root fields and ordering. Unit, service and route regression coverage added. | Richer scenario fixtures/reporting and full CI verification; owner acceptance remains outstanding |
+| BD-029 | Saved/unsaved candidate dry-run; baseline/candidate hashes and value-free structural diff; saved-version diff service/HTTP route; bounded multi-scenario dry-run (1–20 unique event fixtures) for saved and candidate pipelines. Unit, service and authenticated route coverage checks authorization and no-write behavior. | Full CI verification, richer reporting if required and owner acceptance remain outstanding |
 | BD-030 | Immutable content-hashed versions, authenticated version reads/listing, append-only rollback and saved-version diff implemented. Both adapters recompute hashes on reads; SQLite/PostgreSQL corruption tests and PostgreSQL concurrent save/rollback allocation tests added. | Full CI verification, independent verification and owner acceptance remain outstanding |
 
 ### Supporting security and integration work
@@ -155,10 +155,10 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 
 ### Still outstanding before these features can be accepted
 
-1. Complete BD-001 task-registry compatibility and structured template diff/upgrade flow. Pipeline definition/version diff is now implemented separately; the template upgrade workflow remains distinct.
+1. Complete BD-001 task-registry compatibility and an explicit, local-change-safe template upgrade workflow. Pipeline and template-release value-free diffs are implemented; applying an upgrade with local customizations remains a separate operation.
 2. Supply and integrate a concrete vault/KMS adapter plus provisioning/retirement workflow; decide the production service-principal/delivery-actor strategy; complete event-bus publication, production worker/workspace-inventory configuration, per-pipeline concurrency controls and registered task execution for BD-016. Provider connection lifecycle APIs and dead-letter operations are implemented on the GPT branch but await full CI verification.
 3. Connect trusted provider changed-file data to BD-017 and test all documented glob/condition semantics.
-4. Add richer representative scenario fixtures/reporting to BD-029 and verify candidate diffs remain side-effect-free under the complete CI suite.
+4. Verify saved/candidate multi-scenario matrices and candidate diff side-effect guarantees under the complete CI suite; add richer report presentation only if acceptance review requires it.
 5. Run full CI for the new version-diff, hash-integrity and concurrent PostgreSQL save/rollback coverage; independently inspect the results before acceptance of BD-030.
 6. Implement the approved workspace-scoped execution adapter only after the Task Runtime contract/identity decision is made; do not encode CI jobs as free-text task goals or duplicate Mistral engines.
 7. Add worker isolation, scoped secret delivery, execution state transitions, cancellation/retries, logs and artifacts only where they map to approved catalogue requirements.
@@ -174,6 +174,7 @@ Successful GitHub Actions run: https://github.com/mildredsylvester763-source/for
 4. **Task execution integration:** approve the future adapter boundary between workspace-scoped Build & CI runs and the Mistral-owned Task Runtime. The current Task Runtime accepts user-owned free-text goals and journals task events; it has no pipeline ID/version, registered CI task handler or workspace-scoped execution identity. Its Orchestrator tool registry is not a CI task registry. Do not modify or duplicate the Mistral branch.
 5. **Dead-letter replay role:** current policy permits owners, admins and maintainers to replay a failed provider delivery. Confirm whether maintainers should retain replay authority or whether replay should be limited to owner/admin.
 6. **Template discovery policy:** public/community or organization-wide template catalogue remains disabled. Workspace-private and explicitly shared templates are implemented; wider discovery needs a separate visibility/moderation policy.
+7. **Template upgrade conflict policy:** when a newer template release is available, decide whether FORGE should offer a strict replace-with-warning path, require a user/AI-supplied merged candidate, or support a three-way merge between the pinned base, local edits and new release. No automatic overwrite/merge has been introduced.
 
 These are recorded for the final approval review. Continue work that does not depend on them.
 
