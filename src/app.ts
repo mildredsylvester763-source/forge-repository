@@ -25,6 +25,7 @@ import {
   type WorkspaceMembershipReader,
   WebhookIngressService,
   WebhookDeliveryProcessor,
+  ProviderPullRequestChangedFilesResolver,
   ScheduleDispatcher,
   SqliteScheduleOccurrenceStore,
   PostgresScheduleOccurrenceStore,
@@ -36,6 +37,7 @@ import {
   StoredWebhookConnectionResolver,
   type ProviderConnectionStore,
   type ProviderSecretResolver,
+  type ProviderApiTransportResolver,
   type WebhookDeliveryStore,
   type ScheduleOccurrenceStore,
   type WebhookConnectionResolver,
@@ -86,6 +88,8 @@ export interface AppOverrides {
   webhookConnections?: WebhookConnectionResolver;
   /** External secret/vault adapter. Enables authorized provider-connection management and stored resolver composition. */
   providerSecrets?: ProviderSecretResolver;
+  /** Provider API transport with credentials and trusted origins managed outside Build & CI. */
+  providerApiTransports?: ProviderApiTransportResolver;
   /** Optional worker host; it is not started unless autoStart is explicitly true. */
   buildCiWorker?: {
     workerId: string;
@@ -253,8 +257,14 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ? new WebhookIngressService({ connections: webhookConnections, deliveries: storage.webhookDeliveries })
     : undefined;
 
+  const changedFilesResolver = overrides.providerApiTransports
+    ? new ProviderPullRequestChangedFilesResolver(overrides.providerApiTransports)
+    : undefined;
   const webhookProcessor = webhookConnections
-    ? new WebhookDeliveryProcessor({ deliveries: storage.webhookDeliveries, connections: webhookConnections, buildCi, now: clock })
+    ? new WebhookDeliveryProcessor({
+        deliveries: storage.webhookDeliveries, connections: webhookConnections, buildCi, now: clock,
+        ...(changedFilesResolver ? { changedFiles: changedFilesResolver } : {}),
+      })
     : undefined;
 
   const providerConnectionOperations = overrides.providerSecrets
