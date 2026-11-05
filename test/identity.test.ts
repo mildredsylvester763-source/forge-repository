@@ -191,6 +191,27 @@ describe('sign-in, session and sign-out', () => {
       await strict.close();
     }
   });
+
+  it('records an unavailable sign-in breach recheck without blocking authentication', async () => {
+    const strict = await startHarness({ FORGE_BREACH_ON_SIGN_IN: 'true' });
+    try {
+      const password = 'breach-service-outage-login-42';
+      await strict.post('/v1/auth/register', { email: 'outage@example.com', password });
+      strict.breach.mode = 'unavailable';
+
+      const result = await strict.post('/v1/auth/sign-in', { email: 'outage@example.com', password });
+      assert.equal(result.status, 200, 'a breach-service outage must not block sign-in');
+
+      const events = await strict.app.events.readFrom(1, 100);
+      assert.ok(events.some((event) =>
+        event.type === 'identity.password.breach_check_skipped' &&
+        (event.payload as Record<string, unknown>).stage === 'sign_in'
+      ));
+    } finally {
+      await strict.close();
+    }
+  });
+
 });
 
 describe('brute-force protection', () => {
