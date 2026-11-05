@@ -188,7 +188,8 @@ test('webhook processor uses complete PR file lists and fails open when provider
           kind: 'pull_request', source: 'github:pull_request', eventType: 'pull_request',
           eventId: 'delivery-pr-' + number, branch: 'feature/change', baseBranch: 'main', pullRequestNumber: number,
         },
-        bodySha256: String(number).repeat(64), receivedAt: '2026-11-05T11:00:00.000Z',
+        bodySha256: number === 17 ? 'a'.repeat(64) : 'b'.repeat(64),
+        receivedAt: number === 17 ? '2026-11-05T11:00:00.000Z' : '2026-11-05T11:00:01.000Z',
       });
     }
     const changedFiles: PullRequestChangedFilesResolver = {
