@@ -283,3 +283,12 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - **Verification: NOT YET VERIFIED.** The latest historical green Actions run remains `41826209940` on commit `d3a602ce22b296194ad16bc5d0fbdbc69a7b99eb`; it predates all 2026-11-05 continuation commits. The GitHub connector did not expose push-run details or commit statuses, so no current test/build result is claimed.
 - The current branch continues to be isolated; no merge, deploy, or modification of `main`, `mistral` or `claude` was performed.
 
+### 2026-11-05 BD continuation — provider changed-file adapters and approval custody
+
+- Correct working scope is Part 02 Build & CI only: BD-001, BD-016, BD-017, BD-029 and BD-030. No CO identity implementation is part of this work.
+- Current branch head before this documentation update: `748c46d44bb5f2a63f09d2a0d7b35e55324b041e`.
+- GitHub Actions run `42000397196` for that exact head completed successfully: typecheck passed, production build passed, and the complete test suite reported 216 passed, 0 failed. This is evidence for that exact commit only; it does not verify any later commit.
+- Created `docs/BUILD_CI_EXTERNAL_DEPENDENCIES.md` as the durable external-staff, credential, owner-decision and approval register for all five approved BD features. Each pending item retains its owning feature ID, responsible role, required action, current state, evidence/destination and transfer rule.
+- No approval is implied by implementation or green CI. No pending dependency is deleted or transferred merely because source code is complete. Any transfer must be a dated, evidenced change after the source feature reaches its acceptance boundary and the receiving catalogue ID is confirmed.
+- All BD implementation remains isolated to `gpt-part2-build-ci`; no merge or deployment is performed. Protected branches remain outside this work.
+- **Current feature status remains partial / not owner-accepted.** The passing 216-test run is useful verification evidence but does not close outstanding production integrations, external staff setup or owner approvals.
