@@ -570,6 +570,21 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
         } catch (err) { return mapError(err); }
       },
     },
+    '/v1/build-ci/templates/versions/diff': {
+      GET: async (ctx) => {
+        const actorId = await actor(ctx);
+        try {
+          const diff = await buildCi.diffTemplateVersions({
+            workspaceId: id(ctx.query('workspaceId'), 'workspaceId'),
+            templateId: id(ctx.query('templateId'), 'templateId'),
+            fromVersion: positiveInteger(Number(ctx.query('fromVersion')), 'fromVersion'),
+            toVersion: positiveInteger(Number(ctx.query('toVersion')), 'toVersion'),
+            actorId,
+          });
+          return { status: 200, body: diff };
+        } catch (err) { return mapError(err); }
+      },
+    },
     '/v1/build-ci/templates/version': {
       GET: async (ctx) => {
         const actorId = await actor(ctx);
