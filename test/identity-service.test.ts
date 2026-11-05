@@ -179,4 +179,76 @@ describe('CO-001 identity service breach-check outage handling', () => {
     assert.equal(JSON.stringify(anomaly?.payload).includes(next.ip), false);
     assert.equal(JSON.stringify(anomaly?.payload).includes(next.userAgent), false);
   });
+
+  it('creates the normal audited session for a verified passkey without using the password hasher', async () => {
+    const now = 1_800_000_200_000;
+    const user: UserRecord = {
+      id: 'user-passkey-signin',
+      email: 'passkey-owner@example.test',
+      displayName: 'Passkey Owner',
+      passwordHash: 'never-read-for-passkey',
+      status: 'active',
+      createdAt: now - 10_000,
+      updatedAt: now - 10_000,
+      passwordChangedAt: now - 10_000,
+      passwordCompromisedAt: null,
+      version: 1,
+    };
+    const session: SessionRecord = {
+      idHash: 'e'.repeat(64),
+      userId: user.id,
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + 3_600_000,
+      ip: '192.0.2.30',
+      userAgent: 'CO-002 passkey test',
+      revokedAt: null,
+      revokedReason: null,
+    };
+    const recorded: EventDraft[] = [];
+    let sessionStarted = false;
+    let verifyCalled = false;
+    const deps = {
+      users: { findById: async () => user } as unknown as UserStore,
+      sessions: {
+        prepare: async () => ({ token: 'passkey-session-token', session, maxPerUser: 3 }),
+        listActiveForUser: async () => [],
+      } as unknown as SessionService,
+      hasher: {
+        verify: async () => { verifyCalled = true; return false; },
+        needsRehash: () => { verifyCalled = true; return false; },
+      } as unknown as PasswordHasher,
+      breach: { check: async () => ({ status: 'clean' }) } as BreachChecker,
+      events: {
+        append: async (draft: EventDraft) => { recorded.push(draft); return {} as EventEnvelope; },
+      } as unknown as EventStore,
+      uow: {
+        startSession: async (args: { event: EventDraft }) => { sessionStarted = true; recorded.push(args.event); },
+      } as unknown as IdentityUnitOfWork,
+      throttle: {
+        checkIp: () => ({ allowed: true, retryAfterMs: 0 }),
+        checkAccount: () => ({ locked: false, retryAfterMs: 0 }),
+        recordSuccess: () => undefined,
+        recordFailure: () => undefined,
+      } as unknown as LoginThrottle,
+      clock: () => now,
+      logger: silentLogger,
+      auditKey: Buffer.alloc(32, 9),
+      breachMode: 'fail-closed' as const,
+      checkBreachOnSignIn: true,
+    } satisfies IdentityDeps;
+
+    const service = new IdentityService(deps);
+    const result = await service.signInWithPasskey(user.id, {
+      ip: session.ip, userAgent: session.userAgent, requestId: 'co002-passkey-signin-test',
+    });
+
+    assert.equal(result.user.id, user.id);
+    assert.equal(result.sessionToken, 'passkey-session-token');
+    assert.equal(sessionStarted, true);
+    assert.equal(verifyCalled, false, 'passkey sign-in must not try to verify a password');
+    const signIn = recorded.find((entry) => entry.type === IdentityEvents.SignInSucceeded);
+    assert.equal(signIn?.payload.authenticationMethod, 'passkey');
+  });
+
 });
