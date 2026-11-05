@@ -69,10 +69,16 @@ describe('CO-002 passkey storage', () => {
     const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
     const store = new InMemoryPasskeyStore(events);
     const record = credential('user-a');
-    await store.createCredential(record, event('identity.passkey.registered', 'user-a'));
-    await assert.rejects(() => store.createCredential(record, event('identity.passkey.registered', 'user-a')), PasskeyCredentialExistsError);
+    const creates = await Promise.allSettled([
+      store.createCredential(record, event('identity.passkey.registered', 'user-a')),
+      store.createCredential(record, event('identity.passkey.registered', 'user-a')),
+    ]);
+    assert.equal(creates.filter((result) => result.status === 'fulfilled').length, 1);
+    const rejectedCreate = creates.find((result) => result.status === 'rejected');
+    assert.ok(rejectedCreate?.status === 'rejected' && rejectedCreate.reason instanceof PasskeyCredentialExistsError);
     assert.equal((await store.listCredentialsForUser('user-b')).length, 0);
     assert.equal(await store.updateAfterAssertion({ userId: 'user-b', credentialId: record.credentialId, signCount: 1, backedUp: false, now: now + 1, event: event('identity.passkey.authenticated', 'user-b') }), false);
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: true, now: now + 2, event: event('identity.passkey.authenticated', 'user-a') }), false, 'a non-backup-eligible credential cannot become backed up');
     assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: false, now: now + 2, event: event('identity.passkey.authenticated', 'user-a') }), true);
     assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 2, backedUp: false, now: now + 3, event: event('identity.passkey.authenticated', 'user-a') }), false);
     assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 3);
