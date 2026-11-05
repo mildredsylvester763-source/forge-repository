@@ -140,12 +140,29 @@ function validateOrigins(origins: readonly string[]): void {
     if (parsed.origin !== origin || (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && parsed.hostname === 'localhost'))) {
       fail('invalid_origins', 'Origins must be exact HTTPS origins (HTTP is allowed only for localhost)');
     }
+    if (parsed.hostname.includes('*') || parsed.hostname.includes('_')) {
+      fail('invalid_origins', 'Origin hostnames must be concrete DNS names, not wildcard or underscore labels');
+    }
     if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || seen.has(origin)) {
       fail('invalid_origins', 'Origins must be unique scheme/host/port values without paths or credentials');
     }
     seen.add(origin);
   }
 }
+function validateRpOriginPair(rpId: string, origins: readonly string[]): void {
+  validateRpId(rpId);
+  validateOrigins(origins);
+  for (const origin of origins) {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    if (hostname !== rpId && hostname !== 'localhost' && !hostname.endsWith('.' + rpId)) {
+      fail('rp_id_origin_mismatch', 'Every configured origin must be the RP ID or a subdomain of it');
+    }
+    if (rpId === 'localhost' && hostname !== 'localhost') {
+      fail('rp_id_origin_mismatch', 'The localhost RP ID can only be used with a localhost origin');
+    }
+  }
+}
+
 function validateTimeout(timeout: number): void {
   if (!Number.isSafeInteger(timeout) || timeout < 15_000 || timeout > 120_000) {
     fail('invalid_timeout', 'Passkey ceremony timeout must be between 15 and 120 seconds');
@@ -416,8 +433,7 @@ export function verifyPasskeyRegistration(
   response: PasskeyRegistrationResponse,
   input: { readonly challenge: string; readonly config: WebAuthnConfig },
 ): VerifiedPasskeyRegistration {
-  validateRpId(input.config.rpId);
-  validateOrigins(input.config.origins);
+  validateRpOriginPair(input.config.rpId, input.config.origins);
   const credentialId = validateCredentialResponse(response.id, response.rawId, response.type);
   parseClientData(response.response.clientDataJSON, input.challenge, 'webauthn.create', input.config.origins);
   const encodedAttestation = canonicalBase64Url(response.response.attestationObject, 'attestationObject', MAX_CBOR_BYTES);
