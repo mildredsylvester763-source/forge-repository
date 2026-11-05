@@ -482,6 +482,48 @@ export function buildCiRoutes(buildCi: BuildCiService, identity: IdentityService
       },
     },
 
+    '/v1/build-ci/pipelines/dry-run/scenarios': {
+      POST: async (ctx) => {
+        const actorId = await actor(ctx);
+        const body = await ctx.json();
+        exact(body, ['workspaceId', 'pipelineId', 'definition', 'scenarios'], ['workspaceId', 'scenarios']);
+        if ((body.pipelineId === undefined) === (body.definition === undefined)) {
+          throw new AppError(400, 'invalid_request', 'Provide exactly one of pipelineId or definition.');
+        }
+        if (!Array.isArray(body.scenarios) || body.scenarios.length < 1 || body.scenarios.length > 20) {
+          throw new AppError(400, 'invalid_request', 'scenarios must contain between 1 and 20 entries.');
+        }
+        try {
+          const seen = new Set<string>();
+          const scenarios = body.scenarios.map((entry, index) => {
+            if (!isRecord(entry)) throw new AppError(400, 'invalid_request', 'Each scenario must be an object.');
+            exact(entry, ['id', 'event', 'inputs'], ['id', 'event']);
+            const scenarioId = id(entry.id, 'scenario.id');
+            if (scenarioId.length > 64 || seen.has(scenarioId)) {
+              throw new AppError(400, 'invalid_request', 'Scenario IDs must be unique and at most 64 characters.');
+            }
+            seen.add(scenarioId);
+            return {
+              id: scenarioId,
+              event: triggerEvent(entry.event, true),
+              ...(entry.inputs !== undefined ? { inputs: entry.inputs } : {}),
+            };
+          });
+          const workspaceId = id(body.workspaceId, 'workspaceId');
+          if (body.definition !== undefined) {
+            if (!isRecord(body.definition)) throw new AppError(400, 'invalid_request', 'definition must be an object.');
+            const result = await buildCi.dryRunDefinitionScenarios({
+              workspaceId, definition: body.definition, actorId, scenarios,
+            });
+            return { status: 200, body: { source: 'candidate', ...result } };
+          }
+          const result = await buildCi.dryRunScenarios({
+            workspaceId, pipelineId: id(body.pipelineId, 'pipelineId'), actorId, scenarios,
+          });
+          return { status: 200, body: { source: 'saved', ...result } };
+        } catch (err) { return mapError(err); }
+      },
+    },
     '/v1/build-ci/templates': {
       GET: async (ctx) => {
         const actorId = await actor(ctx);
