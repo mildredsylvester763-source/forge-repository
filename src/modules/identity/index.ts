@@ -10,6 +10,34 @@ export { bearerSessionToken, sessionCredential } from './request-auth.ts';
 export { PasswordHasher } from './password-hasher.ts';
 export type { HasherConfig, ScryptParams } from './password-hasher.ts';
 export { HibpBreachChecker, LocalBlocklistChecker, CompositeBreachChecker } from './breach-check.ts';
+export {
+  createPasskeyAuthenticationOptions,
+  createPasskeyChallenge,
+  createPasskeyRegistrationOptions,
+  extractPasskeyChallenge,
+  validateWebAuthnConfig,
+  verifyPasskeyAssertion,
+  verifyPasskeyRegistration,
+  WebAuthnError,
+} from './webauthn.ts';
+export type {
+  AuthenticationOptionsInput,
+  PasskeyAssertionResponse,
+  PasskeyRegistrationResponse,
+  RegistrationOptionsInput,
+  StoredPasskey,
+  VerifiedPasskeyAssertion,
+  VerifiedPasskeyRegistration,
+  WebAuthnAlgorithm,
+  WebAuthnConfig,
+} from './webauthn.ts';
+export {
+  InMemoryPasskeyStore,
+  PasskeyCredentialExistsError,
+  PostgresPasskeyStore,
+  SqlitePasskeyStore,
+} from './passkey-store.ts';
+export type { PasskeyChallengeRecord, PasskeyCredentialRecord, PasskeyStore } from './passkey-store.ts';
 export type { BreachChecker, BreachResult } from './breach-check.ts';
 export { InMemoryUserStore, EmailTakenError } from './user-store.ts';
 export type { UserStore, UserRecord } from './user-store.ts';
