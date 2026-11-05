@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { AppError } from '../../kernel/errors.ts';
+import { AppError, retryAfterHeader } from '../../kernel/errors.ts';
 import type { EventDraft } from '../../kernel/events.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { IdentityService, PublicUser, RequestMeta, SignInResult } from './identity-service.ts';
+import type { LoginThrottle } from './throttle.ts';
 import { IdentityEvents, IDENTITY_EVENT_VERSION } from './events.ts';
 import {
   createPasskeyAuthenticationOptions,
@@ -68,12 +69,23 @@ export class PasskeyService {
   private readonly identity: IdentityService;
   private readonly clock: Clock;
   private readonly config: PasskeyServiceConfig;
+  private readonly throttle: LoginThrottle;
 
-  constructor(options: { store: PasskeyStore; identity: IdentityService; clock: Clock; config: PasskeyServiceConfig }) {
+  constructor(options: { store: PasskeyStore; identity: IdentityService; clock: Clock; config: PasskeyServiceConfig; throttle: LoginThrottle }) {
     this.store = options.store;
     this.identity = options.identity;
     this.clock = options.clock;
     this.config = options.config;
+    this.throttle = options.throttle;
+  }
+
+  private enforcePasskeyRateLimit(meta: RequestMeta): void {
+    const gate = this.throttle.checkIp('passkey', meta.ip);
+    if (!gate.allowed) {
+      throw new AppError(429, 'too_many_attempts', 'Too many passkey attempts. Try again later.', {
+        headers: retryAfterHeader(gate.retryAfterMs),
+      });
+    }
   }
 
   private webAuthnConfig(): WebAuthnConfig {
@@ -95,7 +107,8 @@ export class PasskeyService {
     return config;
   }
 
-  async beginRegistration(user: PublicUser) {
+  async beginRegistration(user: PublicUser, meta: RequestMeta) {
+    this.enforcePasskeyRateLimit(meta);
     const config = this.webAuthnConfig();
     const challenge = createPasskeyChallenge();
     const now = this.clock();
@@ -118,6 +131,7 @@ export class PasskeyService {
   }
 
   async completeRegistration(user: PublicUser, response: PasskeyRegistrationResponse, meta: RequestMeta): Promise<PublicPasskey> {
+    this.enforcePasskeyRateLimit(meta);
     const config = this.webAuthnConfig();
     let challenge: string;
     let verified;
@@ -161,7 +175,8 @@ export class PasskeyService {
     return publicRecord(record);
   }
 
-  async beginAuthentication() {
+  async beginAuthentication(meta: RequestMeta) {
+    this.enforcePasskeyRateLimit(meta);
     const config = this.webAuthnConfig();
     const challenge = createPasskeyChallenge();
     const now = this.clock();
@@ -176,6 +191,7 @@ export class PasskeyService {
   }
 
   async completeAuthentication(response: PasskeyAssertionResponse, meta: RequestMeta): Promise<SignInResult> {
+    this.enforcePasskeyRateLimit(meta);
     const config = this.webAuthnConfig();
     let challenge: string;
     let credentialId: string;
