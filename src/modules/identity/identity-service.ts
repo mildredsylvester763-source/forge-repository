@@ -48,6 +48,21 @@ export interface SignInResult {
   passwordChangeRequired: boolean;
 }
 
+export interface PublicSession {
+  sessionId: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  ip: string;
+  userAgent: string;
+  isCurrent: boolean;
+}
+
+export interface RevokeSessionResult {
+  revoked: boolean;
+  revokedCurrentSession: boolean;
+}
+
 export const toPublicUser = (u: UserRecord): PublicUser => ({
   id: u.id,
   email: u.email,
@@ -251,6 +266,57 @@ export class IdentityService {
         meta,
       ),
     });
+  }
+
+  /** List active sessions for the authenticated account without exposing bearer tokens. */
+  async listSessions(token: string | undefined): Promise<PublicSession[]> {
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const sessions = await this.d.sessions.listActiveForUser(owner.id);
+    return sessions.map((session) => ({
+      sessionId: session.idHash,
+      createdAt: new Date(session.createdAt).toISOString(),
+      lastSeenAt: new Date(session.lastSeenAt).toISOString(),
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      ip: session.ip,
+      userAgent: session.userAgent,
+      isCurrent: session.idHash === current.idHash,
+    }));
+  }
+
+  /** Revoke one session owned by the authenticated account; foreign IDs are indistinguishable from missing IDs. */
+  async revokeSession(token: string | undefined, sessionId: string, meta: RequestMeta): Promise<RevokeSessionResult> {
+    if (!/^[a-f0-9]{64}$/i.test(sessionId)) {
+      throw new AppError(400, 'invalid_session_id', 'A valid session ID is required.');
+    }
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const target = await this.d.sessions.findActiveForUser(owner.id, sessionId);
+    if (!target) throw new AppError(404, 'session_not_found', 'The session could not be found.');
+
+    const revoked = await this.d.uow.endSession({
+      idHash: target.idHash,
+      now: this.d.clock(),
+      reason: 'session_manager',
+      event: (session) => this.draft(
+        IdentityEvents.SessionRevoked,
+        { kind: 'user', id: owner.id },
+        { type: 'session', id: session.idHash.slice(0, 12) },
+        { sessionRef: session.idHash.slice(0, 12), reason: 'session_manager' },
+        meta,
+      ),
+    });
+
+    return {
+      revoked: revoked !== null,
+      revokedCurrentSession: revoked !== null && target.idHash === current.idHash,
+    };
   }
 
   /** Server-side session check used by every protected route (CO-030). Returns null for any failure. */
