@@ -499,3 +499,24 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Added unit coverage for same-device, new-IP, new-user-agent, device-pair change, no baseline, insufficient metadata and value non-disclosure. Added a service-level test for the emitted value-safe event and successful sign-in.
 - **Classification:** partial implementation only. Current-session comparison is not a complete behavioral anomaly system; exact CO-012 catalogue criteria and owner-approved alert/challenge/retention semantics remain outstanding.
 - **Delta dependency:** depends on CO-006 session-store active-session enumeration. CO-006's owner-approval state remains unchanged until exact CO-006 catalog wording is reconciled.
+
+## CO-002 WebAuthn and CO-007 native-session implementation delta (2026-11-05)
+
+### CO-002 — passkey protocol core
+- The Mistral branch now contains a bounded WebAuthn parser/verifier: 32-byte challenges, discoverable credential options, exact origin/RP-ID validation, bounded CBOR, none attestation only, COSE public-key extraction and assertion signature/counter/user-handle validation.
+- A regression caught an invalid origin-configuration acceptance path. Validation was tightened so both registration and assertion verification enforce RP-ID/origin pairing; wildcard, unrelated and localhost-mismatched origins are rejected.
+- Focused verification run [42020699101](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42020699101) passed the isolated TypeScript check and 64 tests, 64 passed, 0 failed for the passkey-core regression set at that commit.
+- After native token tests were added to the same workflow, run [42020719423](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42020719423) passed typecheck and 67 tests, 67 passed, 0 failed.
+- Classification: PARTIAL. There is still no durable one-time challenge store, credential repository, registration/sign-in route, credential lifecycle, production RP domain or stored counter-race handling. None attestation does not attest authenticator provenance. Exact CO-002 catalogue wording is unavailable.
+
+### CO-007 — native bearer session path
+- Added a native sign-in response that issues an opaque 256-bit server-managed bearer session without setting a browser cookie; the server persists only the token hash.
+- Bearer credentials now authenticate across the protected module route set and session-management routes. Native sign-out revokes the same server-managed session.
+- An explicitly present but malformed Authorization header fails closed and cannot fall back to a browser cookie. Existing browser-cookie behavior is preserved when Authorization is absent.
+- The focused suite includes native sign-in, bearer access, session list/revoke, sign-out, no-cookie behavior and malformed-header no-fallback tests. It was included in the same 67/67 successful focused run.
+- Classification: provisional capability; acceptance unverified. It is an opaque server-side session token, not a JWT or OAuth access/refresh token. Refresh rotation, app attestation and offline grace semantics were not inferred. Exact CO-007 wording and approved audience/lifecycle remain owner-dependent.
+
+### Verification boundary
+- The CO-focused workflow runs typecheck and identity/Core regressions independently of the unrelated AI import path.
+- Full repository CI still fails at global typecheck due existing syntax errors in src/modules/ai-training/sqlite-stores.ts; this is outside the Core identity changes. No AI file was modified.
+- The CO workflow has no real PostgreSQL test connection secret configured. PostgreSQL adapter paths are not claimed as native PostgreSQL integration proof.
