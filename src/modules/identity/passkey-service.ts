@@ -183,8 +183,9 @@ export class PasskeyService {
       challenge = extractPasskeyChallenge(response.response.clientDataJSON);
       const consumed = await this.store.consumeChallenge(challengeDigest(challenge), 'authentication', null, this.clock());
       if (!consumed) throw INVALID_CREDENTIALS();
-      // The verifier performs canonical base64url and id/rawId equality checks.
-      if (response.type !== 'public-key' || response.id !== response.rawId) throw INVALID_CREDENTIALS();
+      // Bound the credential lookup before touching storage; the verifier repeats canonical checks.
+      if (response.type !== 'public-key' || response.id !== response.rawId ||
+        !/^[A-Za-z0-9_-]{22,1366}$/.test(response.rawId)) throw INVALID_CREDENTIALS();
       credentialId = response.rawId;
     } catch (error) {
       if (error instanceof AppError) throw error;
