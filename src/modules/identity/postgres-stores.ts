@@ -248,4 +248,14 @@ export class PostgresIdentityUnitOfWork implements IdentityUnitOfWork {
     if (result.committed) this.events.notify(result.committed);
     return result.session;
   }
+
+  async markPasswordCompromised(args: { userId: string; now: number; event: (user: UserRecord) => EventDraft }): Promise<UserRecord> {
+    const result = await withTransaction(this.pool, async (conn) => {
+      const marked = await this.users.markPasswordCompromisedIn(conn, args.userId, args.now);
+      if (!marked.changed) return { user: marked.user, committed: null };
+      return { user: marked.user, committed: await this.events.appendIn(conn, args.event(marked.user)) };
+    });
+    if (result.committed) this.events.notify(result.committed);
+    return result.user;
+  }
 }
