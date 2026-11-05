@@ -247,3 +247,13 @@ The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplyin
 - Tenant ownership and membership rules must be established alongside CO-015–CO-028. Permission checks cannot be implemented safely by guessing tenant semantics.
 - CO-030 currently has only identity session authentication evidence (`IdentityService.authenticate()` and `GET /v1/auth/me`). This does not grant resource- or tenant-level access. It remains PARTIAL.
 - Approval state: **NOT GRANTED**. Independent work on unrelated Core features may continue; do not add default-admin or permissive fallback roles.
+
+
+## CO-045–CO-062 project intelligence graph decisions (2026-11-05)
+
+- Exact Part 01 feature text is required for every ID in this range. No feature names, graph entities or edge types are inferred from the section heading.
+- Product/data owner must approve the node and edge ontology, stable identity, provenance, source of truth, versioning, duplicate handling and mutation semantics.
+- Security/product owner must approve graph visibility, inheritance from project/tenant permissions, deletion, retention and archival rules.
+- Query/indexing behavior and scale targets must follow the accepted feature requirements rather than guessed implementation preferences.
+- Current audit found no dedicated CO project graph service/schema in either main or mistral at the inspected paths. AI retrieval graphs and TQ integration graphs are not substitutes.
+- Approval state: **NOT SUPPLIED / NOT APPROVED**. No graph schema or API should be introduced until the exact acceptance and ontology are available.
