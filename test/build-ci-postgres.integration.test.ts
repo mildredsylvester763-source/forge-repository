@@ -424,7 +424,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     const processedWebhook = await webhookProcessor.processNext('pg-processor-worker');
     assert.equal(processedWebhook.claimed, true, 'processor must claim the inserted receipt: ' + JSON.stringify(processedWebhook));
     assert.equal(processedWebhook.processed, true, 'processor must complete the claimed receipt: ' + JSON.stringify(processedWebhook));
-    assert.equal(processedWebhook.pipelinesConsidered, 2);
+    assert.equal(processedWebhook.pipelinesConsidered, 3);
     assert.equal(processedWebhook.runsQueued, 1);
     const webhookRun = await testPool.pool.query<{ event_id: string; pipeline_id: string; status: string }>(
       'SELECT event_id, pipeline_id, status FROM build_pipeline_runs WHERE event_id = $1',
