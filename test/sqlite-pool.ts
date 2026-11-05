@@ -48,6 +48,10 @@ function execute<T>(db: Database, text: string, params: readonly unknown[] = [])
       return { rows: [], rowCount: 0 };
     }
     const statement = db.prepare(sql);
+    if (/\bRETURNING\b/i.test(sql)) {
+      const rows = statement.all(...(params as never[])) as unknown as T[];
+      return { rows, rowCount: rows.length };
+    }
     if (/^(select|with)\b/i.test(sql)) {
       const rows = statement.all(...(params as never[])) as unknown as T[];
       return { rows, rowCount: rows.length };
