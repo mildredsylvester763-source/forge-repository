@@ -221,8 +221,8 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
       workspaceId: 'workspace-a',
       pipelineId: 'http-pipeline',
       scenarios: [
-        { id: 'manual', event: { kind: 'manual', source: 'forge.manual', eventId: 'manual-scenario' } },
-        { id: 'pull-request', event: { kind: 'pull_request', source: 'github:pull_request', eventId: 'pr-scenario', branch: 'feature/x', baseBranch: 'main' } },
+        { id: 'manual', event: { kind: 'manual', source: 'forge.manual', eventId: 'manual-scenario' }, inputs: { target: 'staging', deploy_credential: 'workspace.ci_deploy_key' } },
+        { id: 'pull-request', event: { kind: 'pull_request', source: 'github:pull_request', eventId: 'pr-scenario', branch: 'feature/x', baseBranch: 'main' }, inputs: { target: 'production', deploy_credential: 'workspace.ci_deploy_key' } },
       ],
     }, 'valid-session'));
     assert.equal(scenarioResult.status, 200);
@@ -235,7 +235,7 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
       workspaceId: 'workspace-a',
       definition: { ...definition, name: 'Scenario candidate' },
       scenarios: [
-        { id: 'push', event: { kind: 'push', source: 'github:push', eventId: 'push-scenario', branch: 'main', changedFiles: ['src/app.ts'] } },
+        { id: 'push', event: { kind: 'push', source: 'github:push', eventId: 'push-scenario', branch: 'main', changedFiles: ['src/app.ts'] }, inputs: { target: 'staging', deploy_credential: 'workspace.ci_deploy_key' } },
       ],
     }, 'valid-session'));
     const candidateScenarioBody = candidateScenarios.body as {
