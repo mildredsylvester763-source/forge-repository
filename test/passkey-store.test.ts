@@ -96,9 +96,9 @@ describe('CO-002 passkey storage', () => {
       assert.equal((await store.findCredentialById(record.credentialId))?.userId, 'user-a');
       assert.equal((await store.listCredentialsForUser('user-a')).length, 1);
 
-      db.exec(\`CREATE TRIGGER reject_passkey_audit BEFORE INSERT ON events
+      db.exec(`CREATE TRIGGER reject_passkey_audit BEFORE INSERT ON events
         WHEN NEW.type = 'identity.passkey.registered'
-        BEGIN SELECT RAISE(ABORT, 'injected passkey audit failure'); END;\`);
+        BEGIN SELECT RAISE(ABORT, 'injected passkey audit failure'); END;`);
       const rejected = credential('user-a');
       await assert.rejects(
         () => store.createCredential(rejected, event('identity.passkey.registered', 'user-a')),
