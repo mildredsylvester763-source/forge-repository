@@ -33,7 +33,7 @@ Protected boundaries: `main`, `mistral` and `claude` remain untouched. No merge 
 - Added workspace-authorized `diffTemplateVersions` service and `GET /v1/build-ci/templates/versions/diff`.
 - Both publisher and explicitly shared workspaces can compare pinned immutable releases, subject to current access checks.
 - The diff returns release hashes and value-free structural differences. It does not change an imported pipeline or apply an upgrade.
-- Relevant commits: `8b615f445dd1af424581aff2c44104d4a359979d`, `ac027b0c4ffaee942fafb51b194e45fe98c718b`, `3287a1fae40874987a66408f2f2de83aac343589` and `3ad94322e62141261d77e7f132f7ae8cddfb6202`.
+- Relevant commits: `8b615f445dd1af424581aff2c44104d4a359979d`, `ac027b0c4ffaee942fafb51aeaaea98788c390d2`, `3287a1fae40874987a66408f2f2de83aac343589` and `3ad94322e62141261d77e7f132f7ae8cddfb6202`.
 
 ### BD-030 — version integrity and concurrency evidence
 
