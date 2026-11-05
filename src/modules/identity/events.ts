@@ -14,6 +14,8 @@ export const IdentityEvents = {
   SessionRevoked: 'identity.session.revoked',
   PasswordCompromisedDetected: 'identity.password.compromised_detected',
   BreachCheckSkipped: 'identity.password.breach_check_skipped',
+  PasskeyRegistered: 'identity.passkey.registered',
+  PasskeyRemoved: 'identity.passkey.removed',
 } as const;
 
 export type IdentityEventType = (typeof IdentityEvents)[keyof typeof IdentityEvents];
