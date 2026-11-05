@@ -68,6 +68,8 @@ export interface TriggerEvent {
   /** Pull-request filters use the target/base branch, not the contributor's head branch. */
   readonly baseBranch?: string;
   readonly changedFiles?: readonly string[];
+  /** False when a provider payload or diff API returned only a partial file list. */
+  readonly changedFilesComplete?: boolean;
   readonly scheduleId?: string;
   readonly commitSha?: string;
   readonly pullRequestNumber?: number;
@@ -548,13 +550,18 @@ export function matchesOrderedPatterns(value: string, patterns: readonly string[
 export interface PathMatch {
   readonly matched: boolean;
   readonly degraded: boolean;
-  readonly reason?: 'changed_files_unavailable' | 'no_changed_files' | 'no_path_match';
+  readonly reason?: 'changed_files_unavailable' | 'changed_files_incomplete' | 'no_changed_files' | 'no_path_match';
 }
 
 /** Missing diffs fail open: an unavailable diff must not silently suppress required validation. */
-export function evaluatePathFilter(patterns: readonly string[] | undefined, changedFiles: readonly string[] | undefined): PathMatch {
+export function evaluatePathFilter(
+  patterns: readonly string[] | undefined,
+  changedFiles: readonly string[] | undefined,
+  changedFilesComplete = true,
+): PathMatch {
   if (!patterns || patterns.length === 0) return { matched: true, degraded: false };
   if (changedFiles === undefined) return { matched: true, degraded: true, reason: 'changed_files_unavailable' };
+  if (!changedFilesComplete) return { matched: true, degraded: true, reason: 'changed_files_incomplete' };
   if (changedFiles.length === 0) return { matched: false, degraded: false, reason: 'no_changed_files' };
   return changedFiles.some((path) => matchesOrderedPatterns(path, patterns))
     ? { matched: true, degraded: false }
@@ -602,9 +609,9 @@ export function evaluateTrigger(trigger: PipelineTrigger, event: TriggerEvent): 
   if (trigger.branches) {
     if (!branch || !matchesOrderedPatterns(branch, trigger.branches)) reasons.push('branch_filter_mismatch');
   }
-  const pathResult = evaluatePathFilter(trigger.paths, event.changedFiles);
+  const pathResult = evaluatePathFilter(trigger.paths, event.changedFiles, event.changedFilesComplete);
   if (!pathResult.matched) reasons.push(pathResult.reason ?? 'path_filter_mismatch');
-  if (pathResult.degraded) reasons.push('changed_files_unavailable_fail_open');
+  if (pathResult.degraded) reasons.push(pathResult.reason === 'changed_files_incomplete' ? 'changed_files_incomplete_fail_open' : 'changed_files_unavailable_fail_open');
   return { triggerId: trigger.id, matched: reasons.every((reason) => reason === 'changed_files_unavailable_fail_open'), degraded: pathResult.degraded, reasons };
 }
 
@@ -650,6 +657,7 @@ export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerE
     branch: event.branch,
     baseBranch: event.baseBranch,
     changedFiles: event.changedFiles,
+    changedFilesComplete: event.changedFilesComplete,
     scheduleId: event.scheduleId,
     commitSha: event.commitSha,
     pullRequestNumber: event.pullRequestNumber,
@@ -676,9 +684,9 @@ export function buildDryRunPlan(definition: PipelineDefinition, event?: TriggerE
       }
       if (include && step.when && !event) reasons.push('condition_not_evaluated_without_event');
       if (include && step.paths) {
-        const pathResult = evaluatePathFilter(step.paths, event?.changedFiles);
+        const pathResult = evaluatePathFilter(step.paths, event?.changedFiles, event?.changedFilesComplete);
         if (!pathResult.matched) { include = false; reasons.push(pathResult.reason ?? 'step_path_filter_mismatch'); }
-        if (pathResult.degraded) reasons.push('changed_files_unavailable_fail_open');
+        if (pathResult.degraded) reasons.push(pathResult.reason === 'changed_files_incomplete' ? 'changed_files_incomplete_fail_open' : 'changed_files_unavailable_fail_open');
         if (!event) reasons.push('path_filter_not_evaluated_without_event');
       }
       const status = include ? 'included' : 'skipped';
