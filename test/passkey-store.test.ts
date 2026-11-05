@@ -50,7 +50,7 @@ describe('CO-002 passkey storage', () => {
     const store = new InMemoryPasskeyStore(events);
     await store.createChallenge(challenge('registration-one', 'registration', 'user-a'));
     assert.equal(await store.consumeChallenge(challenge('registration-one', 'registration', 'user-a').challengeHash, 'authentication', null, now), null);
-    assert.equal(await store.consumeChallenge(challenge('registration-one').challengeHash, 'registration', 'user-b', now), null);
+    assert.equal(await store.consumeChallenge(challenge('registration-one', 'registration', 'user-a').challengeHash, 'registration', 'user-b', now), null);
     const used = await store.consumeChallenge(challenge('registration-one').challengeHash, 'registration', 'user-a', now);
     assert.equal(used?.userId, 'user-a');
     assert.equal(await store.consumeChallenge(challenge('registration-one').challengeHash, 'registration', 'user-a', now), null);
