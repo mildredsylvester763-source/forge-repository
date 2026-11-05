@@ -223,7 +223,9 @@ test('webhook processor uses complete PR file lists and fails open when provider
     assert.equal(incomplete.runsQueued, 1, 'an incomplete file list must fail open and queue the required pipeline');
 
     const runs = db.prepare('SELECT event_id, status FROM build_pipeline_runs').all() as { event_id: string; status: string }[];
-    assert.deepEqual(runs, [{ event_id: 'delivery-pr-18', status: 'queued' }]);
+    assert.deepEqual(runs.map((run) => ({ event_id: run.event_id, status: run.status })), [
+      { event_id: 'delivery-pr-18', status: 'queued' },
+    ]);
     assert.equal((await deliveries.find('github-pr-connection', 'delivery-pr-17'))?.status, 'processed');
     assert.equal((await deliveries.find('github-pr-connection', 'delivery-pr-18'))?.status, 'processed');
   } finally { db.close(); }
