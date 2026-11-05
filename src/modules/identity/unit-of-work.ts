@@ -19,7 +19,7 @@ export interface IdentityUnitOfWork {
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void>;
   /** Revokes one active session and commits its audit event in the same unit of work. */
-  endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null>;
+  endSession(args: { idHash: string; now: number; reason?: 'user_sign_out' | 'session_manager'; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null>;
   /** Marks a user's password compromised and commits the detection event atomically. */
   markPasswordCompromised(args: { userId: string; now: number; event: (user: UserRecord) => EventDraft }): Promise<UserRecord>;
 }
@@ -101,13 +101,14 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
     });
   }
 
-  async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
+  async endSession(args: { idHash: string; now: number; reason?: 'user_sign_out' | 'session_manager'; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
     return this.exclusive(`session:${args.idHash}`, async () => {
       const current = await this.sessions.findByHash(args.idHash);
       if (!current || current.revokedAt !== null) return null;
 
-      const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: 'user_sign_out' };
-      await this.sessions.revoke(args.idHash, 'user_sign_out', args.now);
+      const reason = args.reason ?? 'user_sign_out';
+      const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: reason };
+      await this.sessions.revoke(args.idHash, reason, args.now);
       try {
         await this.events.append(args.event(revoked));
       } catch (err) {
