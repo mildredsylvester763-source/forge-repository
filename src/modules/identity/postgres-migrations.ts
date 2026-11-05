@@ -32,4 +32,36 @@ export const pgIdentityMigrations: readonly Migration[] = [
       CREATE INDEX sessions_user_idx ON sessions (user_id, expires_at);
     `,
   },
+  {
+    version: 2,
+    name: 'passkey_credentials_and_challenges',
+    sql: `
+      CREATE TABLE passkey_challenges (
+        challenge_hash TEXT PRIMARY KEY CHECK (length(challenge_hash) = 64),
+        purpose        TEXT NOT NULL CHECK (purpose IN ('registration', 'authentication')),
+        user_id        TEXT REFERENCES users (id) ON DELETE CASCADE,
+        created_at     BIGINT NOT NULL,
+        expires_at     BIGINT NOT NULL CHECK (expires_at > created_at),
+        CHECK (
+          (purpose = 'registration' AND user_id IS NOT NULL) OR
+          (purpose = 'authentication' AND user_id IS NULL)
+        )
+      );
+      CREATE INDEX passkey_challenges_expiry_idx ON passkey_challenges (expires_at);
+
+      CREATE TABLE passkey_credentials (
+        credential_id   TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        public_key_spki TEXT NOT NULL,
+        algorithm       INTEGER NOT NULL CHECK (algorithm IN (-7, -8, -257)),
+        sign_count      BIGINT NOT NULL CHECK (sign_count BETWEEN 0 AND 4294967295),
+        backup_eligible BOOLEAN NOT NULL,
+        backed_up       BOOLEAN NOT NULL,
+        transports      TEXT NOT NULL,
+        created_at      BIGINT NOT NULL,
+        last_used_at    BIGINT
+      );
+      CREATE INDEX passkey_credentials_user_idx ON passkey_credentials (user_id, created_at);
+    `,
+  },
 ];
