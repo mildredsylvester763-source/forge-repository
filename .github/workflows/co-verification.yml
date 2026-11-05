@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/kernel/**'
       - 'src/modules/identity/**'
+      - 'tsconfig.co.json'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
       - 'test/sqlite-pool.ts'
@@ -34,6 +35,8 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
+      - name: Typecheck the isolated CO kernel and identity slice
+        run: npx tsc -p tsconfig.co.json --noEmit
       - name: Run independent CO kernel and identity regressions
         run: |
           node --test \
