@@ -15,6 +15,8 @@ export interface IdentityUnitOfWork {
   startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void>;
   /** Revokes one active session and commits its audit event in the same unit of work. */
   endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null>;
+  /** Marks a user's password compromised and commits the detection event atomically. */
+  markPasswordCompromised(args: { userId: string; now: number; event: (user: UserRecord) => EventDraft }): Promise<UserRecord>;
 }
 
 /** Development and test version. Not crash-safe, but keeps the same contract. */
