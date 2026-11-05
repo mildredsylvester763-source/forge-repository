@@ -123,7 +123,7 @@ export class PasskeyService {
       challenge,
       userId: user.id,
       userName: user.email,
-      displayName: user.displayName,
+      displayName: user.displayName.trim().slice(0, 64) || user.email.slice(0, 64),
       rpId: config.rpId,
       rpName: config.rpName,
       timeoutMs: CHALLENGE_TTL_MS,
