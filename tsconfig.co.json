@@ -19,6 +19,7 @@
     "test/sqlite-pool.ts",
     "test/password.test.ts",
     "test/identity-service.test.ts",
-    "test/co-006-session-manager.test.ts"
+    "test/co-006-session-manager.test.ts",
+    "test/co-012-anomaly.test.ts"
   ]
 }
