@@ -73,7 +73,7 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
       await assert.rejects(
         () => uow.startSession({
           session: rehashSession,
-          revokeIdHashes: [],
+          maxPerUser: 3,
           userUpdate: { userId: user.id, patch: { passwordHash: 'new-rehash' }, now },
           event: invalidSignInEvent,
         }),
@@ -84,7 +84,7 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
 
       await uow.startSession({
         session: rehashSession,
-        revokeIdHashes: [],
+        maxPerUser: 3,
         userUpdate: { userId: user.id, patch: { passwordHash: 'new-rehash' }, now },
         event: { ...invalidSignInEvent, type: 'identity.sign_in.succeeded', correlationId: 'co-065-postgres-rehash-success' },
       });
