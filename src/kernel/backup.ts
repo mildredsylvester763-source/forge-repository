@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Logger } from './logger.ts';
 import { openDatabase, type Database } from './sqlite.ts';
@@ -34,7 +34,7 @@ export function verifyBackup(path: string): BackupCheck {
   try {
     sha256 = sha256File(path);
     if (!existsSync(sidecar)) return { ok: false, reason: 'checksum_missing' };
-    recorded = readFileSync(sidecar, 'utf8').trim().split(/\\s+/)[0] ?? '';
+    recorded = readFileSync(sidecar, 'utf8').trim().split(/\s+/)[0] ?? '';
   } catch {
     return { ok: false, reason: 'checksum_unreadable' };
   }
@@ -66,20 +66,53 @@ export function verifyBackup(path: string): BackupCheck {
 export function createBackup(db: Database, dir: string, now: Date): BackupResult {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stamp = now.toISOString().replace(/[-:.]/g, '');
-  const finalPath = join(dir, `forge-${stamp}.sqlite`);
-  const partial = `${finalPath}.partial`;
-  if (existsSync(finalPath) || existsSync(partial)) throw new Error('a backup with this timestamp already exists');
-
-  db.exec(`VACUUM INTO '${partial.replace(/'/g, "''")}'`);
-  chmodSync(partial, 0o600);
-  const check = verifyBackup(partial);
-  if (!check.ok) {
-    unlinkSync(partial);
-    throw new Error(`backup failed verification: ${check.reason}`);
+  const finalPath = join(dir, 'forge-' + stamp + '.sqlite');
+  const partial = finalPath + '.partial';
+  const partialSidecar = partial + '.sha256';
+  const finalSidecar = finalPath + '.sha256';
+  if (existsSync(finalPath) || existsSync(finalSidecar) || existsSync(partial) || existsSync(partialSidecar)) {
+    throw new Error('a backup with this timestamp already exists');
   }
-  renameSync(partial, finalPath);
-  writeFileSync(`${finalPath}.sha256`, `${check.sha256}  ${basename(finalPath)}\n`, { mode: 0o600 });
-  return { path: finalPath, bytes: statSync(finalPath).size, sha256: check.sha256, createdAt: now.toISOString() };
+
+  let sidecarPublished = false;
+  let backupPublished = false;
+  try {
+    db.exec("VACUUM INTO '" + partial.replace(/'/g, "''") + "'");
+    chmodSync(partial, 0o600);
+
+    const sha256 = sha256File(partial);
+    writeFileSync(partialSidecar, sha256 + '  ' + basename(finalPath) + '\n', { flag: 'wx', mode: 0o600 });
+    chmodSync(partialSidecar, 0o600);
+
+    const check = verifyBackup(partial);
+    if (!check.ok) throw new Error('backup failed verification: ' + check.reason);
+
+    const bytes = statSync(partial).size;
+    // Publish the checksum first without overwriting an existing backup's sidecar.
+    // The database file is renamed into place only after this verification succeeds.
+    linkSync(partialSidecar, finalSidecar);
+    sidecarPublished = true;
+    renameSync(partial, finalPath);
+    backupPublished = true;
+
+    try {
+      unlinkSync(partialSidecar);
+    } catch {
+      // A leftover temporary hard link does not invalidate the published backup.
+    }
+    return { path: finalPath, bytes, sha256: check.sha256, createdAt: now.toISOString() };
+  } catch (err) {
+    if (!backupPublished && sidecarPublished && existsSync(finalSidecar)) {
+      try { unlinkSync(finalSidecar); } catch { /* Preserve the original backup error. */ }
+    }
+    if (existsSync(partial)) {
+      try { unlinkSync(partial); } catch { /* Preserve the original backup error. */ }
+    }
+    if (existsSync(partialSidecar)) {
+      try { unlinkSync(partialSidecar); } catch { /* Preserve the original backup error. */ }
+    }
+    throw err;
+  }
 }
 
 /** Keep the newest `keep` backups, delete the rest (and their checksum files). Returns what was removed. */
