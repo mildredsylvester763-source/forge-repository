@@ -6,6 +6,7 @@ export type { IdentityEventType } from './events.ts';
 export { assessSignInAnomaly } from './identity-anomaly.ts';
 export type { SignInAnomalyAssessment, SignInAnomalySignal, SignInFingerprint } from './identity-anomaly.ts';
 export { identityRoutes } from './routes.ts';
+export { bearerSessionToken, sessionCredential } from './request-auth.ts';
 export { PasswordHasher } from './password-hasher.ts';
 export type { HasherConfig, ScryptParams } from './password-hasher.ts';
 export { HibpBreachChecker, LocalBlocklistChecker, CompositeBreachChecker } from './breach-check.ts';
