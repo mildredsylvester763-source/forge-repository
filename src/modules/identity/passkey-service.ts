@@ -127,6 +127,10 @@ export class PasskeyService {
       rpId: config.rpId,
       rpName: config.rpName,
       timeoutMs: CHALLENGE_TTL_MS,
+      excludeCredentials: (await this.store.listCredentialsForUser(user.id)).map((credential) => ({
+        id: credential.credentialId,
+        transports: credential.transports,
+      })),
     });
   }
 
