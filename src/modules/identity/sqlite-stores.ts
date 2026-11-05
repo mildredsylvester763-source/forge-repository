@@ -226,4 +226,16 @@ export class SqliteIdentityUnitOfWork implements IdentityUnitOfWork {
     });
     this.events.notify(committed);
   }
+
+  async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
+    const result = transaction(this.db, () => {
+      const current = this.sessions.findByHashSync(args.idHash);
+      if (!current || current.revokedAt !== null) return { session: null, committed: null };
+      this.sessions.revokeSync(args.idHash, 'user_sign_out', args.now);
+      const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: 'user_sign_out' };
+      return { session: revoked, committed: this.events.appendSync(args.event(revoked)) };
+    });
+    if (result.committed) this.events.notify(result.committed);
+    return result.session;
+  }
 }
