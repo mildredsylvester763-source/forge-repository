@@ -53,4 +53,20 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
     const now = this.clock();
     for (const idHash of args.revokeIdHashes) await this.sessions.revoke(idHash, 'session_limit', now);
   }
+
+  async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
+    const current = await this.sessions.findByHash(args.idHash);
+    if (!current || current.revokedAt !== null) return null;
+
+    const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: 'user_sign_out' };
+    await this.sessions.revoke(args.idHash, 'user_sign_out', args.now);
+    try {
+      await this.events.append(args.event(revoked));
+    } catch (err) {
+      // Development/test storage has no database transaction; restore the previous in-memory record.
+      await this.sessions.insert(current);
+      throw err;
+    }
+    return revoked;
+  }
 }
