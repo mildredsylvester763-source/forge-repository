@@ -186,10 +186,10 @@ export class IdentityService {
 
     let rehashed = false;
     let current = user;
-    if (this.d.hasher.needsRehash(user.passwordHash)) {
-      current = await this.d.users.update(user.id, { passwordHash: await this.d.hasher.hash(password) }, now);
-      rehashed = true;
-    }
+    const userUpdate = this.d.hasher.needsRehash(user.passwordHash)
+      ? { userId: user.id, patch: { passwordHash: await this.d.hasher.hash(password) }, now }
+      : undefined;
+    if (userUpdate) rehashed = true;
 
     let compromised = current.passwordCompromisedAt !== null;
     if (!compromised && this.d.checkBreachOnSignIn) {
@@ -215,6 +215,7 @@ export class IdentityService {
     await this.d.uow.startSession({
       session,
       revokeIdHashes,
+      ...(userUpdate ? { userUpdate } : {}),
       event: this.draft(
         IdentityEvents.SignInSucceeded,
         { kind: 'user', id: current.id },
