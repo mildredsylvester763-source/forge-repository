@@ -65,16 +65,34 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
     return created;
   }
 
-  async startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void> {
-    await this.sessions.insert(args.session);
-    try {
-      await this.events.append(args.event);
-    } catch (err) {
-      this.sessions.remove(args.session.idHash); // roll back
-      throw err;
-    }
-    const now = this.clock();
-    for (const idHash of args.revokeIdHashes) await this.sessions.revoke(idHash, 'session_limit', now);
+  async startSession(args: {
+    session: SessionRecord;
+    revokeIdHashes: readonly string[];
+    event: EventDraft;
+    userUpdate?: { userId: string; patch: UserPatch; now: number };
+  }): Promise<void> {
+    await this.exclusive(`user:${args.session.userId}`, async () => {
+      const previousUser = args.userUpdate ? await this.users.findById(args.userUpdate.userId) : null;
+      if (args.userUpdate && !previousUser) throw new Error('user not found');
+      const previousSessions: SessionRecord[] = [];
+      for (const idHash of args.revokeIdHashes) {
+        const previous = await this.sessions.findByHash(idHash);
+        if (previous) previousSessions.push(previous);
+      }
+
+      try {
+        if (args.userUpdate) await this.users.update(args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
+        await this.sessions.insert(args.session);
+        const now = this.clock();
+        for (const idHash of args.revokeIdHashes) await this.sessions.revoke(idHash, 'session_limit', now);
+        await this.events.append(args.event);
+      } catch (err) {
+        this.sessions.remove(args.session.idHash);
+        for (const previous of previousSessions) await this.sessions.insert(previous);
+        if (previousUser) this.users.restore(previousUser);
+        throw err;
+      }
+    });
   }
 
   async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
