@@ -46,6 +46,7 @@ describe('CO-001 identity service breach-check outage handling', () => {
       } as unknown as UserStore,
       sessions: {
         prepare: async () => ({ token: 'test-session-token', session, maxPerUser: 3 }),
+        listActiveForUser: async () => [],
       } as unknown as SessionService,
       hasher: {
         verify: async () => true,
@@ -93,5 +94,89 @@ describe('CO-001 identity service breach-check outage handling', () => {
     assert.equal(skipped?.payload.stage, 'sign_in');
     assert.equal(skipped?.payload.cause, 'timeout');
     assert.equal(skipped?.actor.id, user.id);
+  });
+
+  it('records new active-session fingerprints as advisory anomaly signals', async () => {
+    const now = 1_800_000_100_000;
+    const user: UserRecord = {
+      id: 'user-co012',
+      email: 'anomaly-owner@example.test',
+      displayName: 'Anomaly Owner',
+      passwordHash: 'stored-hash',
+      status: 'active',
+      createdAt: now - 10_000,
+      updatedAt: now - 10_000,
+      passwordChangedAt: now - 10_000,
+      passwordCompromisedAt: null,
+      version: 1,
+    };
+    const previous: SessionRecord = {
+      idHash: 'b'.repeat(64),
+      userId: user.id,
+      createdAt: now - 20_000,
+      lastSeenAt: now - 5_000,
+      expiresAt: now + 3_600_000,
+      ip: '192.0.2.20',
+      userAgent: 'Known browser',
+      revokedAt: null,
+      revokedReason: null,
+    };
+    const next: SessionRecord = {
+      ...previous,
+      idHash: 'c'.repeat(64),
+      ip: '198.51.100.45',
+      userAgent: 'New browser',
+      createdAt: now,
+      lastSeenAt: now,
+    };
+    const recorded: EventDraft[] = [];
+    const deps = {
+      users: { findByEmail: async () => user } as unknown as UserStore,
+      sessions: {
+        listActiveForUser: async () => [previous],
+        prepare: async () => ({ token: 'test-session-token', session: next, maxPerUser: 3 }),
+      } as unknown as SessionService,
+      hasher: {
+        verify: async () => true,
+        needsRehash: () => false,
+      } as unknown as PasswordHasher,
+      breach: { check: async () => ({ status: 'clean' }) } as BreachChecker,
+      events: {
+        append: async (draft: EventDraft) => {
+          recorded.push(draft);
+          return {} as EventEnvelope;
+        },
+      } as unknown as EventStore,
+      uow: { startSession: async () => undefined } as unknown as IdentityUnitOfWork,
+      throttle: {
+        checkIp: () => ({ allowed: true, retryAfterMs: 0 }),
+        checkAccount: () => ({ locked: false, retryAfterMs: 0 }),
+        recordSuccess: () => undefined,
+      } as unknown as LoginThrottle,
+      clock: () => now,
+      logger: silentLogger,
+      auditKey: Buffer.alloc(32, 7),
+      breachMode: 'fail-closed' as const,
+      checkBreachOnSignIn: false,
+    } satisfies IdentityDeps;
+
+    const service = new IdentityService(deps);
+    await service.signIn(
+      { email: user.email, password: 'correct horse battery' },
+      { ip: next.ip, userAgent: next.userAgent, requestId: 'co012-anomaly-test' },
+    );
+
+    const anomaly = recorded.find((event) => event.type === IdentityEvents.SignInAnomalyObserved);
+    assert.ok(anomaly, 'a changed active-session fingerprint must emit an anomaly observation');
+    assert.deepEqual(anomaly?.payload, {
+      baseline: 'active_sessions',
+      signals: [
+        'new_active_session_ip',
+        'new_active_session_user_agent',
+        'new_active_session_device',
+      ],
+    });
+    assert.equal(JSON.stringify(anomaly?.payload).includes(next.ip), false);
+    assert.equal(JSON.stringify(anomaly?.payload).includes(next.userAgent), false);
   });
 });
