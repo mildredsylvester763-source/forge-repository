@@ -37,6 +37,53 @@ describe('CO-063 canonical event payload serialization', () => {
     );
   });
 
+  it('rejects non-JSON object instances such as Date values', () => {
+    assert.throws(
+      () => canonicalJson({ createdAt: new Date(1_800_000_000_000) }),
+      /canonicalJson: unsupported object prototype/,
+    );
+    assert.throws(
+      () => buildEnvelope(draft({ createdAt: new Date(1_800_000_000_000) as unknown as string }), null, 1_800_000_000_000),
+      /canonicalJson: unsupported object prototype/,
+    );
+  });
+
+  it('validates the actor, subject, payload and causal metadata at runtime', () => {
+    const now = 1_800_000_000_000;
+    const base = draft({});
+    assert.throws(
+      () => buildEnvelope({ ...base, actor: { kind: 'administrator', id: 'x' } as never }, null, now),
+      /event actor kind is invalid/,
+    );
+    assert.throws(
+      () => buildEnvelope({ ...base, actor: { kind: 'user', id: 12 } as never }, null, now),
+      /event actor id must be a string/,
+    );
+    assert.throws(
+      () => buildEnvelope({ ...base, subject: { type: 'project', id: 7 } as never }, null, now),
+      /event subject type and id must be strings/,
+    );
+    assert.throws(
+      () => buildEnvelope({ ...base, payload: null as never }, null, now),
+      /event payload must be a JSON object/,
+    );
+    assert.throws(
+      () => buildEnvelope({ ...base, correlationId: 42 as never }, null, now),
+      /event correlationId must be a string/,
+    );
+    assert.throws(
+      () => buildEnvelope({ ...base, causationId: {} as never }, null, now),
+      /event causationId must be a string or null/,
+    );
+  });
+
+  it('rejects invalid timestamps before creating an envelope', () => {
+    const base = draft({});
+    assert.throws(() => buildEnvelope(base, null, Number.NaN), /finite millisecond value/);
+    assert.throws(() => buildEnvelope(base, null, Number.POSITIVE_INFINITY), /finite millisecond value/);
+    assert.throws(() => buildEnvelope(base, null, 9_000_000_000_000_000), /outside the supported date range/);
+  });
+
   it('rejects cyclic payload objects with a clear error instead of overflowing recursion', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
