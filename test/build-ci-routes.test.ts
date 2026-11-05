@@ -202,6 +202,45 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     assert.equal(candidateBody.plan.comparison.baselineVersion, 2);
     assert.equal(candidateBody.plan.comparison.diff.hasChanges, true);
     assert.deepEqual(candidateBody.plan.comparison.diff.changedFields, ['name']);
+
+    const scenarioDryRun = routes['/v1/build-ci/pipelines/dry-run/scenarios']?.POST;
+    assert.ok(scenarioDryRun);
+    const scenarioResult = await scenarioDryRun(context({
+      workspaceId: 'workspace-a',
+      pipelineId: 'http-pipeline',
+      scenarios: [
+        { id: 'manual', event: { kind: 'manual', source: 'forge.manual', eventId: 'manual-scenario' } },
+        { id: 'pull-request', event: { kind: 'pull_request', source: 'github:pull_request', eventId: 'pr-scenario', branch: 'feature/x', baseBranch: 'main' } },
+      ],
+    }, 'valid-session'));
+    assert.equal(scenarioResult.status, 200);
+    const scenarioBody = scenarioResult.body as { source: string; scenarios: { id: string; plan: { sideEffects: boolean } }[] };
+    assert.equal(scenarioBody.source, 'saved');
+    assert.deepEqual(scenarioBody.scenarios.map((item) => item.id), ['manual', 'pull-request']);
+    assert.equal(scenarioBody.scenarios.every((item) => item.plan.sideEffects === false), true);
+
+    const candidateScenarios = await scenarioDryRun(context({
+      workspaceId: 'workspace-a',
+      definition: { ...definition, name: 'Scenario candidate' },
+      scenarios: [
+        { id: 'push', event: { kind: 'push', source: 'github:push', eventId: 'push-scenario', branch: 'main', changedFiles: ['src/app.ts'] } },
+      ],
+    }, 'valid-session'));
+    const candidateScenarioBody = candidateScenarios.body as {
+      source: string; baselineVersion: number | null; diff: { hasChanges: boolean } | null; scenarios: unknown[];
+    };
+    assert.equal(candidateScenarioBody.source, 'candidate');
+    assert.equal(candidateScenarioBody.baselineVersion, 2);
+    assert.equal(candidateScenarioBody.diff?.hasChanges, true);
+    assert.equal(candidateScenarioBody.scenarios.length, 1);
+
+    await assert.rejects(() => scenarioDryRun(context({
+      workspaceId: 'workspace-a', pipelineId: 'http-pipeline',
+      scenarios: [
+        { id: 'duplicate', event: { kind: 'manual', source: 'forge.manual', eventId: 'one' } },
+        { id: 'duplicate', event: { kind: 'manual', source: 'forge.manual', eventId: 'two' } },
+      ],
+    }, 'valid-session')));
     await assert.rejects(
       () => diffVersions(context({}, undefined, { workspaceId: 'workspace-a', pipelineId: 'http-pipeline', fromVersion: '1', toVersion: '2' })),
       (error: unknown) => error instanceof Error && error.name === 'AppError',
