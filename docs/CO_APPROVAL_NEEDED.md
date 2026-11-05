@@ -257,3 +257,16 @@ The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplyin
 - Query/indexing behavior and scale targets must follow the accepted feature requirements rather than guessed implementation preferences.
 - Current audit found no dedicated CO project graph service/schema in either main or mistral at the inspected paths. AI retrieval graphs and TQ integration graphs are not substitutes.
 - Approval state: **NOT SUPPLIED / NOT APPROVED**. No graph schema or API should be introduced until the exact acceptance and ontology are available.
+
+
+## CO-063–CO-080 event-backbone verification and approval register (2026-11-05)
+
+| Feature | Required owner / external input | Why / next safe action |
+| --- | --- | --- |
+| CO-064 | A real PostgreSQL test service and `FORGE_TEST_POSTGRES_URL` secret, plus test SSL mode | Current test helper uses a SQLite-backed stand-in without the secret. Configure an isolated throwaway PostgreSQL database before claiming native integration or trigger/privilege proof. |
+| CO-065 | Decision on durable event subscriber contract: delivery guarantee, outbox ownership, consumer offsets, retry/backoff and dead-letter semantics | Current atomic identity writes are not a durable event-delivery system. Do not guess at-least-once/exactly-once or consumer retention semantics. |
+| CO-067 | Exact Part 01 acceptance text and owner decision on whether a global registry, compatibility rules and deprecation/version lifecycle are required | Current registry only enumerates identity event names/version. Do not broaden it by assumption. |
+| CO-076 | Independent anchor destination, credential owner, retention/availability policy, write cadence and recovery procedure | Pure verification compares a supplied checkpoint but does not persist it independently. A same-database anchor does not protect against database truncation. |
+| CO-063, CO-066, CO-068–CO-075, CO-077–CO-080 | Exact Part 01 feature descriptions and acceptance criteria for each ID | Preserve current evidence for CO-063; do not infer unnamed feature contracts from the event-backbone section heading. |
+
+No external anchor account, database secret or owner approval was supplied in this run. These items remain NOT SUPPLIED / NOT APPROVED; unrelated Core work may continue.
