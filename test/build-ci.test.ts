@@ -526,6 +526,19 @@ test('multi-scenario dry-run evaluates bounded event fixtures without writing ve
     assert.equal(count('build_pipeline_versions'), versionsBefore);
     assert.equal(count('build_pipeline_runs'), runsBefore);
 
+    const candidate = validatePipelineDefinition({ ...definition(), name: 'Unpersisted scenario candidate' });
+    const candidateScenarios = await service.dryRunDefinitionScenarios({
+      workspaceId: 'ws-scenarios',
+      definition: candidate,
+      actorId: 'owner',
+      scenarios: [{ id: 'candidate-push', event: pushEvent }],
+    });
+    assert.equal(candidateScenarios.baselineVersion, 1);
+    assert.equal(candidateScenarios.diff?.hasChanges, true);
+    assert.equal(candidateScenarios.scenarios.length, 1);
+    assert.equal(count('build_pipeline_versions'), versionsBefore);
+    assert.equal(count('build_pipeline_runs'), runsBefore);
+
     await assert.rejects(
       () => service.dryRunScenarios({
         workspaceId: 'ws-scenarios', pipelineId: 'web-build', actorId: 'owner',
