@@ -1,4 +1,5 @@
 import { AppError } from '../../kernel/errors.ts';
+import type { Clock } from '../../kernel/clock.ts';
 import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.ts';
 import { serializeCookie } from '../../kernel/http.ts';
 import { parseFields } from '../../kernel/validate.ts';
@@ -72,6 +73,7 @@ export function passkeyRoutes(
   passkeys: PasskeyService,
   identity: IdentityService,
   cookie: CookieSettings,
+  clock: Clock,
 ): RouteTable {
   const requireUser = async (ctx: RequestContext) => {
     const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
@@ -107,7 +109,7 @@ export function passkeyRoutes(
       POST: async (ctx): Promise<HttpResult> => {
         const response = assertionResponse(await ctx.json());
         const result = await passkeys.completeAuthentication(response, meta(ctx));
-        const maxAgeSec = (result.sessionExpiresAt - Date.now()) / 1000;
+        const maxAgeSec = (result.sessionExpiresAt - clock()) / 1000;
         return {
           status: 200,
           body: { user: result.user, passwordChangeRequired: result.passwordChangeRequired },
