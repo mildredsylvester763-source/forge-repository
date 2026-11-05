@@ -77,10 +77,10 @@ export class HibpBreachChecker implements BreachChecker {
     // as unavailable so registration's default fail-closed policy cannot be bypassed.
     const seen = new Set<string>();
     let breachedCount = 0;
-    for (const rawLine of text.split(/\\r?\\n/)) {
+    for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
       if (line.length === 0) continue;
-      const match = /^([A-F0-9]{35}):(\\d+)$/i.exec(line);
+      const match = /^([A-F0-9]{35}):(\d+)$/i.exec(line);
       if (!match) return { status: 'unavailable', reason: 'invalid_range_response' };
 
       const candidate = (match[1] ?? '').toUpperCase();
