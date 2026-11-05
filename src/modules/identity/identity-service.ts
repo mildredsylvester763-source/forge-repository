@@ -207,6 +207,15 @@ export class IdentityService {
           ),
         });
         compromised = current.passwordCompromisedAt !== null;
+      } else if (breach.status === 'unavailable') {
+        // A breach-service outage must not block an otherwise valid sign-in, but it must be visible.
+        await this.emitBestEffort(
+          IdentityEvents.BreachCheckSkipped,
+          { kind: 'user', id: current.id },
+          { type: 'user', id: current.id },
+          { cause: breach.reason, stage: 'sign_in' },
+          meta,
+        );
       }
     }
 
