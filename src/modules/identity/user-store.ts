@@ -81,6 +81,12 @@ export class InMemoryUserStore implements UserStore {
     this.byEmail.delete(current.email);
   }
 
+  /** Restore the exact prior record after an in-memory unit-of-work failure. */
+  restore(record: UserRecord): void {
+    if (!this.byId.has(record.id)) throw new Error('user not found');
+    this.byId.set(record.id, record);
+  }
+
   async update(id: string, patch: UserPatch, now: number): Promise<UserRecord> {
     const current = this.byId.get(id);
     if (!current) throw new Error('user not found');
