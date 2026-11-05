@@ -10,6 +10,7 @@ export const IdentityEvents = {
   SignInFailed: 'identity.sign_in.failed',
   SignInThrottled: 'identity.sign_in.throttled',
   SignedOut: 'identity.sign_out.completed',
+  SessionRevoked: 'identity.session.revoked',
   PasswordCompromisedDetected: 'identity.password.compromised_detected',
   BreachCheckSkipped: 'identity.password.breach_check_skipped',
 } as const;
