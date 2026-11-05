@@ -192,3 +192,12 @@ TOTP secrets and provisioning URIs are high-value credentials. Do not log or sto
 
 ### Preservation rule
 The role/person dependencies above are retained as durable records. Advancing to the next feature may update their next action, but must not delete the requirement, source, state or approval evidence. The current implementation does not discharge any of these external inputs.
+
+
+## CO-004 protocol and provisioning boundary (2026-11-05)
+
+- **Status: OWNER-BLOCKED / NOT IMPLEMENTED.** No enterprise SSO route, federation service or CO-004 feature specification is present on Mistral; the main branch has no corresponding SSO implementation to port.
+- The exact Part 01 CO-004 acceptance wording is not available. The owner must confirm the required protocol/profile (SAML, OIDC, or both) and tenant provisioning/account-linking semantics before a protocol-specific implementation is treated as correct.
+- Customer activation inputs remain: issuer/IdP metadata, signing certificates or JWKS trust material, entity ID/client ID and secret where applicable, callback/ACS URLs, tenant mapping, and a test IdP account. Supply these through deployment/customer configuration, never source control.
+- Safe independent work resumes once the protocol and provisioning contract are verified. The CO-003 provider-neutral OIDC authorization transaction is not SSO and must not be counted as CO-004.
+- No owner approval is inferred; the approval state remains **NOT GRANTED**.
