@@ -82,6 +82,42 @@ A dry-run may include an event fixture and an `inputs` object. For simulation, e
 
 Dry-run is side-effect-free: it does not create a run, save a version, execute tasks, resolve secrets or deploy.
 
+### Run a bounded scenario matrix
+
+`POST /v1/build-ci/pipelines/dry-run/scenarios`
+
+Provide exactly one of `pipelineId` or `definition`, plus a `scenarios` array:
+
+```json
+{
+  "workspaceId": "workspace-a",
+  "pipelineId": "quality-gate",
+  "scenarios": [
+    {
+      "id": "push-main",
+      "event": {
+        "kind": "push",
+        "source": "github:push",
+        "eventId": "scenario-push-1",
+        "branch": "main",
+        "changedFiles": ["src/app.ts"]
+      }
+    },
+    {
+      "id": "manual-review",
+      "event": {
+        "kind": "manual",
+        "source": "forge.manual",
+        "eventId": "scenario-manual-1"
+      },
+      "inputs": { "environment": "staging" }
+    }
+  ]
+}
+```
+
+The array must contain 1–20 scenarios with unique IDs (maximum 64 characters). Each scenario supplies an event fixture and optional inputs. The response contains a plan for each scenario and preserves the scenario IDs so callers can compare trigger matches, condition/path outcomes and skipped steps side by side. Candidate definitions also return their baseline/candidate hashes and value-free structural diff when a saved baseline exists. This endpoint is a read-only simulation: it does not write versions or runs, resolve secrets, execute task handlers or deploy.
+
 ## Manual/API trigger
 
 `POST /v1/build-ci/pipelines/trigger`
