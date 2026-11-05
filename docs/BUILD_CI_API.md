@@ -82,6 +82,8 @@ A dry-run may include an event fixture and an `inputs` object. For simulation, e
 
 Dry-run is side-effect-free: it does not create a run, save a version, execute tasks, resolve secrets or deploy.
 
+Event fixtures may include `changedFilesComplete: false` to model a provider response whose file list is partial. Path-filter results then report an explicit `changed_files_incomplete_fail_open` reason and include the pipeline/step rather than silently treating the partial list as complete. Provider webhook ingestion derives this flag from provider payload limits; pull-request file retrieval is optionally wired through a trusted, server-side provider API transport.
+
 ### Run a bounded scenario matrix
 
 `POST /v1/build-ci/pipelines/dry-run/scenarios`
