@@ -107,6 +107,9 @@ test('path filters fail open when the changed-file diff is unavailable, but not 
   assert.deepEqual(evaluatePathFilter(['src/**'], undefined), { matched: true, degraded: true, reason: 'changed_files_unavailable' });
   assert.deepEqual(evaluatePathFilter(['src/**'], []), { matched: false, degraded: false, reason: 'no_changed_files' });
   assert.deepEqual(evaluatePathFilter(['src/**'], ['README.md']), { matched: false, degraded: false, reason: 'no_path_match' });
+  assert.deepEqual(evaluatePathFilter(['src/**'], ['README.md'], false), {
+    matched: true, degraded: true, reason: 'changed_files_incomplete',
+  });
 });
 
 test('branch and path trigger filters are conjunctive; PR branch uses target branch', () => {
@@ -123,6 +126,12 @@ test('trigger evaluation records degraded matching rather than silently skipping
   assert.equal(result.matched, true);
   assert.equal(result.degraded, true);
   assert.ok(result.reasons.includes('changed_files_unavailable_fail_open'));
+  const incomplete = evaluateTrigger(definition().triggers[0]!, {
+    ...pushEvent, changedFiles: ['README.md'], changedFilesComplete: false,
+  });
+  assert.equal(incomplete.matched, true);
+  assert.equal(incomplete.degraded, true);
+  assert.ok(incomplete.reasons.includes('changed_files_incomplete_fail_open'));
 });
 
 test('schedule triggers require the exact scheduler-owned schedule identity', () => {
