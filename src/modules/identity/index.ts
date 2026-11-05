@@ -1,6 +1,6 @@
 /** Public surface of the identity module. Other modules import from here and nowhere deeper. */
 export { IdentityService, toPublicUser } from './identity-service.ts';
-export type { IdentityDeps, PublicUser, RequestMeta, SignInResult } from './identity-service.ts';
+export type { IdentityDeps, PublicUser, PublicSession, RevokeSessionResult, RequestMeta, SignInResult } from './identity-service.ts';
 export { IdentityEvents, IDENTITY_EVENT_VERSION } from './events.ts';
 export type { IdentityEventType } from './events.ts';
 export { identityRoutes } from './routes.ts';
