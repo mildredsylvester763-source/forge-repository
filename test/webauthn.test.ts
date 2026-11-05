@@ -219,5 +219,7 @@ describe('CO-002 WebAuthn protocol core', () => {
     const challenge = createPasskeyChallenge();
     const wildcard = { ...config, origins: ['https://*.forge.example'] };
     expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge, config: wildcard }), 'invalid_origins');
+    const unrelatedOrigin = { ...config, origins: ['https://attacker.example'] };
+    expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge, config: unrelatedOrigin }), 'rp_id_origin_mismatch');
   });
 });
