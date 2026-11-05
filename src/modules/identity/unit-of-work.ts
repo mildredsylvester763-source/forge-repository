@@ -14,7 +14,7 @@ export interface IdentityUnitOfWork {
   registerUser(user: NewUser, event: (created: UserRecord) => EventDraft): Promise<UserRecord>;
   startSession(args: {
     session: SessionRecord;
-    revokeIdHashes: readonly string[];
+    maxPerUser: number;
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void>;
@@ -67,31 +67,34 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
 
   async startSession(args: {
     session: SessionRecord;
-    revokeIdHashes: readonly string[];
+    maxPerUser: number;
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (!Number.isSafeInteger(args.maxPerUser) || args.maxPerUser < 1) {
+      throw new Error('maxPerUser must be a positive safe integer');
+    }
     if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
       throw new Error('session user update must target the session user');
     }
     await this.exclusive(`user:${args.session.userId}`, async () => {
-      const previousUser = args.userUpdate ? await this.users.findById(args.userUpdate.userId) : null;
-      if (args.userUpdate && !previousUser) throw new Error('user not found');
-      const previousSessions: SessionRecord[] = [];
-      for (const idHash of args.revokeIdHashes) {
-        const previous = await this.sessions.findByHash(idHash);
-        if (previous) previousSessions.push(previous);
-      }
+      const owner = await this.users.findById(args.session.userId);
+      if (!owner) throw new Error('user not found');
+      const previousUser = args.userUpdate ? owner : null;
+      const now = this.clock();
+      const active = await this.sessions.listActiveByUser(args.session.userId, now);
+      const surplus = [...active]
+        .sort((a, b) => a.lastSeenAt - b.lastSeenAt || a.createdAt - b.createdAt || a.idHash.localeCompare(b.idHash))
+        .slice(0, Math.max(0, active.length - args.maxPerUser + 1));
 
       try {
         if (args.userUpdate) await this.users.update(args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
         await this.sessions.insert(args.session);
-        const now = this.clock();
-        for (const idHash of args.revokeIdHashes) await this.sessions.revoke(idHash, 'session_limit', now);
+        for (const previous of surplus) await this.sessions.revoke(previous.idHash, 'session_limit', now);
         await this.events.append(args.event);
       } catch (err) {
         this.sessions.remove(args.session.idHash);
-        for (const previous of previousSessions) await this.sessions.insert(previous);
+        for (const previous of surplus) await this.sessions.insert(previous);
         if (previousUser) this.users.restore(previousUser);
         throw err;
       }
