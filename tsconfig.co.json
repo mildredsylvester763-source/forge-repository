@@ -5,6 +5,7 @@
   },
   "include": [
     "src/kernel/**/*.ts",
+    "src/config.ts",
     "src/modules/identity/**/*.ts",
     "test/co-063-canonical-payload.test.ts",
     "test/co-076-anchor-verification.test.ts",
@@ -24,6 +25,7 @@
     "test/co-007-native-token.test.ts",
     "test/webauthn.test.ts",
     "test/passkey-store.test.ts",
-    "test/passkey-service.test.ts"
+    "test/passkey-service.test.ts",
+    "test/config.test.ts"
   ]
 }
