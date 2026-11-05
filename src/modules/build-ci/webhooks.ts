@@ -86,6 +86,7 @@ function pathsFromCommits(value: unknown, expectedCommitCount?: unknown, provide
   const paths = new Set<string>();
   let complete = true;
   if (provider === 'github' && value.length >= 2048) complete = false;
+  if (provider === 'gitlab' && expectedCommitCount === undefined) complete = false;
   if (expectedCommitCount !== undefined) {
     if (!Number.isSafeInteger(expectedCommitCount) || (expectedCommitCount as number) < value.length) complete = false;
     else if ((expectedCommitCount as number) > value.length) complete = false;
