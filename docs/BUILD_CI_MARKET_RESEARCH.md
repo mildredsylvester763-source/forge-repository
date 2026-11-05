@@ -132,8 +132,8 @@ Users can decide which steps run based on safe event context and changed files, 
 GitLab's `rules` supports `if`, `changes`, and `exists`, evaluated in order; GitHub supports branch/path filters with ordered negative patterns. FORGE's structured AST avoids arbitrary expression evaluation and can expose a reason trace for every selected or skipped step.
 
 ### Current FORGE status
-Implemented: bounded safe AST (`all`, `any`, `not`, `eq`, `in`, `exists`), branch/path filters, ordered negative/re-include patterns and explicit missing-diff degraded behaviour.
-Remaining: provider adapters must supply trustworthy changed-file data; add compatibility and edge-case tests before broadening glob syntax.
+Implemented: bounded safe AST (`all`, `any`, `not`, `eq`, `in`, `exists`), branch/path filters, ordered negative/re-include patterns, explicit unavailable/incomplete-diff degraded behaviour, provider push-payload completeness checks, bounded paginated GitHub pull-request and GitLab merge-request file adapters, and webhook-processor enrichment before trigger evaluation. The adapter uses a provider-bound transport supplied by the integrations subsystem; credentials and host selection remain outside Build & CI.
+Remaining: production transport provisioning and owner approval of least-privilege provider API permissions; add compatibility coverage for each supported provider deployment configuration before broadening glob syntax.
 
 ## BD-029 — Dry-run for any pipeline change
 
@@ -199,6 +199,12 @@ Current provider-ingress implementation was checked against current official pro
 - OWASP webhook guidance recommends constant-time HMAC verification, one secret per webhook, timestamp freshness where the provider supports it, event-ID deduplication, idempotent processing, payload limits, rate limiting, structured logs without full bodies/secrets, and asynchronous queueing. The current ingress covers raw-body signature verification, repository binding, bounded body size, deduplication and durable receipt insertion; freshness/replay controls for provider-specific timestamped signatures, throttling, operational logs/alerts, worker processing and retry/dead-letter controls remain verification or implementation work.
 
 This is a product/security benchmark, not evidence that all listed controls are implemented. Do not mark BD-016 accepted until the outstanding controls are mapped to catalogue scope, implemented where required, and tested.
+
+Provider changed-file retrieval contracts:
+- GitHub's pull-request-files endpoint is paginated and returns at most 3,000 files; a fine-grained token needs Pull requests: read for private repositories: https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files
+- GitLab's merge-request-diffs endpoint is paginated and can expose collapsed/too-large diff records; merge-request diff limits can return only limited results: https://docs.gitlab.com/api/merge_requests/#list-merge-request-diffs and https://docs.gitlab.com/administration/diff_limits/
+- GitLab push webhooks include only the newest 20 commits when more than 20 commits are pushed, with total_commits_count indicating the actual count: https://docs.gitlab.com/user/project/integrations/webhook_events/#push-events
+- GitHub push webhook payloads cap the commits array at 2,048 entries: https://docs.github.com/en/webhooks/webhook-events-and-payloads#push
 
 Additional primary references:
 - GitHub webhook signature validation: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
