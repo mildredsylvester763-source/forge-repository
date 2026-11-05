@@ -73,8 +73,8 @@ describe('CO-005 TOTP cryptographic primitives', () => {
   it('rejects weak or invalid secret sizes and invalid TOTP parameter sets', () => {
     assert.throws(() => generateTotpSecret(19), TypeError);
     assert.throws(() => generateTotpCode(Buffer.alloc(8), 59_000, sha1Eight), TypeError);
-    assert.throws(() => generateTotpCode(secret20, 59_000, { ...sha1Eight, digits: 7 as 6 }), TypeError);
+    assert.throws(() => generateTotpCode(secret20, 59_000, { ...sha1Eight, digits: 7 as unknown as 6 }), TypeError);
     assert.throws(() => generateTotpCode(secret20, 59_000, { ...sha1Eight, periodSeconds: 0 }), TypeError);
-    assert.equal(verifyTotpCode(secret20, '00000000', 59_000, sha1Eight, 0) === null || true, true);
+    assert.equal(verifyTotpCode(secret20, '1234567', 59_000, sha1Eight, 0), null);
   });
 });
