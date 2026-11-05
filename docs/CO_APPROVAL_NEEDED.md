@@ -127,3 +127,25 @@ The register is append-only in meaning: a feature completion may change an item'
 - **Retention/privacy state: NOT GRANTED for any new historical telemetry.** Current implementation uses the existing active-session records and does not add a new historical fingerprint table or extend retention.
 - **External dependency:** no new provider credential is needed for the local detector. A notification provider, SIEM or geo-IP data service is not assumed or required by this provisional implementation.
 - **Carry-forward:** CO-012 remains PARTIAL until the exact original catalogue wording and owner-approved response/retention behavior are reconciled. CO-006 ownership/session-management work remains its own feature evidence; using its session listing as an anomaly baseline does not move its outstanding acceptance item or alter any unrelated approvals.
+
+## CO-002 and CO-007 implementation decisions and sealed external register delta (2026-11-05)
+
+### CO-002 — passkeys / WebAuthn
+- Current status: protocol core partial; no owner acceptance.
+- Still required: exact original CO-002 catalogue acceptance wording; production RP ID and exact allowed origins; owner-approved attestation posture, authenticator/algorithm allowlist, resident/discoverable credential policy, backup-state policy and credential lifecycle.
+- RP ID and origins are activation-time customer/deployment configuration. Never commit production origins or treat a test domain as approved.
+- No live authenticator credentials or third-party provider account are needed to continue local parser/storage/route engineering, but end-to-end activation must remain disabled until a valid RP configuration is supplied.
+- Positive approval: NOT GRANTED. Successful focused tests demonstrate only the protocol primitives, not feature acceptance.
+
+### CO-007 — native bearer sessions
+- Current status: provisional native bearer path implemented using the existing opaque server-managed session token; exact CO-007 criteria and audience/lifecycle acceptance remain unverified.
+- The implementation does not issue JWTs, OAuth access tokens or refresh tokens. No refresh-token lifecycle is silently chosen.
+- Positive approval: NOT GRANTED for token audience, refresh-vs-reauthentication policy, device enrollment/attestation and offline grace semantics. A provider secret is not currently needed for the local session contract.
+- Client integration dependency: the shipped native client must use HTTPS and platform secure credential storage; validate this at activation. Do not log or place bearer tokens in URLs or analytics.
+- CO-009 desktop token behavior remains separate and is not covered by CO-007.
+
+### Carry-forward / feature transition
+- CO-002's RP ID, origin, attestation and credential lifecycle requirements remain attached to CO-002; they do not migrate to CO-007.
+- CO-007's token audience and native-client session lifecycle requirements remain attached to CO-007; they do not close or approve CO-009.
+- CO-006 session manager implementation remains distinct from CO-007 bearer transport. Its exact catalogue acceptance still needs reconciliation.
+- Earlier external requirements (CO-004 SSO metadata/certificates; CO-017 RLS decision; CO-018 KMS/key custody; CO-029–044 policy semantics; CO-045–050 graph ontology; CO-063/064/076 independent external anchor; CO-065 durable delivery; CO-093 shared rate-limit store; CO-096 R2 and restore objectives; CO-100 sync conflict policy) remain recorded and unchanged. No credential or owner approval was supplied by these implementations.
