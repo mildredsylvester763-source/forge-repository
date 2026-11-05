@@ -18,6 +18,7 @@
     "test/pg-helpers.ts",
     "test/sqlite-pool.ts",
     "test/password.test.ts",
-    "test/identity-service.test.ts"
+    "test/identity-service.test.ts",
+    "test/co-006-session-manager.test.ts"
   ]
 }
