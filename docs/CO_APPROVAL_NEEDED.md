@@ -270,3 +270,13 @@ The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplyin
 | CO-063, CO-066, CO-068–CO-075, CO-077–CO-080 | Exact Part 01 feature descriptions and acceptance criteria for each ID | Preserve current evidence for CO-063; do not infer unnamed feature contracts from the event-backbone section heading. |
 
 No external anchor account, database secret or owner approval was supplied in this run. These items remain NOT SUPPLIED / NOT APPROVED; unrelated Core work may continue.
+
+
+## CO-081–CO-090 context-engine owner decisions (2026-11-05)
+
+- Exact Part 01 acceptance wording is required for every ID in this range; no feature names or context behaviors are inferred.
+- Product/data owner must define context source types, provenance, source-of-truth precedence and update/conflict semantics.
+- Security/privacy owner must define tenant/project/user visibility, consent, deletion, export and access logging.
+- Product owner must define expiry, retention, summarization, versioning and recovery behavior before persistent context data is introduced.
+- Current audit found no dedicated CO context engine/service/store in either branch at the inspected paths. AI workspace retrieval and AI memory modules are outside this CO range and are not substitutes.
+- Approval state: **NOT SUPPLIED / NOT APPROVED**. Do not create context tables or retention defaults from assumptions.
