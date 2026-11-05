@@ -165,9 +165,13 @@ export class SqliteSessionStore implements SessionStore {
     this.insertSync(record);
   }
 
-  async findByHash(idHash: string): Promise<SessionRecord | null> {
+  findByHashSync(idHash: string): SessionRecord | null {
     const row = this.find.get(idHash) as unknown as SessionRow | undefined;
     return row ? toSession(row) : null;
+  }
+
+  async findByHash(idHash: string): Promise<SessionRecord | null> {
+    return this.findByHashSync(idHash);
   }
 
   async touch(idHash: string, now: number): Promise<SessionRecord | null> {
