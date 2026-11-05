@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.ts';
-import { IdentityService, type PublicUser } from '../identity/index.ts';
+import { IdentityService, sessionCredential, type PublicUser } from '../identity/index.ts';
 import type { WorkspaceRetrievalService } from './workspace-retrieval-service.ts';
 
 function invalidField(field: string, reason: string): AppError {
@@ -16,7 +16,7 @@ function rejectUnknownFields(body: Record<string, unknown>, allowed: readonly st
 /** Every route requires a signed-in user; recorded items and reports belong to their owner. */
 export function workspaceRetrievalRoutes(service: WorkspaceRetrievalService, identity: IdentityService, cookie: { name: string }): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<PublicUser> => {
-    const auth = await identity.authenticate(ctx.cookie(cookie.name));
+    const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
     return auth.user;
   };
