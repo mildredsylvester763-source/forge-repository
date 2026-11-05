@@ -119,3 +119,11 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 **CO-006 external dependency result:** none is required to exercise the local session listing/revocation backend. Production deployment still inherits the existing PostgreSQL, email, key-custody and operational dependency records above; none is considered supplied by this feature.
 
 The register is append-only in meaning: a feature completion may change an item's current relevance or next target, but it must not erase the original requirement, evidence, approval state or external credential requirement. A status may change to APPROVED only after explicit owner approval is captured.
+
+## CO-012 anomaly detector: bounded completion and approvals (2026-11-05)
+
+- **Implemented safely:** passive comparison against currently active session IP/user-agent metadata; value-free signal names only; no account-access action.
+- **Approval state for automated response: NOT GRANTED.** Do not add challenge escalation, automatic lockout, automated revocation, alert recipients or security notifications until the exact feature acceptance criteria and response policy are available.
+- **Retention/privacy state: NOT GRANTED for any new historical telemetry.** Current implementation uses the existing active-session records and does not add a new historical fingerprint table or extend retention.
+- **External dependency:** no new provider credential is needed for the local detector. A notification provider, SIEM or geo-IP data service is not assumed or required by this provisional implementation.
+- **Carry-forward:** CO-012 remains PARTIAL until the exact original catalogue wording and owner-approved response/retention behavior are reconciled. CO-006 ownership/session-management work remains its own feature evidence; using its session listing as an anomaly baseline does not move its outstanding acceptance item or alter any unrelated approvals.
