@@ -16,7 +16,7 @@ import {
 } from '../src/modules/identity/passkey-store.ts';
 
 const now = 1_800_000_000_000;
-const event = (type: 'identity.passkey.registered' | 'identity.passkey.removed', userId: string) => ({
+const event = (type: 'identity.passkey.registered' | 'identity.passkey.authenticated' | 'identity.passkey.removed', userId: string) => ({
   type,
   version: 1,
   actor: { kind: 'user' as const, id: userId },
@@ -72,14 +72,14 @@ describe('CO-002 passkey storage', () => {
     await store.createCredential(record, event('identity.passkey.registered', 'user-a'));
     await assert.rejects(() => store.createCredential(record, event('identity.passkey.registered', 'user-a')), PasskeyCredentialExistsError);
     assert.equal((await store.listCredentialsForUser('user-b')).length, 0);
-    assert.equal(await store.updateAfterAssertion({ userId: 'user-b', credentialId: record.credentialId, signCount: 1, backedUp: false, now: now + 1 }), false);
-    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: false, now: now + 2 }), true);
-    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 2, backedUp: false, now: now + 3 }), false);
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-b', credentialId: record.credentialId, signCount: 1, backedUp: false, now: now + 1, event: event('identity.passkey.authenticated', 'user-b') }), false);
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: false, now: now + 2, event: event('identity.passkey.authenticated', 'user-a') }), true);
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 2, backedUp: false, now: now + 3, event: event('identity.passkey.authenticated', 'user-a') }), false);
     assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 3);
     assert.equal(await store.deleteCredentialForUser('user-b', record.credentialId, event('identity.passkey.removed', 'user-b')), false);
     assert.equal(await store.deleteCredentialForUser('user-a', record.credentialId, event('identity.passkey.removed', 'user-a')), true);
     const committed = await events.readFrom(1, 20);
-    assert.deepEqual(committed.map((entry) => entry.type), ['identity.passkey.registered', 'identity.passkey.removed']);
+    assert.deepEqual(committed.map((entry) => entry.type), ['identity.passkey.registered', 'identity.passkey.authenticated', 'identity.passkey.removed']);
   });
 
   it('persists credentials and atomically rolls them back when the audit append fails', async () => {
@@ -107,11 +107,27 @@ describe('CO-002 passkey storage', () => {
       assert.equal(await store.findCredentialById(rejected.credentialId), null, 'failed audit append must roll back the credential');
       db.exec('DROP TRIGGER reject_passkey_audit');
 
-      assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 4, backedUp: false, now: now + 10 }), true);
+      db.exec(`CREATE TRIGGER reject_passkey_counter_audit BEFORE INSERT ON events
+        WHEN NEW.type = 'identity.passkey.authenticated'
+        BEGIN SELECT RAISE(ABORT, 'injected passkey counter audit failure'); END;`);
+      await assert.rejects(
+        () => store.updateAfterAssertion({
+          userId: 'user-a', credentialId: record.credentialId, signCount: 4, backedUp: false, now: now + 10,
+          event: event('identity.passkey.authenticated', 'user-a'),
+        }),
+        /injected passkey counter audit failure/,
+      );
+      assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 0, 'failed audit must roll back counter state');
+      db.exec('DROP TRIGGER reject_passkey_counter_audit');
+
+      assert.equal(await store.updateAfterAssertion({
+        userId: 'user-a', credentialId: record.credentialId, signCount: 4, backedUp: false, now: now + 10,
+        event: event('identity.passkey.authenticated', 'user-a'),
+      }), true);
       assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 4);
       assert.equal(await store.deleteCredentialForUser('user-a', record.credentialId, event('identity.passkey.removed', 'user-a')), true);
       assert.equal(await store.findCredentialById(record.credentialId), null);
-      assert.equal((await events.readFrom(1, 20)).length, 2);
+      assert.equal((await events.readFrom(1, 20)).length, 3);
       assert.equal((await events.verify()).ok, true);
     } finally {
       db.close();
