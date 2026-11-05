@@ -76,3 +76,9 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 - CO-065's transactional event coupling is evidenced for identity writes only. The owner still needs to decide whether durable subscriber delivery requires a transactional outbox, consumer offsets, retries and dead-letter handling.
 - CO-067 currently has an identity event-name/version registry only; do not treat it as a complete global event schema registry.
 - The individual names and acceptance criteria for CO-066, CO-068–CO-075 and CO-077–CO-080 are not present in repository docs.
+
+
+## Context engine audit note (2026-11-05)
+
+- CO-081–CO-090 have no dedicated CO context-engine implementation evidence in either branch. The Mistral workspace-retrieval module is AI-062–AI-072 and is excluded from CO.
+- The exact individual catalogue descriptions are required before context source, privacy, visibility, expiry, summarization or retention semantics can be implemented safely. No owner decision is assumed beyond the missing acceptance text.

@@ -432,3 +432,19 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-079: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-080: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
 - These classifications use only explicit repository notes and code evidence. No names or acceptance criteria were invented for the unmapped IDs. The real-PostgreSQL proof, durable event-delivery policy and independent anchor destination remain in the approval register.
+
+
+### CO-081–CO-090 context engine audit (2026-11-05)
+- Compared `main` and `mistral` source trees before this audit. Neither has a dedicated CO context-engine module. Mistral's only context/retrieval-named source tree is `src/modules/workspace-retrieval`, which the progress catalogue explicitly places in AI-062–AI-072; it is excluded from CO and is not counted as a CO context engine.
+- Individual evidence-based classifications:
+  - CO-081: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-082: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-083: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-084: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-085: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-086: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-087: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-088: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-089: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-090: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+- The section heading "Context engine" is insufficient to infer context sources, user visibility, privacy boundaries, expiry, summarization or retention. No such behavior was invented. The exact original Part 01 text is required before a safe CO implementation can be designed.
