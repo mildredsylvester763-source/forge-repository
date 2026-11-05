@@ -16,6 +16,7 @@ export const IdentityEvents = {
   BreachCheckSkipped: 'identity.password.breach_check_skipped',
   PasskeyRegistered: 'identity.passkey.registered',
   PasskeyRemoved: 'identity.passkey.removed',
+  PasskeyAuthenticated: 'identity.passkey.authenticated',
 } as const;
 
 export type IdentityEventType = (typeof IdentityEvents)[keyof typeof IdentityEvents];
