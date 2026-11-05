@@ -211,10 +211,10 @@ export class IdentityService {
     }
 
     // Session and "signed in" event are saved in one transaction: no session ever exists without its audit record.
-    const { token, session, revokeIdHashes } = await this.d.sessions.prepare(current.id, { ip: meta.ip, userAgent: meta.userAgent });
+    const { token, session, maxPerUser } = await this.d.sessions.prepare(current.id, { ip: meta.ip, userAgent: meta.userAgent });
     await this.d.uow.startSession({
       session,
-      revokeIdHashes,
+      maxPerUser,
       ...(userUpdate ? { userUpdate } : {}),
       event: this.draft(
         IdentityEvents.SignInSucceeded,
