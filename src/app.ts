@@ -21,6 +21,10 @@ import {
   LocalBlocklistChecker,
   LoginThrottle,
   PasswordHasher,
+  PasskeyService,
+  InMemoryPasskeyStore,
+  PostgresPasskeyStore,
+  SqlitePasskeyStore,
   PostgresIdentityUnitOfWork,
   PostgresSessionStore,
   PostgresUserStore,
@@ -30,6 +34,8 @@ import {
   SqliteUserStore,
   identityMigrations,
   identityRoutes,
+  passkeyRoutes,
+  type PasskeyStore,
   type BreachChecker,
   type IdentityUnitOfWork,
   type SessionStore,
@@ -154,6 +160,7 @@ interface Storage {
   users: UserStore;
   sessionStore: SessionStore;
   uow: IdentityUnitOfWork;
+  passkeys: PasskeyStore;
   runs: TaskRunStore;
   plans: OrchestratorPlanStore;
   goldens: TestQualityGoldenStore;
@@ -172,6 +179,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const events = new PostgresEventStore({ pool, clock, logger });
     const users = new PostgresUserStore(pool);
     const sessionStore = new PostgresSessionStore(pool);
+    const passkeys = new PostgresPasskeyStore({ pool, events });
     const runs = new PostgresTaskRunStore(pool);
     const plans = new PostgresOrchestratorPlanStore(pool);
     const goldens = new PostgresGoldenStore(pool);
@@ -181,7 +189,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const workspaceRetrieval = new PostgresWorkspaceRetrievalStore(pool);
     const searchIntegrity = new PostgresSearchIntegrityStore(pool);
     const aiTraining = new PostgresAiTrainingStore(pool);
-    return { db: null, pool, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return { db: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -200,6 +208,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
+    const passkeys = new SqlitePasskeyStore({ db, events });
     const runs = new SqliteTaskRunStore(db);
     const plans = new SqliteOrchestratorPlanStore(db);
     const goldens = new SqliteGoldenStore(db);
@@ -209,11 +218,12 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const workspaceRetrieval = new SqliteWorkspaceRetrievalStore(db);
     const searchIntegrity = new SqliteSearchIntegrityStore(db);
     const aiTraining = new SqliteAiTrainingStore(db);
-    return { db, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
+  const passkeys = new InMemoryPasskeyStore(events);
   const runs = new InMemoryTaskRunStore();
   const plans = new InMemoryOrchestratorPlanStore();
   const goldens = new InMemoryGoldenStore();
@@ -223,7 +233,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const workspaceRetrieval = new InMemoryWorkspaceRetrievalStore();
   const searchIntegrity = new InMemorySearchIntegrityStore();
   const aiTraining = new InMemoryAiTrainingStore();
-  return { db: null, pool: null, events, users, sessionStore, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -266,6 +276,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     checkBreachOnSignIn: config.breach.checkOnSignIn,
   });
 
+  const passkeys = new PasskeyService({ store: storage.passkeys, identity, clock, config: config.passkeys });
+
   const tasks = new TaskRuntimeService({ runs: storage.runs, events, clock });
 
   const orchestrator = new OrchestratorService({ plans: storage.plans, events, clock });
@@ -287,6 +299,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const routes: RouteTable = {
     ...healthRoutes(events, logger),
     ...identityRoutes(identity, config.cookie, clock),
+    ...passkeyRoutes(passkeys, identity, config.cookie, clock),
     ...taskRuntimeRoutes(tasks, identity, config.cookie),
     ...orchestratorRoutes(orchestrator, identity, config.cookie),
     ...testQualityRoutes(testQuality, identity, config.cookie),
