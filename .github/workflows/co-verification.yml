@@ -8,6 +8,7 @@ on:
       - 'src/kernel/**'
       - 'src/modules/identity/**'
       - 'tsconfig.co.json'
+      - 'test/co-063-canonical-payload.test.ts'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
       - 'test/sqlite-pool.ts'
@@ -41,6 +42,7 @@ jobs:
       - name: Run independent CO kernel and identity regressions
         run: |
           node --test \
+            test/co-063-canonical-payload.test.ts \
             test/co-065-atomic-signout.test.ts \
             test/co-065-postgres-uow.test.ts \
             test/co-030-route-auth.test.ts \
