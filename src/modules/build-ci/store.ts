@@ -48,6 +48,16 @@ export interface CreatePipelineRunResult {
   readonly created: boolean;
 }
 
+export interface PipelineDryRunScenario {
+  readonly id: string;
+  readonly event: TriggerEvent;
+  readonly inputs?: unknown;
+}
+export interface PipelineDryRunScenarioResult {
+  readonly id: string;
+  readonly plan: ReturnType<typeof buildDryRunPlan>;
+}
+
 export interface SavePipelineVersionInput {
   readonly workspaceId: string;
   readonly definition: PipelineDefinition;
@@ -115,6 +125,40 @@ export interface TriggerPipelineResult {
   readonly duplicate: boolean;
   readonly run: PipelineRun | null;
   readonly evaluations: readonly TriggerEvaluation[];
+}
+
+function validateDryRunScenarios(scenarios: readonly PipelineDryRunScenario[]): readonly PipelineDryRunScenario[] {
+  if (!Array.isArray(scenarios) || scenarios.length < 1 || scenarios.length > 20) {
+    throw new TypeError('scenarios must contain between 1 and 20 entries');
+  }
+  const ids = new Set<string>();
+  for (const scenario of scenarios) {
+    if (!scenario || typeof scenario !== 'object' || typeof scenario.id !== 'string' ||
+        scenario.id.trim().length === 0 || scenario.id.length > 64 || ids.has(scenario.id)) {
+      throw new TypeError('scenario IDs must be non-empty, unique strings of at most 64 characters');
+    }
+    ids.add(scenario.id);
+    const event = scenario.event as unknown;
+    if (!event || typeof event !== 'object' || Array.isArray(event)) throw new TypeError('each scenario must include an event object');
+    const record = event as Record<string, unknown>;
+    if (!['push', 'pull_request', 'schedule', 'event', 'manual', 'api'].includes(String(record.kind)) ||
+        typeof record.source !== 'string' || !record.source.trim() || record.source.length > 128 ||
+        typeof record.eventId !== 'string' || !record.eventId.trim() || record.eventId.length > 128) {
+      throw new TypeError('each scenario event must include a supported kind, source and eventId');
+    }
+  }
+  return Object.freeze(scenarios.map((scenario) => Object.freeze({
+    id: scenario.id,
+    event: Object.freeze({ ...scenario.event }),
+    ...(scenario.inputs !== undefined ? { inputs: scenario.inputs } : {}),
+  })));
+}
+
+function buildScenarioPlans(definition: PipelineDefinition, scenarios: readonly PipelineDryRunScenario[]): readonly PipelineDryRunScenarioResult[] {
+  return Object.freeze(scenarios.map((scenario) => Object.freeze({
+    id: scenario.id,
+    plan: buildDryRunPlan(definition, scenario.event, scenario.inputs),
+  })));
 }
 
 function requiredId(value: string, field: string): void {
@@ -238,6 +282,45 @@ export class BuildCiService {
       fromHash: from.definitionHash,
       toHash: to.definitionHash,
       diff: comparePipelineDefinitions(from.definition, to.definition),
+    });
+  }
+
+  async dryRunScenarios(input: {
+    workspaceId: string; pipelineId: string; actorId: string; scenarios: readonly PipelineDryRunScenario[];
+  }): Promise<{ pipelineId: string; version: number; scenarios: readonly PipelineDryRunScenarioResult[] }> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.pipelineId, 'pipelineId');
+    requiredId(input.actorId, 'actorId');
+    const scenarios = validateDryRunScenarios(input.scenarios);
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: input.pipelineId, actorId: input.actorId, action: 'dry_run' });
+    const latest = await this.store.getLatestVersion(input.workspaceId, input.pipelineId);
+    if (!latest) throw new PipelineNotFoundError();
+    return Object.freeze({
+      pipelineId: input.pipelineId,
+      version: latest.version,
+      scenarios: buildScenarioPlans(latest.definition, scenarios),
+    });
+  }
+
+  async dryRunDefinitionScenarios(input: {
+    workspaceId: string; definition: unknown; actorId: string; scenarios: readonly PipelineDryRunScenario[];
+  }): Promise<{
+    pipelineId: string; baselineVersion: number | null; baselineHash: string | null; candidateHash: string;
+    diff: ReturnType<typeof comparePipelineDefinitions> | null; scenarios: readonly PipelineDryRunScenarioResult[];
+  }> {
+    requiredId(input.workspaceId, 'workspaceId');
+    requiredId(input.actorId, 'actorId');
+    const definition = validatePipelineDefinition(input.definition);
+    const scenarios = validateDryRunScenarios(input.scenarios);
+    await this.requireAuthorization({ workspaceId: input.workspaceId, pipelineId: definition.id, actorId: input.actorId, action: 'dry_run' });
+    const baseline = await this.store.getLatestVersion(input.workspaceId, definition.id);
+    return Object.freeze({
+      pipelineId: definition.id,
+      baselineVersion: baseline?.version ?? null,
+      baselineHash: baseline?.definitionHash ?? null,
+      candidateHash: hashPipelineDefinition(definition),
+      diff: baseline ? comparePipelineDefinitions(baseline.definition, definition) : null,
+      scenarios: buildScenarioPlans(definition, scenarios),
     });
   }
 
