@@ -73,18 +73,38 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
   }
 
   async endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null> {
-    const current = await this.sessions.findByHash(args.idHash);
-    if (!current || current.revokedAt !== null) return null;
+    return this.exclusive(`session:${args.idHash}`, async () => {
+      const current = await this.sessions.findByHash(args.idHash);
+      if (!current || current.revokedAt !== null) return null;
 
-    const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: 'user_sign_out' };
-    await this.sessions.revoke(args.idHash, 'user_sign_out', args.now);
-    try {
-      await this.events.append(args.event(revoked));
-    } catch (err) {
-      // Development/test storage has no database transaction; restore the previous in-memory record.
-      await this.sessions.insert(current);
-      throw err;
-    }
-    return revoked;
+      const revoked: SessionRecord = { ...current, revokedAt: args.now, revokedReason: 'user_sign_out' };
+      await this.sessions.revoke(args.idHash, 'user_sign_out', args.now);
+      try {
+        await this.events.append(args.event(revoked));
+      } catch (err) {
+        // Development/test storage has no database transaction; restore the previous in-memory record.
+        await this.sessions.insert(current);
+        throw err;
+      }
+      return revoked;
+    });
+  }
+
+  async markPasswordCompromised(args: { userId: string; now: number; event: (user: UserRecord) => EventDraft }): Promise<UserRecord> {
+    return this.exclusive(`user:${args.userId}`, async () => {
+      const current = await this.users.findById(args.userId);
+      if (!current) throw new Error('user not found');
+      if (current.passwordCompromisedAt !== null) return current;
+
+      const updated = await this.users.update(args.userId, { passwordCompromisedAt: args.now }, args.now);
+      try {
+        await this.events.append(args.event(updated));
+      } catch (err) {
+        // Development/test storage has no database transaction; restore the exact prior record.
+        this.users.restore(current);
+        throw err;
+      }
+      return updated;
+    });
   }
 }
