@@ -55,15 +55,42 @@ export class LoginThrottle {
   }
 
   checkAccount(fingerprint: string): { locked: boolean; retryAfterMs: number } {
-    const state = this.failures.get(fingerprint);
     const now = this.clock();
-    if (!state || state.lockedUntil <= now) return { locked: false, retryAfterMs: 0 };
-    return { locked: true, retryAfterMs: state.lockedUntil - now };
+    const state = this.failures.get(fingerprint);
+    if (state) {
+      if (now - state.lastFailureAt > this.config.failureTtlMs) {
+        this.failures.delete(fingerprint);
+        return { locked: false, retryAfterMs: 0 };
+      }
+      // Keep active entries recent without ever evicting a live lockout to make room for key churn.
+      this.failures.delete(fingerprint);
+      this.failures.set(fingerprint, state);
+      if (state.lockedUntil > now) return { locked: true, retryAfterMs: state.lockedUntil - now };
+      return { locked: false, retryAfterMs: 0 };
+    }
+
+    if (this.failures.size >= this.config.maxEntries) {
+      const oldest = this.failures.entries().next().value as [string, FailureState] | undefined;
+      if (oldest && now - oldest[1].lastFailureAt > this.config.failureTtlMs) {
+        this.failures.delete(oldest[0]);
+      } else {
+        // Capacity exhaustion is fail-closed for untracked accounts. This avoids an attacker
+        // evicting a victim's exponential lockout by spraying distinct account fingerprints.
+        return { locked: true, retryAfterMs: Math.max(1, Math.min(this.config.baseLockMs, this.config.failureTtlMs)) };
+      }
+    }
+    return { locked: false, retryAfterMs: 0 };
   }
 
   recordFailure(fingerprint: string): void {
     const now = this.clock();
     const previous = this.failures.get(fingerprint);
+    if (!previous && this.failures.size >= this.config.maxEntries) {
+      // checkAccount() normally denies this path. Keep this guard for direct callers too.
+      const oldest = this.failures.entries().next().value as [string, FailureState] | undefined;
+      if (!oldest || now - oldest[1].lastFailureAt <= this.config.failureTtlMs) return;
+      this.failures.delete(oldest[0]);
+    }
     const stale = previous && now - previous.lastFailureAt > this.config.failureTtlMs;
     const count = (previous && !stale ? previous.count : 0) + 1;
     let lockedUntil = 0;
@@ -73,11 +100,6 @@ export class LoginThrottle {
     }
     this.failures.delete(fingerprint);
     this.failures.set(fingerprint, { count, lockedUntil, lastFailureAt: now });
-    while (this.failures.size > this.config.maxEntries) {
-      const oldest = this.failures.keys().next().value;
-      if (oldest === undefined) break;
-      this.failures.delete(oldest);
-    }
   }
 
   recordSuccess(fingerprint: string): void {
