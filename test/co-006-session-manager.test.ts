@@ -102,7 +102,7 @@ async function makeHarness() {
   });
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
-    owner, foreign, current, secondary, foreignSession, sessionStore, events,
+    owner, foreign, current, secondary, foreignSession, sessionStore, events, now: () => now,
     get: (path: string, token?: string) => fetch(baseUrl + path, {
       headers: token ? { Cookie: `${COOKIE_NAME}=${token}` } : {},
     }),
@@ -133,6 +133,27 @@ describe('CO-006 owner-scoped session manager', () => {
       assert.equal(JSON.stringify(body).includes(h.current.token), false);
       assert.equal(JSON.stringify(body).includes(h.secondary.token), false);
       assert.equal(body.sessions[0]?.userAgent, 'FORGE secondary browser session');
+
+      const futureToken = randomBytes(32).toString('base64url');
+      const idleToken = randomBytes(32).toString('base64url');
+      const currentTime = h.now();
+      await h.sessionStore.insert({
+        ...h.secondary.record,
+        idHash: hashSessionToken(futureToken),
+        createdAt: currentTime,
+        lastSeenAt: currentTime + 60_000,
+      });
+      await h.sessionStore.insert({
+        ...h.secondary.record,
+        idHash: hashSessionToken(idleToken),
+        createdAt: currentTime - 25 * 60 * 60_000,
+        lastSeenAt: currentTime - 24 * 60 * 60_000,
+      });
+      const filtered = await h.get('/v1/auth/sessions', h.current.token);
+      const filteredBody = await filtered.json() as { sessions: Array<{ sessionId: string }> };
+      assert.equal(filteredBody.sessions.length, 2);
+      assert.equal(filteredBody.sessions.some((item) => item.sessionId === hashSessionToken(futureToken)), false);
+      assert.equal(filteredBody.sessions.some((item) => item.sessionId === hashSessionToken(idleToken)), false);
     } finally {
       await h.close();
     }
