@@ -205,7 +205,7 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.equal(rollback.definitionHash, version1.definitionHash);
 
     const integrityVersion = await service.createPipeline({
-      workspaceId: 'pg-workspace',
+      workspaceId: 'pg-integrity-workspace',
       actorId: 'integration-test',
       createdAt: '2026-11-04T00:04:30.000Z',
       definition: {
@@ -220,17 +220,17 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       await testPool.pool.query(
         'UPDATE build_pipeline_versions SET definition_json = $1 WHERE workspace_id = $2 AND pipeline_id = $3 AND version = $4',
         [JSON.stringify({ ...integrityVersion.definition, name: 'Tampered after persistence' }),
-          'pg-workspace', integrityVersion.pipelineId, integrityVersion.version],
+          'pg-integrity-workspace', integrityVersion.pipelineId, integrityVersion.version],
       );
     } finally {
       await testPool.pool.query('ALTER TABLE build_pipeline_versions ENABLE TRIGGER build_pipeline_versions_block_update');
     }
     await assert.rejects(
-      () => store.getVersion('pg-workspace', integrityVersion.pipelineId, integrityVersion.version),
+      () => store.getVersion('pg-integrity-workspace', integrityVersion.pipelineId, integrityVersion.version),
       /failed integrity verification/,
     );
     await assert.rejects(
-      () => store.getLatestVersion('pg-workspace', integrityVersion.pipelineId),
+      () => store.getLatestVersion('pg-integrity-workspace', integrityVersion.pipelineId),
       /failed integrity verification/,
     );
 
