@@ -6,8 +6,8 @@ import { InMemoryUserStore, type NewUser, type UserRecord } from './user-store.t
 
 /**
  * The few operations where a data change and its audit event must succeed or fail TOGETHER (CO-065).
- * With the SQLite implementation this is one database transaction: there is never an account without
- * its "registered" event, nor a session without its "signed in" event.
+ * SQLite and PostgreSQL implementations transact account creation, session creation/revocation, and
+ * security-state transitions with their matching audit events.
  */
 export interface IdentityUnitOfWork {
   /** Throws EmailTakenError when the address is already registered. */
