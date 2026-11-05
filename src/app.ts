@@ -261,6 +261,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       new HibpBreachChecker({ baseUrl: config.breach.baseUrl, timeoutMs: config.breach.timeoutMs }),
     ]);
 
+  const throttle = new LoginThrottle({ config: { ...DEFAULT_THROTTLE, ...overrides.throttle }, clock });
   const identity = new IdentityService({
     users: storage.users,
     sessions: new SessionService({ store: storage.sessionStore, clock, config: config.session }),
@@ -268,7 +269,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     breach,
     events,
     uow: storage.uow,
-    throttle: new LoginThrottle({ config: { ...DEFAULT_THROTTLE, ...overrides.throttle }, clock }),
+    throttle,
     clock,
     logger,
     auditKey: config.auditKey,
@@ -276,7 +277,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     checkBreachOnSignIn: config.breach.checkOnSignIn,
   });
 
-  const passkeys = new PasskeyService({ store: storage.passkeys, identity, clock, config: config.passkeys });
+  const passkeys = new PasskeyService({ store: storage.passkeys, identity, clock, config: config.passkeys, throttle });
 
   const tasks = new TaskRuntimeService({ runs: storage.runs, events, clock });
 
