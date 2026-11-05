@@ -398,12 +398,13 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
         steps: [{ id: 'verify', task: 'quality.verify' }],
       },
     });
-    await webhookDeliveries.enqueue({
+    const processorEnqueue = await webhookDeliveries.enqueue({
       ...webhookInput,
       deliveryId: 'pg-webhook-delivery-processor',
       event: { ...webhookEvent, eventId: 'pg-webhook-delivery-processor' },
       bodySha256: 'c'.repeat(64),
     });
+    assert.equal(processorEnqueue.inserted, true, 'processor fixture must insert a distinct queued receipt');
     const webhookProcessor = new WebhookDeliveryProcessor({
       deliveries: webhookDeliveries,
       buildCi: service,
@@ -421,7 +422,8 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
       now: () => Date.parse('2026-11-04T00:13:00.000Z'),
     });
     const processedWebhook = await webhookProcessor.processNext('pg-processor-worker');
-    assert.equal(processedWebhook.processed, true);
+    assert.equal(processedWebhook.claimed, true, 'processor must claim the inserted receipt: ' + JSON.stringify(processedWebhook));
+    assert.equal(processedWebhook.processed, true, 'processor must complete the claimed receipt: ' + JSON.stringify(processedWebhook));
     assert.equal(processedWebhook.pipelinesConsidered, 2);
     assert.equal(processedWebhook.runsQueued, 1);
     const webhookRun = await testPool.pool.query<{ event_id: string; pipeline_id: string; status: string }>(
