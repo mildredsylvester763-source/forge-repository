@@ -1,4 +1,6 @@
 /** Public surface of the identity module. Other modules import from here and nowhere deeper. */
+export { generateTotpSecret, encodeBase32, decodeBase32, generateTotpCode, verifyTotpCode, totpProvisioningUri } from './totp.ts';
+export type { TotpAlgorithm, TotpOptions, TotpMatch } from './totp.ts';
 export { OidcAuthorizationService, InMemoryOidcTransactionStore, validateOidcProviderConfig } from './oidc-authorization.ts';
 export type { OidcProviderConfig, OidcTransactionRecord, OidcTransactionStore, OidcConsumedTransaction, OidcAuthorizationStart } from './oidc-authorization.ts';
 export { IdentityService, toPublicUser } from './identity-service.ts';
