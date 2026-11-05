@@ -126,6 +126,35 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
       assert.equal(revoked?.revokedAt, now);
       assert.equal(await uow.endSession({ idHash: session.idHash, now, event: validSignOutEvent }), null);
 
+      const capRollbackSession: SessionRecord = {
+        idHash: '9'.repeat(64),
+        userId: user.id,
+        createdAt: now + 5,
+        lastSeenAt: now + 5,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'CO-001 PostgreSQL session-cap rollback test',
+        revokedAt: null,
+        revokedReason: null,
+      };
+      await assert.rejects(
+        () => uow.startSession({
+          session: capRollbackSession,
+          maxPerUser: 1,
+          event: {
+            type: 'INVALID EVENT TYPE',
+            version: 1,
+            actor: { kind: 'user', id: user.id },
+            subject: { type: 'user', id: user.id },
+            payload: {},
+            correlationId: 'co-001-pg-session-cap-rollback',
+          },
+        }),
+        /invalid event type/,
+      );
+      assert.equal((await sessions.findByHash(rehashSession.idHash))?.revokedAt, null);
+      assert.equal(await sessions.findByHash(capRollbackSession.idHash), null);
+
       const concurrentSessions: SessionRecord[] = ['7', '8'].map((letter) => ({
         idHash: letter.repeat(64),
         userId: user.id,
