@@ -126,9 +126,36 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
       assert.equal(revoked?.revokedAt, now);
       assert.equal(await uow.endSession({ idHash: session.idHash, now, event: validSignOutEvent }), null);
 
+      const concurrentSessions: SessionRecord[] = ['7', '8'].map((letter) => ({
+        idHash: letter.repeat(64),
+        userId: user.id,
+        createdAt: now + 10,
+        lastSeenAt: now + 10,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'CO-001 PostgreSQL session-cap concurrency test',
+        revokedAt: null,
+        revokedReason: null,
+      }));
+      await Promise.all(concurrentSessions.map((record) => uow.startSession({
+        session: record,
+        maxPerUser: 1,
+        event: {
+          type: 'identity.sign_in.succeeded',
+          version: 1,
+          actor: { kind: 'user', id: record.userId },
+          subject: { type: 'user', id: record.userId },
+          payload: { sessionRef: record.idHash.slice(0, 12), rehashed: false, passwordChangeRequired: false },
+          correlationId: `co-001-pg-session-cap-${record.idHash.slice(0, 4)}`,
+        },
+      })));
+      const activeSessions = await sessions.listActiveByUser(user.id, now + 10);
+      assert.equal(activeSessions.length, 1, 'concurrent PostgreSQL sign-ins must respect the configured cap');
+      assert.ok(concurrentSessions.some((record) => activeSessions[0]?.idHash === record.idHash));
+
       const stored = await events.readFrom(1, 100);
       assert.equal(stored.filter((event) => event.type === 'identity.password.compromised_detected').length, 1);
-      assert.equal(stored.filter((event) => event.type === 'identity.sign_in.succeeded').length, 1);
+      assert.equal(stored.filter((event) => event.type === 'identity.sign_in.succeeded').length, 3);
       assert.equal(stored.filter((event) => event.type === 'identity.sign_out.completed').length, 1);
       assert.equal((await events.verify()).ok, true);
     } finally {
