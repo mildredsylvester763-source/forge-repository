@@ -28,6 +28,11 @@ export function canonicalJson(value: unknown): string {
           return '[' + items.join(',') + ']';
         }
 
+        const prototype = Object.getPrototypeOf(current);
+        if (prototype !== Object.prototype && prototype !== null) {
+          throw new TypeError('canonicalJson: unsupported object prototype');
+        }
+
         const obj = current as Record<string, unknown>;
         const keys = Object.keys(obj)
           .filter((key) => obj[key] !== undefined)
