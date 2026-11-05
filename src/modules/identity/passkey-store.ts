@@ -52,12 +52,30 @@ function validateChallenge(record: PasskeyChallengeRecord): void {
     throw new TypeError('challenge expiry must be a future safe-integer timestamp');
   }
 }
+const ALLOWED_TRANSPORTS = new Set(['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card']);
 function validateCredential(record: PasskeyCredentialRecord): void {
   if (!CREDENTIAL_ID.test(record.credentialId)) throw new TypeError('credential ID must be canonical base64url');
-  if (!record.userId || !record.publicKeySpki || !Number.isSafeInteger(record.createdAt)) throw new TypeError('passkey credential record is incomplete');
+  const credentialBytes = Buffer.from(record.credentialId, 'base64url');
+  if (credentialBytes.length < 16 || credentialBytes.length > 1024 || credentialBytes.toString('base64url') !== record.credentialId) {
+    throw new TypeError('credential ID must be canonical base64url');
+  }
+  if (!record.userId || Buffer.byteLength(record.userId, 'utf8') < 1 || Buffer.byteLength(record.userId, 'utf8') > 64 ||
+      !record.publicKeySpki || !Number.isSafeInteger(record.createdAt)) throw new TypeError('passkey credential record is incomplete');
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(record.publicKeySpki) ||
+      Buffer.from(record.publicKeySpki, 'base64').toString('base64') !== record.publicKeySpki) {
+    throw new TypeError('passkey public key must be canonical base64 DER');
+  }
   if (record.algorithm !== -7 && record.algorithm !== -8 && record.algorithm !== -257) throw new TypeError('unsupported passkey algorithm');
   if (!Number.isInteger(record.signCount) || record.signCount < 0 || record.signCount > 0xffff_ffff) throw new TypeError('invalid authenticator counter');
-  if (!Array.isArray(record.transports) || record.transports.length > 6) throw new TypeError('invalid passkey transports');
+  if (typeof record.backupEligible !== 'boolean' || typeof record.backedUp !== 'boolean' || (record.backedUp && !record.backupEligible)) {
+    throw new TypeError('passkey backup flags are inconsistent');
+  }
+  if (record.lastUsedAt !== null && (!Number.isSafeInteger(record.lastUsedAt) || record.lastUsedAt < record.createdAt)) {
+    throw new TypeError('invalid last-used timestamp');
+  }
+  if (!Array.isArray(record.transports) || record.transports.length > 6 ||
+      record.transports.some((transport) => !ALLOWED_TRANSPORTS.has(transport)) ||
+      new Set(record.transports).size !== record.transports.length) throw new TypeError('invalid passkey transports');
 }
 function isUniqueViolation(error: unknown): boolean {
   const code = errorCode(error);
