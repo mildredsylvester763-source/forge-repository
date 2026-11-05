@@ -690,9 +690,7 @@ No graph schema or service was invented from the section heading. The range rema
 Compared event store, canonicalization, migration, identity event registry and focused test files between Mistral and main. Core event-store files are inherited in both branches; Mistral-specific canonicalization hardening and focused regressions are additional changes. The exact individual Part 01 descriptions are unavailable for this range; classifications below reflect only concrete code and explicit project documentation.
 
 | Feature | Classification | Evidence / limitation |
-| --- | --- | --- |
-
-| CO-063 | **IMPLEMENTED FOUNDATION** | `src/kernel/canonical.ts` and `src/kernel/events.ts` provide deterministic JSON canonicalization and runtime-validated event envelopes. Mistral adds sparse-array/cycle/prototype rejection and runtime shape checks; focused test `test/co-063-canonical-payload.test.ts` covers these cases. Exact catalogue acceptance remains unavailable. |
+| --- | --- | --- |\n| CO-063 | **IMPLEMENTED FOUNDATION** | `src/kernel/canonical.ts` and `src/kernel/events.ts` provide deterministic JSON canonicalization and runtime-validated event envelopes. Mistral adds sparse-array/cycle/prototype rejection and runtime shape checks; focused test `test/co-063-canonical-payload.test.ts` covers these cases. Exact catalogue acceptance remains unavailable. |
 | CO-064 | **PARTIAL** | SQLite/PostgreSQL append-only hash-chained stores and migrations exist. PostgreSQL event writes serialize chain extension with an advisory transaction lock; SQLite/PostgreSQL migrations protect UPDATE/DELETE, and PostgreSQL also blocks TRUNCATE. Native PostgreSQL execution is not proven: `test/pg-helpers.ts` falls back to a SQLite-backed pool unless `FORGE_TEST_POSTGRES_URL` is set. |
 | CO-065 | **PARTIAL** | Transactional event coupling is implemented and regression-tested for identity session creation/sign-out/password-compromise writes in `src/modules/identity/unit-of-work.ts`, SQLite and PostgreSQL adapters. No global transactional outbox, durable subscriber delivery, consumer offsets, retry/dead-letter lifecycle or proof for other domains is present. |
 | CO-066 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature title/criteria or attributable implementation evidence is present in repository docs. |
@@ -753,7 +751,6 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 
 | Feature | Classification | Evidence / limitation |
 | --- | --- | --- |
-
 | CO-091 | **PARTIAL** | `src/kernel/health.ts` exposes storage-independent `/healthz` and `/readyz` which checks `EventStore.head()`. `test/co-091-readiness.test.ts` verifies ready and unavailable-storage responses. It does not probe every external dependency or establish SLOs. |
 | CO-092 | **MISSING / ACCEPTANCE UNVERIFIED** | No individual feature description or attributable reliability implementation evidence is present in repository docs. |
 | CO-093 | **PARTIAL** | `src/kernel/rate-limit.ts` and `src/modules/identity/throttle.ts` provide bounded process-local sliding windows and account lockout. Mistral fixes fail-open key eviction and validates bounds; focused tests cover capacity churn. There is no shared atomic multi-replica store. |
@@ -773,3 +770,17 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - CO-100 requires exact feature criteria and owner-approved conflict authority, merge/delete semantics, version-vector/clock strategy (if required), offline replay and conflict UX. No sync algorithm is guessed.
 - CO-091 needs approved operational dependency coverage and SLO thresholds before it can be called comprehensive readiness.
 - CO-092, CO-094, CO-095 and CO-097–CO-099 remain unclassified beyond missing evidence until exact descriptions are supplied; no feature title is invented.
+
+
+## Latest CO continuation checkpoint (2026-11-05 18:08 Africa/Lagos)
+
+- Repository: `mildredsylvester763-source/forge-repository`; destination branch: `mistral`; comparison branch: `main`.
+- Latest verified Mistral commit from this audit batch: `e9170542ab82f2d814d3491f47790149f51c3a4a` (`docs(co): audit platform reliability features CO-091 to CO-100`). The immediately preceding register update is `379a5418450d954ce8d5011c3afe28644644621b`.
+- Latest comparison: `mistral` is 384 commits ahead and 1 behind `main`; merge base remains `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`; `main` head is `ec6716fb5ba6c42e940b748581990df9194a2a2b`. No merge, reset, force-push or main write was performed.
+- This batch added individual CO audit records for CO-004, CO-008–CO-011, CO-013–CO-014, CO-015–CO-028, CO-029–CO-044, CO-045–CO-062, CO-063–CO-080, CO-081–CO-090 and CO-091–CO-100. The existing CO-001, CO-002, CO-003, CO-005, CO-006, CO-007 and CO-012 evidence was reconciled where relevant. No completion count is inferred from a section heading.
+- Documentation commits in this batch: `99d785e07b3de28e34add1864fb1747e8062aa13`, `6263bf666efa4bc585d594be81e7601a318da259`, `37fab03e903c4212f8a2792c1e705ed7d36e75f5`, `7ed60812e08d1f0c2750a510d427c3a59a585703`, `1a7641b11c43b132e107065a3fc5fdf8a3af3133`, `ce52bebdd09e6aef0d237f296d5726d748b98374`, `eeb21632733a626465e706b58c69299bbd037673`, `2ad119c2cb0bcb93f69430bca2b6b28a7081f7d9`, `6882c562fa1008d0bda540bf119227afb33f5770`, `cd8622afd94616435224310ce121f1cbea01dc88`, `a9b3fca74851b4deb0864fdea23793b69e0ce12d`, `1618306e79565724ac141341fe2a30baa603aef3`, `3b0a3968e68f5fc08b9a912584286d92e36decbc`, `379a5418450d954ce8d5011c3afe28644644621b`, `e9170542ab82f2d814d3491f47790149f51c3a4a`. These were documentation-only; no new source or test code was changed in this batch.
+- Verification evidence: focused CO workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) completed the isolated CO typecheck and test steps successfully, 88 passed, 0 failed. `test/pg-helpers.ts` uses a SQLite-backed pool unless `FORGE_TEST_POSTGRES_URL` is set; therefore this run is not evidence of native PostgreSQL integration.
+- Full repository CI run [41994200934](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/41994200934) failed at `npm run typecheck`; test step was skipped. The known syntax errors are in AI-only `src/modules/ai-training/sqlite-stores.ts`. No AI/TQ files were changed to address it.
+- No local test or typecheck command was run in this environment. Report only the GitHub workflow evidence above.
+- The original Part 01 text for CO-002–CO-100 is still unavailable in this repository snapshot. Individual status classifications remain evidence-based but cannot be called catalogue-accepted until the original wording is reconciled.
+- Continue ordered implementation on the next run. Prioritize any newly supplied exact CO catalogue text, then the next safe independent implementation. Do not stop on owner-blocked dependencies; carry them forward in `docs/CO_APPROVAL_NEEDED.md`.
