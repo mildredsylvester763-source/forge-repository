@@ -50,6 +50,47 @@ describe('CO-065 PostgreSQL identity unit-of-work transactions', () => {
       assert.equal(repeated.passwordCompromisedAt, now);
       assert.equal(repeated.version, marked.version);
 
+      const rehashSession: SessionRecord = {
+        idHash: 'e'.repeat(64),
+        userId: user.id,
+        createdAt: now,
+        lastSeenAt: now,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'CO-065 PostgreSQL rehash test',
+        revokedAt: null,
+        revokedReason: null,
+      };
+      const invalidSignInEvent: EventDraft = {
+        type: 'INVALID EVENT TYPE',
+        version: 1,
+        actor: { kind: 'user', id: user.id },
+        subject: { type: 'user', id: user.id },
+        payload: { rehashed: true },
+        correlationId: 'co-065-postgres-rehash-failure',
+      };
+
+      await assert.rejects(
+        () => uow.startSession({
+          session: rehashSession,
+          revokeIdHashes: [],
+          userUpdate: { userId: user.id, patch: { passwordHash: 'new-rehash' }, now },
+          event: invalidSignInEvent,
+        }),
+        /invalid event type/,
+      );
+      assert.equal((await users.findById(user.id))?.passwordHash, 'test-hash-only');
+      assert.equal(await sessions.findByHash(rehashSession.idHash), null);
+
+      await uow.startSession({
+        session: rehashSession,
+        revokeIdHashes: [],
+        userUpdate: { userId: user.id, patch: { passwordHash: 'new-rehash' }, now },
+        event: { ...invalidSignInEvent, type: 'identity.sign_in.succeeded', correlationId: 'co-065-postgres-rehash-success' },
+      });
+      assert.equal((await users.findById(user.id))?.passwordHash, 'new-rehash');
+      assert.ok(await sessions.findByHash(rehashSession.idHash));
+
       const session: SessionRecord = {
         idHash: 'c'.repeat(64),
         userId: user.id,
