@@ -489,3 +489,73 @@ test('pipeline definition diffs report added, removed, changed and reordered ele
   assert.equal(JSON.stringify(diff).includes('release/**'), false);
   assert.throws(() => comparePipelineDefinitions(before, { ...after, id: 'different-pipeline' }), /same ID/);
 });
+
+test('multi-scenario dry-run evaluates bounded event fixtures without writing versions or runs', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  migrateBuildCiSqlite(db);
+  const service = new BuildCiService({
+    store: new SqliteBuildCiStore(db),
+    templates: new SqlitePipelineTemplateStore(db),
+    authorize: async ({ actorId, action }) => actorId === 'owner' && (action === 'create' || action === 'dry_run'),
+  });
+  const count = (table: string) => Number((db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
+  try {
+    await service.createPipeline({
+      workspaceId: 'ws-scenarios', definition: definition(), actorId: 'owner',
+      createdAt: '2026-11-04T17:00:00.000Z',
+    });
+    const versionsBefore = count('build_pipeline_versions');
+    const runsBefore = count('build_pipeline_runs');
+    const scenarios = await service.dryRunScenarios({
+      workspaceId: 'ws-scenarios',
+      pipelineId: 'web-build',
+      actorId: 'owner',
+      scenarios: [
+        { id: 'push-main', event: pushEvent },
+        { id: 'manual-review', event: { kind: 'manual', source: 'forge.manual', eventId: 'manual-review' } },
+        { id: 'pull-request', event: { kind: 'pull_request', source: 'github:pull_request', eventId: 'pr-review', branch: 'feature/x', baseBranch: 'main' } },
+      ],
+    });
+    assert.equal(scenarios.version, 1);
+    assert.deepEqual(scenarios.scenarios.map((item) => item.id), ['push-main', 'manual-review', 'pull-request']);
+    assert.equal(scenarios.scenarios[0]?.plan.triggered, true);
+    assert.equal(scenarios.scenarios[1]?.plan.triggered, false);
+    assert.equal(scenarios.scenarios[2]?.plan.triggered, false);
+    assert.equal(scenarios.scenarios.every((item) => item.plan.sideEffects === false), true);
+    assert.equal(count('build_pipeline_versions'), versionsBefore);
+    assert.equal(count('build_pipeline_runs'), runsBefore);
+
+    await assert.rejects(
+      () => service.dryRunScenarios({
+        workspaceId: 'ws-scenarios', pipelineId: 'web-build', actorId: 'owner',
+        scenarios: [
+          { id: 'duplicate', event: pushEvent },
+          { id: 'duplicate', event: pushEvent },
+        ],
+      }),
+      /unique strings/,
+    );
+    await assert.rejects(
+      () => service.dryRunScenarios({
+        workspaceId: 'ws-scenarios', pipelineId: 'web-build', actorId: 'owner',
+        scenarios: Array.from({ length: 21 }, (_, index) => ({
+          id: 'scenario-' + index,
+          event: pushEvent,
+        })),
+      }),
+      /between 1 and 20/,
+    );
+    await assert.rejects(
+      () => service.dryRunScenarios({
+        workspaceId: 'ws-scenarios', pipelineId: 'web-build', actorId: 'attacker',
+        scenarios: [{ id: 'unauthorized', event: pushEvent }],
+      }),
+      PipelineAuthorizationError,
+    );
+    assert.equal(count('build_pipeline_versions'), versionsBefore);
+    assert.equal(count('build_pipeline_runs'), runsBefore);
+  } finally {
+    db.close();
+  }
+});
