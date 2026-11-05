@@ -166,3 +166,29 @@ The register is append-only in meaning: a feature completion may change an item'
 **Positive approval: NOT GRANTED.** A passing focused workflow does not approve a production RP domain, domain ownership, attestation policy, algorithm policy, PostgreSQL deployment, distributed throttling or native-client secure storage.
 
 **Feature transition rule:** CO-002 remains the owner of its RP/origin/authenticator dependencies. The native bearer result is cross-referenced by CO-007 only for client transport; CO-007 retains its token audience, refresh/re-authentication, device enrollment and offline lifecycle decisions. No external staff member or approval record is removed when work advances.
+
+## CO-003 social identity and CO-005 MFA — sealed external/owner dependency delta (2026-11-05)
+
+### CO-003
+| Owner / external staff | Required input or action | State | Approval evidence | Carry-forward |
+| --- | --- | --- | --- | --- |
+| Product owner | Exact CO-003 catalogue wording and approved provider list | NOT SUPPLIED / NOT APPROVED | None | Remains with CO-003 |
+| External identity-provider administrator | Issuer metadata, client ID/secret, exact callback URI, test tenant and production credentials for each approved provider | NOT SUPPLIED | No provider account or secret connected | Remains with CO-003; activate one provider at a time after validation |
+| Identity/security reviewer | OIDC algorithm/JWKS rotation, issuer/audience/nonce claim policy, verified-email handling | NOT APPROVED | Transaction tests are not token-verification approval | Must review before implementing callback token exchange |
+| Account/product owner | Existing-account linking, duplicate-email behavior, account creation and unlink policy | NOT APPROVED | No explicit policy captured | Must be resolved before any identity can be linked or an account created from provider claims |
+| Platform/KMS owner | Protected, multi-instance callback transaction persistence and PKCE verifier encryption/key rotation | NOT SUPPLIED | Current store is memory-only | Carry to CO-003 production implementation; CO-018 key custody remains relevant |
+
+No account is authenticated by the current CO-003 transaction module. No provider-specific secret is stored or returned. Positive approval remains **NOT GRANTED**.
+
+### CO-005
+| Owner / external staff | Required input or action | State | Approval evidence | Carry-forward |
+| --- | --- | --- | --- | --- |
+| Product/security owner | Exact CO-005 wording; optional vs mandatory vs step-up policy; accepted algorithms, digits, period and drift window | NOT SUPPLIED / NOT APPROVED | RFC vectors prove primitives only | Remains with CO-005 |
+| Security / KMS operator | TOTP seed encryption, storage, rotation, restore and access-control design | NOT SUPPLIED | No seed store is implemented | Must be approved before persistence or enrollment |
+| Support/security staff | Recovery, backup-code, factor-reset and identity-proofing process | NOT APPROVED | No recovery flow exists | Remains with CO-005/CO-008; assisted resets require explicit authority |
+| External mail/SMS provider administrator | Delivery provider and credentials if approved recovery policy requires codes or alerts | NOT SUPPLIED | No delivery integration assumed | Carry only if accepted policy requires transport |
+
+TOTP secrets and provisioning URIs are high-value credentials. Do not log or store them in plaintext. Positive approval remains **NOT GRANTED**.
+
+### Preservation rule
+The role/person dependencies above are retained as durable records. Advancing to the next feature may update their next action, but must not delete the requirement, source, state or approval evidence. The current implementation does not discharge any of these external inputs.
