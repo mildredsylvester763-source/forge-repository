@@ -7,6 +7,7 @@ import { SqliteBuildCiStore } from '../src/modules/build-ci/sqlite-store.ts';
 import { SqlitePipelineTemplateStore } from '../src/modules/build-ci/templates.ts';
 import { SqliteWebhookDeliveryStore } from '../src/modules/build-ci/webhook-deliveries.ts';
 import { WebhookDeliveryProcessor } from '../src/modules/build-ci/webhook-processor.ts';
+import type { PullRequestChangedFilesResolver } from '../src/modules/build-ci/changed-files.ts';
 
 test('webhook processor re-resolves trusted connection and queues matching pipeline runs idempotently', async () => {
   const db = new DatabaseSync(':memory:');
@@ -156,5 +157,73 @@ test('webhook processor never persists provider exception text that may contain 
     assert.equal(delivery?.status, 'queued');
     assert.equal(delivery?.lastError, 'Webhook delivery processing failed.');
     assert.equal(delivery?.lastError?.includes(credential), false);
+  } finally { db.close(); }
+});
+
+
+test('webhook processor uses complete PR file lists and fails open when provider diffs are incomplete', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('PRAGMA foreign_keys = ON');
+  try {
+    migrateBuildCiSqlite(db);
+    const buildCi = new BuildCiService({
+      store: new SqliteBuildCiStore(db),
+      templates: new SqlitePipelineTemplateStore(db),
+      authorize: async (request) => request.actorId === 'workspace-service',
+    });
+    await buildCi.createPipeline({
+      workspaceId: 'workspace-pr', actorId: 'workspace-service',
+      definition: {
+        id: 'pr-quality', name: 'PR quality',
+        triggers: [{ id: 'pr-main', kind: 'pull_request', branches: ['main'], paths: ['src/**'] }],
+        steps: [{ id: 'verify', task: 'quality.verify' }],
+      },
+    });
+    const deliveries = new SqliteWebhookDeliveryStore(db);
+    for (const number of [17, 18]) {
+      await deliveries.enqueue({
+        connectionId: 'github-pr-connection', provider: 'github', workspaceId: 'workspace-pr',
+        repository: 'team/api', deliveryId: 'delivery-pr-' + number,
+        event: {
+          kind: 'pull_request', source: 'github:pull_request', eventType: 'pull_request',
+          eventId: 'delivery-pr-' + number, branch: 'feature/change', baseBranch: 'main', pullRequestNumber: number,
+        },
+        bodySha256: String(number).repeat(64), receivedAt: '2026-11-05T11:00:00.000Z',
+      });
+    }
+    const changedFiles: PullRequestChangedFilesResolver = {
+      resolve: async (input) => {
+        assert.equal(input.connectionId, 'github-pr-connection');
+        assert.equal(input.repository, 'team/api');
+        return input.pullRequestNumber === 17
+          ? { paths: ['README.md'], complete: true }
+          : { paths: ['README.md'], complete: false, reason: 'provider_limit' };
+      },
+    };
+    const processor = new WebhookDeliveryProcessor({
+      deliveries,
+      buildCi,
+      changedFiles,
+      connections: {
+        resolveForDelivery: async () => ({
+          connectionId: 'github-pr-connection', provider: 'github', workspaceId: 'workspace-pr',
+          actorId: 'workspace-service', repository: 'team/api', active: true,
+        }),
+      },
+      now: () => Date.parse('2026-11-05T11:01:00.000Z'),
+    });
+
+    const complete = await processor.processNext('worker-pr');
+    assert.equal(complete.processed, true);
+    assert.equal(complete.runsQueued, 0, 'a complete non-matching file list must remain a no-match');
+
+    const incomplete = await processor.processNext('worker-pr');
+    assert.equal(incomplete.processed, true);
+    assert.equal(incomplete.runsQueued, 1, 'an incomplete file list must fail open and queue the required pipeline');
+
+    const runs = db.prepare('SELECT event_id, status FROM build_pipeline_runs').all() as { event_id: string; status: string }[];
+    assert.deepEqual(runs, [{ event_id: 'delivery-pr-18', status: 'queued' }]);
+    assert.equal((await deliveries.find('github-pr-connection', 'delivery-pr-17'))?.status, 'processed');
+    assert.equal((await deliveries.find('github-pr-connection', 'delivery-pr-18'))?.status, 'processed');
   } finally { db.close(); }
 });
