@@ -50,6 +50,22 @@ describe('CO-002 passkey service lifecycle', () => {
     await assertAppError(() => service.beginAuthentication(meta), 503, 'passkeys_not_configured');
   });
 
+  it('rate limits passkey challenge operations without consuming the password sign-in bucket', async () => {
+    const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
+    const store = new InMemoryPasskeyStore(events);
+    let bucketSeen = '';
+    const denied = {
+      checkIp: (bucket: string) => {
+        bucketSeen = bucket;
+        return { allowed: false, retryAfterMs: 12_000 };
+      },
+    } as unknown as LoginThrottle;
+    const identity = { signInWithPasskey: async () => { throw new Error('not used'); } } as unknown as IdentityService;
+    const service = new PasskeyService({ store, identity, throttle: denied, clock: () => now, config });
+    await assertAppError(() => service.beginAuthentication(meta), 429, 'too_many_attempts');
+    assert.equal(bucketSeen, 'passkey');
+  });
+
   it('issues owner-bound registration challenges and consumes them after a failed response', async () => {
     const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
     const store = new InMemoryPasskeyStore(events);
