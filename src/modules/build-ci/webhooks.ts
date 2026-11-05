@@ -70,23 +70,44 @@ function parseBody(rawBody: Uint8Array): Record<string, unknown> {
   if (!result) throw new WebhookPayloadError('Webhook body must be a JSON object.');
   return result;
 }
-function pathsFromCommits(value: unknown): readonly string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
+interface ChangedFilesSummary {
+  readonly paths?: readonly string[];
+  readonly complete: boolean;
+}
+
+/**
+ * Extracts paths only from the commit summaries present in a webhook. Providers
+ * cap these arrays, so reaching a documented cap or observing malformed/missing
+ * per-commit path metadata marks the result incomplete rather than silently
+ * treating a partial list as authoritative.
+ */
+function pathsFromCommits(value: unknown, expectedCommitCount?: unknown, provider?: WebhookProvider): ChangedFilesSummary {
+  if (!Array.isArray(value)) return Object.freeze({ complete: false });
   const paths = new Set<string>();
-  for (const item of value.slice(0, 1000)) {
+  let complete = true;
+  if (provider === 'github' && value.length >= 2048) complete = false;
+  if (expectedCommitCount !== undefined) {
+    if (!Number.isSafeInteger(expectedCommitCount) || (expectedCommitCount as number) < value.length) complete = false;
+    else if ((expectedCommitCount as number) > value.length) complete = false;
+  }
+  for (const item of value) {
     const commit = object(item);
-    if (!commit) continue;
+    if (!commit) { complete = false; continue; }
     for (const key of ['added', 'modified', 'removed']) {
       const list = commit[key];
-      if (!Array.isArray(list)) continue;
+      if (!Array.isArray(list)) { complete = false; continue; }
       for (const entry of list) {
         const path = text(entry, 1024);
-        if (path) paths.add(path);
-        if (paths.size >= 5000) return Object.freeze([...paths]);
+        if (!path) { complete = false; continue; }
+        paths.add(path);
+        if (paths.size >= 5000) {
+          complete = false;
+          return Object.freeze({ paths: Object.freeze([...paths]), complete });
+        }
       }
     }
   }
-  return Object.freeze([...paths]);
+  return Object.freeze({ paths: Object.freeze([...paths]), complete });
 }
 function jsonPayload(values: Record<string, string | number | undefined>): { readonly [key: string]: JsonValue } {
   const result: Record<string, JsonValue> = {};
@@ -110,7 +131,11 @@ export function normalizeGitHubWebhook(rawBody: Uint8Array, headers: WebhookHead
       provider: 'github', repository,
       event: Object.freeze({
         kind: 'push', source: 'github:push', eventType: eventName, eventId: deliveryId,
-        branch, commitSha: text(body.after, 128), changedFiles: pathsFromCommits(body.commits),
+        branch, commitSha: text(body.after, 128),
+        ...(() => {
+          const files = pathsFromCommits(body.commits, undefined, 'github');
+          return { ...(files.paths ? { changedFiles: files.paths } : {}), changedFilesComplete: files.complete };
+        })(),
         payload: jsonPayload({ repository, sender: text(object(body.sender)?.login, 128) }),
       }),
     });
@@ -161,7 +186,11 @@ export function normalizeGitLabWebhook(rawBody: Uint8Array, headers: WebhookHead
       provider: 'gitlab', repository,
       event: Object.freeze({
         kind: 'push', source: 'gitlab:push', eventType: eventName, eventId: deliveryId,
-        branch, commitSha: text(body.checkout_sha, 128), changedFiles: pathsFromCommits(body.commits),
+        branch, commitSha: text(body.checkout_sha, 128),
+        ...(() => {
+          const files = pathsFromCommits(body.commits, body.total_commits_count, 'gitlab');
+          return { ...(files.paths ? { changedFiles: files.paths } : {}), changedFilesComplete: files.complete };
+        })(),
         payload: jsonPayload({ repository, user: text(body.user_username, 128) }),
       }),
     });
