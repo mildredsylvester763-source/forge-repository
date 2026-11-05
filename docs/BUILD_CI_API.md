@@ -185,6 +185,13 @@ Returns templates owned by that workspace and active templates explicitly shared
 
 Returns the exact immutable release after access verification.
 
+### Compare two immutable template releases
+
+`GET /v1/build-ci/templates/versions/diff?workspaceId=consumer-workspace&templateId=<template-id>&fromVersion=1&toVersion=3`
+
+Returns both release hashes and a value-free structural diff of their definitions. Access is checked using the same workspace template visibility/grant policy as reading a pinned release. The response reports changed field names, added/removed triggers and steps, and ordering changes, but does not return parameter or secret-reference values.
+
+
 ### Grant and revoke workspace access
 
 `POST /v1/build-ci/templates/share`
