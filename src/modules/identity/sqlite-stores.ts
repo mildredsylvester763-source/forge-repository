@@ -84,9 +84,13 @@ export class SqliteUserStore implements UserStore {
     return row ? toUser(row) : null;
   }
 
-  async findById(id: string): Promise<UserRecord | null> {
+  findByIdSync(id: string): UserRecord | null {
     const row = this.byId.get(id) as unknown as UserRow | undefined;
     return row ? toUser(row) : null;
+  }
+
+  async findById(id: string): Promise<UserRecord | null> {
+    return this.findByIdSync(id);
   }
 
   async create(user: NewUser): Promise<UserRecord> {
