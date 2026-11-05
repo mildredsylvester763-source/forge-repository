@@ -243,4 +243,16 @@ export class SqliteIdentityUnitOfWork implements IdentityUnitOfWork {
     if (result.committed) this.events.notify(result.committed);
     return result.session;
   }
+
+  async markPasswordCompromised(args: { userId: string; now: number; event: (user: UserRecord) => EventDraft }): Promise<UserRecord> {
+    const result = transaction(this.db, () => {
+      const current = this.users.findByIdSync(args.userId);
+      if (!current) throw new Error('user not found');
+      if (current.passwordCompromisedAt !== null) return { user: current, committed: null };
+      const user = this.users.updateSync(args.userId, { passwordCompromisedAt: args.now }, args.now);
+      return { user, committed: this.events.appendSync(args.event(user)) };
+    });
+    if (result.committed) this.events.notify(result.committed);
+    return result.user;
+  }
 }
