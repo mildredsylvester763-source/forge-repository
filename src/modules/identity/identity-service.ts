@@ -5,6 +5,7 @@ import type { EventDraft, EventStore, Actor, Subject } from '../../kernel/events
 import type { Logger } from '../../kernel/logger.ts';
 import type { BreachChecker } from './breach-check.ts';
 import { normalizeEmail } from './email.ts';
+import { assessSignInAnomaly, type SignInAnomalyAssessment } from './identity-anomaly.ts';
 import { IDENTITY_EVENT_VERSION, IdentityEvents, type IdentityEventType } from './events.ts';
 import { evaluatePassword, normalizePassword } from './password-policy.ts';
 import type { PasswordHasher } from './password-hasher.ts';
@@ -234,6 +235,17 @@ export class IdentityService {
       }
     }
 
+    // Use only the account's currently active sessions as a baseline. The detector is advisory
+    // and must never turn a telemetry-store outage into a sign-in outage.
+    let anomaly: SignInAnomalyAssessment = { baseline: 'none', signals: [] };
+    try {
+      const activeSessions = await this.d.sessions.listActiveForUser(current.id);
+      anomaly = assessSignInAnomaly({ ip: meta.ip, userAgent: meta.userAgent }, activeSessions);
+    } catch (err) {
+      anomaly = { baseline: 'insufficient_metadata', signals: [] };
+      this.d.logger.error('sign-in anomaly assessment unavailable', { err });
+    }
+
     // Session and "signed in" event are saved in one transaction: no session ever exists without its audit record.
     const { token, session, maxPerUser } = await this.d.sessions.prepare(current.id, { ip: meta.ip, userAgent: meta.userAgent });
     await this.d.uow.startSession({
@@ -248,6 +260,16 @@ export class IdentityService {
         meta,
       ),
     });
+
+    if (anomaly.signals.length > 0) {
+      await this.emitBestEffort(
+        IdentityEvents.SignInAnomalyObserved,
+        { kind: 'user', id: current.id },
+        { type: 'user', id: current.id },
+        { baseline: anomaly.baseline, signals: anomaly.signals },
+        meta,
+      );
+    }
 
     return { user: toPublicUser(current), sessionToken: token, sessionExpiresAt: session.expiresAt, passwordChangeRequired: compromised };
   }
