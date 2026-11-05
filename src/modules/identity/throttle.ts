@@ -4,6 +4,7 @@ import { SlidingWindowLimiter, type LimitDecision } from '../../kernel/rate-limi
 export interface ThrottleConfig {
   signInPerMinute: number;
   registerPerMinute: number;
+  passkeyPerMinute: number;
   /** Failures allowed before the account key starts locking. */
   freeFailures: number;
   baseLockMs: number;
@@ -15,6 +16,7 @@ export interface ThrottleConfig {
 export const DEFAULT_THROTTLE: ThrottleConfig = {
   signInPerMinute: 30,
   registerPerMinute: 10,
+  passkeyPerMinute: 20,
   freeFailures: 5,
   baseLockMs: 60_000,
   maxLockMs: 3_600_000,
@@ -28,7 +30,7 @@ interface FailureState {
   lastFailureAt: number;
 }
 
-export type ThrottleBucket = 'signin' | 'register';
+export type ThrottleBucket = 'signin' | 'register' | 'passkey';
 
 /**
  * Two independent brakes on credential guessing:
@@ -47,7 +49,7 @@ export class LoginThrottle {
     this.clock = options.clock;
     const make = (limit: number) =>
       new SlidingWindowLimiter({ limit, windowMs: 60_000, maxKeys: options.config.maxEntries, clock: options.clock });
-    this.limiters = { signin: make(options.config.signInPerMinute), register: make(options.config.registerPerMinute) };
+    this.limiters = { signin: make(options.config.signInPerMinute), register: make(options.config.registerPerMinute), passkey: make(options.config.passkeyPerMinute) };
   }
 
   checkIp(bucket: ThrottleBucket, ip: string): LimitDecision {
