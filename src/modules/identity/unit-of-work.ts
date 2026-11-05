@@ -12,7 +12,12 @@ import { InMemoryUserStore, type NewUser, type UserPatch, type UserRecord } from
 export interface IdentityUnitOfWork {
   /** Throws EmailTakenError when the address is already registered. */
   registerUser(user: NewUser, event: (created: UserRecord) => EventDraft): Promise<UserRecord>;
-  startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void>;
+  startSession(args: {
+    session: SessionRecord;
+    revokeIdHashes: readonly string[];
+    event: EventDraft;
+    userUpdate?: { userId: string; patch: UserPatch; now: number };
+  }): Promise<void>;
   /** Revokes one active session and commits its audit event in the same unit of work. */
   endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null>;
   /** Marks a user's password compromised and commits the detection event atomically. */
