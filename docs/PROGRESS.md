@@ -648,3 +648,38 @@ Compared Mistral and main before classifying the permission surface. No dedicate
 - Canonical role vocabulary, permission/resource/action model, inheritance and delegation rules, role assignment authority, policy precedence and deny/allow conflict behavior.
 - Tenant ownership and membership semantics from CO-015–CO-028; a policy engine must not bypass tenant scoping.
 - CO-030's existing identity session check remains a partial foundation only. Do not mark it as full authorization or infer policy behavior from the presence of an authenticated session.
+
+
+## CO-045–CO-062 individual project intelligence graph audit (2026-11-05)
+
+Compared Mistral and main at candidate graph/service paths. No dedicated `src/modules/project-graph`, `src/modules/graph`, `src/modules/projects/graph.ts`, `src/modules/project-intelligence` or `src/kernel/graph.ts` implementation was found in either branch. The TQ test-generation integration graph and AI workspace retrieval are outside CO and are not counted.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+| CO-045 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-046 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-047 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-048 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-049 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-050 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-051 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-052 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-053 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-054 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-055 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-056 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-057 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-058 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-059 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-060 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-061 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-062 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated project-intelligence graph module, feature spec or attributable graph schema/query implementation was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+
+### Graph owner decisions required
+- Exact Part 01 description and acceptance criteria for each ID.
+- Approved node/edge ontology, stable identifiers, provenance/source-of-truth rules, versioning and duplicate-resolution behavior.
+- Visibility and access-control rules, including how graph reads and mutations inherit tenant and project permissions.
+- Deletion, retention, archival and referential-integrity behavior.
+- Query semantics, indexing and expected scale once the catalogue requirements are known.
+
+No graph schema or service was invented from the section heading. The range remains missing pending exact feature requirements and the owner-approved ontology; unrelated Core work continues.
