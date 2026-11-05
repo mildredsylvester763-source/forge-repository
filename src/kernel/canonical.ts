@@ -3,22 +3,43 @@
  * Used for hashing, so two equal values must always serialise to the same bytes.
  */
 export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-    return JSON.stringify(value);
-  }
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new TypeError('canonicalJson: non-finite number');
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return '[' + value.map((v) => canonicalJson(v)).join(',') + ']';
-  }
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj)
-      .filter((k) => obj[k] !== undefined)
-      .sort();
-    return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJson(obj[k])).join(',') + '}';
-  }
-  throw new TypeError(`canonicalJson: unsupported type ${typeof value}`);
+  const ancestors = new Set<object>();
+
+  const encode = (current: unknown): string => {
+    if (current === null || typeof current === 'string' || typeof current === 'boolean') {
+      return JSON.stringify(current);
+    }
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current)) throw new TypeError('canonicalJson: non-finite number');
+      return JSON.stringify(current);
+    }
+
+    if (typeof current === 'object') {
+      if (ancestors.has(current)) throw new TypeError('canonicalJson: cyclic value');
+      ancestors.add(current);
+      try {
+        if (Array.isArray(current)) {
+          // Iterate every index instead of Array#map: sparse holes must be rejected, not omitted
+          // into malformed JSON such as "[1,,3]".
+          const items: string[] = [];
+          for (let index = 0; index < current.length; index += 1) {
+            items.push(encode(current[index]));
+          }
+          return '[' + items.join(',') + ']';
+        }
+
+        const obj = current as Record<string, unknown>;
+        const keys = Object.keys(obj)
+          .filter((key) => obj[key] !== undefined)
+          .sort();
+        return '{' + keys.map((key) => JSON.stringify(key) + ':' + encode(obj[key])).join(',') + '}';
+      } finally {
+        ancestors.delete(current);
+      }
+    }
+
+    throw new TypeError(`canonicalJson: unsupported type ${typeof current}`);
+  };
+
+  return encode(value);
 }
