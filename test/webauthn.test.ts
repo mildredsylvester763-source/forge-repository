@@ -148,7 +148,7 @@ describe('CO-002 WebAuthn protocol core', () => {
     const challenge = createPasskeyChallenge();
     expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge, 'https://evil.example'), { challenge, config }), 'origin_mismatch');
     expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge: createPasskeyChallenge(), config }), 'challenge_mismatch');
-    expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge, config: { ...config, rpId: 'other.example' } }), 'rp_id_hash_mismatch');
+    expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge, 'https://other.example'), { challenge, config: { rpId: 'other.example', origins: ['https://other.example'], rpName: 'FORGE' } }), 'rp_id_hash_mismatch');
 
     const noUv = cbor(new Map<unknown, unknown>([
       ['fmt', 'none'], ['attStmt', new Map()],
@@ -221,5 +221,7 @@ describe('CO-002 WebAuthn protocol core', () => {
     expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge, config: wildcard }), 'invalid_origins');
     const unrelatedOrigin = { ...config, origins: ['https://attacker.example'] };
     expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge), { challenge, config: unrelatedOrigin }), 'rp_id_origin_mismatch');
+    const localhostMismatch = { rpId, origins: ['http://localhost'], rpName: 'FORGE' };
+    expectWebAuthnError(() => verifyPasskeyRegistration(registrationResponse(challenge, 'http://localhost'), { challenge, config: localhostMismatch }), 'rp_id_origin_mismatch');
   });
 });
