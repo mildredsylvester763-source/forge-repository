@@ -9,6 +9,7 @@ on:
       - 'src/modules/identity/**'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
+      - 'test/sqlite-pool.ts'
       - 'test/co-091-readiness.test.ts'
       - 'test/backup.test.ts'
       - 'test/rate-limit.test.ts'
@@ -24,11 +25,15 @@ permissions:
 jobs:
   co-focused:
     runs-on: ubuntu-latest
+    env:
+      FORGE_TEST_POSTGRES_URL: ${{ secrets.FORGE_TEST_POSTGRES_URL }}
+      FORGE_TEST_POSTGRES_SSL: ${{ vars.FORGE_TEST_POSTGRES_SSL || 'off' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm install --no-audit --no-fund
       - name: Run independent CO kernel and identity regressions
         run: |
           node --test \
