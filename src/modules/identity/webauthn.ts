@@ -516,3 +516,29 @@ export function verifyPasskeyAssertion(
     backedUp: parsed.backedUp,
   };
 }
+
+/** Validate deployment-supplied WebAuthn relying-party configuration before any ceremony begins. */
+export function validateWebAuthnConfig(config: WebAuthnConfig): void {
+  validateRpOriginPair(config.rpId, config.origins);
+  if (typeof config.rpName !== 'string' || config.rpName.length < 1 || config.rpName.length > 64) {
+    fail('invalid_rp_name', 'Relying-party display name must be 1 to 64 characters');
+  }
+}
+
+/** Read only the random challenge from clientDataJSON; the complete object is still verified per ceremony. */
+export function extractPasskeyChallenge(clientDataJSON: string): string {
+  const bytes = canonicalBase64Url(clientDataJSON, 'clientDataJSON', MAX_CLIENT_DATA_BYTES);
+  let data: unknown;
+  try {
+    data = JSON.parse(decoder.decode(bytes));
+  } catch {
+    fail('invalid_client_data', 'clientDataJSON must be valid UTF-8 JSON');
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    fail('invalid_client_data', 'clientDataJSON must be an object');
+  }
+  const challenge = (data as Record<string, unknown>).challenge;
+  if (typeof challenge !== 'string') fail('invalid_client_data', 'Client data challenge is missing');
+  validateChallenge(challenge);
+  return challenge;
+}
