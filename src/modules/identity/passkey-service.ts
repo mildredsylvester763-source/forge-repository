@@ -212,12 +212,22 @@ export class PasskeyService {
       throw INVALID_CREDENTIALS();
     }
 
+    const credentialRef = credentialReference(credential.credentialId);
+    const event: EventDraft = {
+      type: IdentityEvents.PasskeyAuthenticated,
+      version: IDENTITY_EVENT_VERSION,
+      actor: { kind: 'user', id: credential.userId },
+      subject: { type: 'passkey', id: credentialRef },
+      payload: { credentialRef, backedUp: verified.backedUp },
+      correlationId: meta.requestId,
+    };
     const updated = await this.store.updateAfterAssertion({
       userId: credential.userId,
       credentialId: credential.credentialId,
       signCount: verified.signCount,
       backedUp: verified.backedUp,
       now: this.clock(),
+      event,
     });
     if (!updated) throw INVALID_CREDENTIALS();
     return this.identity.signInWithPasskey(credential.userId, meta);
