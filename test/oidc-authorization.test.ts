@@ -28,7 +28,6 @@ describe('CO-003 provider-neutral OIDC authorization transactions', () => {
     const url = new URL(started.authorizationUrl);
     const state = url.searchParams.get('state')!;
     const nonce = url.searchParams.get('nonce')!;
-    const verifier = (await service.consumeCallback(state, config.providerId));
     assert.match(state, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(url.searchParams.get('response_type'), 'code');
     assert.equal(url.searchParams.get('client_id'), config.clientId);
@@ -37,9 +36,8 @@ describe('CO-003 provider-neutral OIDC authorization transactions', () => {
     assert.match(nonce, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
     assert.match(url.searchParams.get('code_challenge')!, /^[A-Za-z0-9_-]{43}$/);
-    assert.equal(url.searchParams.get('code_challenge'), digest(started.transaction?.codeVerifier ?? ''));
     assert.equal(url.searchParams.has('code_verifier'), false);
-    assert.equal(verifier, null, 'callback transaction was deliberately consumed above only if valid; no raw verifier is exposed at start');
+    assert.equal(Object.hasOwn(started, 'transaction'), false, 'PKCE verifier must never be returned from the start operation');
     assert.ok(Date.parse(started.expiresAt) > now);
   });
 
