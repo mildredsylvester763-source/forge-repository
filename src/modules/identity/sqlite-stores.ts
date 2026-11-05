@@ -228,6 +228,9 @@ export class SqliteIdentityUnitOfWork implements IdentityUnitOfWork {
     event: EventDraft;
     userUpdate?: { userId: string; patch: UserPatch; now: number };
   }): Promise<void> {
+    if (args.userUpdate && args.userUpdate.userId !== args.session.userId) {
+      throw new Error('session user update must target the session user');
+    }
     const committed = transaction(this.db, () => {
       if (args.userUpdate) this.users.updateSync(args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
       this.sessions.insertSync(args.session);
