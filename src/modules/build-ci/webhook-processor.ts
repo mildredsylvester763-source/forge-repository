@@ -1,11 +1,13 @@
 import type { BuildCiService } from './store.ts';
 import type { WebhookDeliveryStore } from './webhook-deliveries.ts';
 import type { WebhookDeliveryConnectionResolver } from './webhook-ingress.ts';
+import type { PullRequestChangedFilesResolver } from './changed-files.ts';
 
 export interface WebhookProcessorOptions {
   readonly deliveries: WebhookDeliveryStore;
   readonly connections: WebhookDeliveryConnectionResolver;
   readonly buildCi: BuildCiService;
+  readonly changedFiles?: PullRequestChangedFilesResolver;
   readonly now?: () => number;
   readonly leaseMs?: number;
   readonly maxAttempts?: number;
@@ -33,6 +35,7 @@ export class WebhookDeliveryProcessor {
   private readonly deliveries: WebhookDeliveryStore;
   private readonly connections: WebhookDeliveryConnectionResolver;
   private readonly buildCi: BuildCiService;
+  private readonly changedFiles?: PullRequestChangedFilesResolver;
   private readonly now: () => number;
   private readonly leaseMs: number;
   private readonly maxAttempts: number;
@@ -43,6 +46,7 @@ export class WebhookDeliveryProcessor {
     this.deliveries = options.deliveries;
     this.connections = options.connections;
     this.buildCi = options.buildCi;
+    this.changedFiles = options.changedFiles;
     this.now = options.now ?? (() => Date.now());
     this.leaseMs = options.leaseMs ?? 60_000;
     this.maxAttempts = options.maxAttempts ?? 5;
