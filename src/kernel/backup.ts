@@ -28,12 +28,18 @@ function sha256File(path: string): string {
  */
 export function verifyBackup(path: string): BackupCheck {
   if (!existsSync(path)) return { ok: false, reason: 'file_missing' };
-  const sha256 = sha256File(path);
+  let sha256: string;
+  let recorded: string;
   const sidecar = `${path}.sha256`;
-  if (existsSync(sidecar)) {
-    const recorded = readFileSync(sidecar, 'utf8').trim().split(/\s+/)[0];
-    if (recorded !== sha256) return { ok: false, reason: 'checksum_mismatch' };
+  try {
+    sha256 = sha256File(path);
+    if (!existsSync(sidecar)) return { ok: false, reason: 'checksum_missing' };
+    recorded = readFileSync(sidecar, 'utf8').trim().split(/\\s+/)[0] ?? '';
+  } catch {
+    return { ok: false, reason: 'checksum_unreadable' };
   }
+  if (!/^[a-f0-9]{64}$/.test(recorded)) return { ok: false, reason: 'checksum_invalid' };
+  if (recorded !== sha256) return { ok: false, reason: 'checksum_mismatch' };
   let db: Database;
   try {
     db = openDatabase(path, { readOnly: true });
