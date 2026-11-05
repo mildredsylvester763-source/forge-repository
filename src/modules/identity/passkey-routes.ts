@@ -91,7 +91,7 @@ export function passkeyRoutes(
     '/v1/auth/passkeys/registration/options': {
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
-        return { status: 200, body: await passkeys.beginRegistration(user) };
+        return { status: 200, body: await passkeys.beginRegistration(user, meta(ctx)) };
       },
     },
     '/v1/auth/passkeys/registration/complete': {
@@ -103,7 +103,7 @@ export function passkeyRoutes(
       },
     },
     '/v1/auth/passkeys/authentication/options': {
-      POST: async (): Promise<HttpResult> => ({ status: 200, body: await passkeys.beginAuthentication() }),
+      POST: async (): Promise<HttpResult> => ({ status: 200, body: await passkeys.beginAuthentication(meta(ctx)) }),
     },
     '/v1/auth/passkeys/authentication/complete': {
       POST: async (ctx): Promise<HttpResult> => {
