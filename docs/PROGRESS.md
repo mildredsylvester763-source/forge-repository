@@ -618,3 +618,33 @@ Compared the relevant Mistral and main paths before classification. No dedicated
 - CO-017: confirm whether PostgreSQL RLS is required as a second isolation layer, and the intended database role/connection strategy. Do not ship permissive or guessed tenant policies.
 - CO-018: supply/approve the KMS or owner-managed key source, key rotation, recovery, service access and backup-encryption boundary. Do not invent cryptography or store secrets in plaintext.
 - The exact individual Part 01 descriptions for CO-015–CO-028 remain required before feature-level acceptance or schema semantics can be claimed. Continue unrelated Core work while these decisions remain open.
+
+
+## CO-029–CO-044 individual permissions / policy audit (2026-11-05)
+
+Compared Mistral and main before classifying the permission surface. No dedicated `src/modules/authorization`, `src/modules/permissions`, `src/kernel/authorization.ts` or `src/kernel/policy.ts` implementation exists at the inspected paths in either branch. The identity session check and authentication transport are not a role/permission policy engine.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+| CO-029 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated authorization or permission implementation evidence in either branch; exact feature title/criteria unavailable. |
+| CO-030 — authenticated session check | **PARTIAL** | `src/modules/identity/identity-service.ts` implements `authenticate()`; `src/modules/identity/routes.ts` uses it for `GET /v1/auth/me`. This validates an identity session, not resource ownership, tenant membership or action-level permission decisions. |
+| CO-031 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-032 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-033 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-034 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-035 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-036 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-037 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-038 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-039 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-040 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-041 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-042 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-043 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+| CO-044 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
+
+### Owner decisions required before policy implementation
+- Exact Part 01 wording for CO-029–CO-044.
+- Canonical role vocabulary, permission/resource/action model, inheritance and delegation rules, role assignment authority, policy precedence and deny/allow conflict behavior.
+- Tenant ownership and membership semantics from CO-015–CO-028; a policy engine must not bypass tenant scoping.
+- CO-030's existing identity session check remains a partial foundation only. Do not mark it as full authorization or infer policy behavior from the presence of an authenticated session.
