@@ -122,7 +122,7 @@ describe('CO-065 atomic identity audit writes', () => {
       await assert.rejects(
         () => uow.startSession({
           session,
-          revokeIdHashes: [],
+          maxPerUser: 3,
           userUpdate: { userId: user.id, patch: { passwordHash: 'new-test-hash' }, now },
           event: invalidEvent,
         }),
@@ -136,7 +136,7 @@ describe('CO-065 atomic identity audit writes', () => {
 
       await uow.startSession({
         session,
-        revokeIdHashes: [],
+        maxPerUser: 3,
         userUpdate: { userId: user.id, patch: { passwordHash: 'new-test-hash' }, now },
         event: {
           ...invalidEvent,
