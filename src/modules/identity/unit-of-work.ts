@@ -2,7 +2,7 @@ import type { Clock } from '../../kernel/clock.ts';
 import type { EventDraft, EventStore } from '../../kernel/events.ts';
 import type { SessionRecord } from './sessions.ts';
 import { InMemorySessionStore } from './sessions.ts';
-import { InMemoryUserStore, type NewUser, type UserRecord } from './user-store.ts';
+import { InMemoryUserStore, type NewUser, type UserPatch, type UserRecord } from './user-store.ts';
 
 /**
  * The few operations where a data change and its audit event must succeed or fail TOGETHER (CO-065).
