@@ -74,8 +74,6 @@ function parseTransports(raw: string): string[] {
 export class InMemoryPasskeyStore implements PasskeyStore {
   private readonly challenges = new Map<string, PasskeyChallengeRecord>();
   private readonly credentials = new Map<string, PasskeyCredentialRecord>();
-  private readonly pendingCredentials = new Set<string>();
-  private readonly pendingRemovals = new Set<string>();
   private readonly events: EventStore;
   private queue: Promise<void> = Promise.resolve();
   constructor(events: EventStore) { this.events = events; }
@@ -106,16 +104,11 @@ export class InMemoryPasskeyStore implements PasskeyStore {
   }
   async createCredential(record: PasskeyCredentialRecord, event: EventDraft): Promise<void> {
     validateCredential(record);
-    if (this.credentials.has(record.credentialId) || this.pendingCredentials.has(record.credentialId)) {
-      throw new PasskeyCredentialExistsError();
-    }
-    this.pendingCredentials.add(record.credentialId);
-    try {
+    await this.exclusive(async () => {
+      if (this.credentials.has(record.credentialId)) throw new PasskeyCredentialExistsError();
       await this.events.append(event);
       this.credentials.set(record.credentialId, record);
-    } finally {
-      this.pendingCredentials.delete(record.credentialId);
-    }
+    });
   }
   async findCredentialById(id: string): Promise<PasskeyCredentialRecord | null> { return this.credentials.get(id) ?? null; }
   async listCredentialsForUser(userId: string): Promise<PasskeyCredentialRecord[]> {
@@ -127,6 +120,7 @@ export class InMemoryPasskeyStore implements PasskeyStore {
       const current = this.credentials.get(args.credentialId);
       if (!current || current.userId !== args.userId) return false;
       if (current.signCount > 0 && args.signCount > 0 && args.signCount <= current.signCount) return false;
+      if (args.backedUp && !current.backupEligible) return false;
       await this.events.append(args.event);
       this.credentials.set(args.credentialId, {
         ...current,
@@ -138,16 +132,13 @@ export class InMemoryPasskeyStore implements PasskeyStore {
     });
   }
   async deleteCredentialForUser(userId: string, id: string, event: EventDraft): Promise<boolean> {
-    const current = this.credentials.get(id);
-    if (!current || current.userId !== userId || this.pendingRemovals.has(id)) return false;
-    this.pendingRemovals.add(id);
-    try {
+    return this.exclusive(async () => {
+      const current = this.credentials.get(id);
+      if (!current || current.userId !== userId) return false;
       await this.events.append(event);
       this.credentials.delete(id);
       return true;
-    } finally {
-      this.pendingRemovals.delete(id);
-    }
+    });
   }
 }
 
