@@ -5,7 +5,6 @@ export interface ThrottleConfig {
   signInPerMinute: number;
   registerPerMinute: number;
   passkeyPerMinute: number;
-  passkeyPerMinute: number;
   /** Failures allowed before the account key starts locking. */
   freeFailures: number;
   baseLockMs: number;
@@ -17,8 +16,7 @@ export interface ThrottleConfig {
 export const DEFAULT_THROTTLE: ThrottleConfig = {
   signInPerMinute: 30,
   registerPerMinute: 10,
-  passkeyPerMinute: 60,
-  passkeyPerMinute: 20,
+  passkeyPerMinute: 30,
   freeFailures: 5,
   baseLockMs: 60_000,
   maxLockMs: 3_600_000,
