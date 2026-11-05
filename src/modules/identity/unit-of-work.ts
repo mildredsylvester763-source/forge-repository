@@ -13,6 +13,8 @@ export interface IdentityUnitOfWork {
   /** Throws EmailTakenError when the address is already registered. */
   registerUser(user: NewUser, event: (created: UserRecord) => EventDraft): Promise<UserRecord>;
   startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void>;
+  /** Revokes one active session and commits its audit event in the same unit of work. */
+  endSession(args: { idHash: string; now: number; event: (session: SessionRecord) => EventDraft }): Promise<SessionRecord | null>;
 }
 
 /** Development and test version. Not crash-safe, but keeps the same contract. */
