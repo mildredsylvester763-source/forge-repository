@@ -160,12 +160,18 @@ export class SessionService {
     return record;
   }
 
-  async revoke(token: string | undefined, reason: string): Promise<SessionRecord | null> {
+  /** Validate token shape and derive its storage key without mutating session state. */
+  prepareRevoke(token: string | undefined): { idHash: string; now: number } | null {
     if (!token || !TOKEN_FORMAT.test(token)) return null;
-    const idHash = hashSessionToken(token);
-    const record = await this.store.findByHash(idHash);
+    return { idHash: hashSessionToken(token), now: this.clock() };
+  }
+
+  async revoke(token: string | undefined, reason: string): Promise<SessionRecord | null> {
+    const prepared = this.prepareRevoke(token);
+    if (!prepared) return null;
+    const record = await this.store.findByHash(prepared.idHash);
     if (!record) return null;
-    await this.store.revoke(idHash, reason, this.clock());
+    await this.store.revoke(prepared.idHash, reason, prepared.now);
     return record;
   }
 
