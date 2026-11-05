@@ -5,11 +5,13 @@ import { SqliteEventStore } from '../src/kernel/sqlite-events.ts';
 import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { identityMigrations } from '../src/modules/identity/migrations.ts';
+import { InMemoryEventStore, type EventDraft, type EventStore } from '../src/kernel/events.ts';
+import { InMemoryIdentityUnitOfWork } from '../src/modules/identity/unit-of-work.ts';
+import { InMemorySessionStore, type SessionRecord } from '../src/modules/identity/sessions.ts';
+import { InMemoryUserStore } from '../src/modules/identity/user-store.ts';
 import { SqliteIdentityUnitOfWork, SqliteSessionStore, SqliteUserStore } from '../src/modules/identity/sqlite-stores.ts';
-import type { EventDraft } from '../src/kernel/events.ts';
-import type { SessionRecord } from '../src/modules/identity/sessions.ts';
 
-describe('CO-065 atomic identity sign-out', () => {
+describe('CO-065 atomic identity audit writes', () => {
   it('rolls back revocation on audit failure and emits exactly one event after retry', async () => {
     const db = openDatabase(':memory:');
     const now = 1_800_000_000_000;
@@ -79,4 +81,127 @@ describe('CO-065 atomic identity sign-out', () => {
       db.close();
     }
   });
+
+
+  it('rolls back password-compromise state when its security event cannot be written', async () => {
+    const db = openDatabase(':memory:');
+    const now = 1_800_000_100_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+
+      const events = new SqliteEventStore({ db, clock: () => now, logger: silentLogger });
+      const users = new SqliteUserStore(db);
+      const sessions = new SqliteSessionStore(db);
+      const uow = new SqliteIdentityUnitOfWork({ db, users, sessions, events, clock: () => now });
+      const user = await users.create({
+        email: 'atomic-compromise@example.com',
+        displayName: 'Atomic Compromise',
+        passwordHash: 'test-hash-only',
+        now,
+      });
+      const event = (marked: { id: string }): EventDraft => ({
+        type: 'identity.password.compromised_detected',
+        version: 1,
+        actor: { kind: 'user', id: marked.id },
+        subject: { type: 'user', id: marked.id },
+        payload: { exposures: 9 },
+        correlationId: 'co-065-atomic-compromise',
+      });
+
+      db.exec(`CREATE TRIGGER fail_compromise_audit BEFORE INSERT ON events
+        WHEN NEW.type = 'identity.password.compromised_detected'
+        BEGIN SELECT RAISE(ABORT, 'injected compromise audit failure'); END;`);
+
+      await assert.rejects(
+        () => uow.markPasswordCompromised({ userId: user.id, now, event }),
+        /injected compromise audit failure/,
+      );
+      const rolledBack = await users.findById(user.id);
+      assert.equal(rolledBack?.passwordCompromisedAt, null);
+      assert.equal(rolledBack?.version, user.version);
+      assert.equal((await events.readFrom(1, 100)).length, 0);
+
+      db.exec('DROP TRIGGER fail_compromise_audit');
+      const marked = await uow.markPasswordCompromised({ userId: user.id, now, event });
+      assert.equal(marked.passwordCompromisedAt, now);
+
+      const repeated = await uow.markPasswordCompromised({ userId: user.id, now: now + 1, event });
+      assert.equal(repeated.passwordCompromisedAt, now);
+      assert.equal(repeated.version, marked.version);
+      const stored = await events.readFrom(1, 100);
+      assert.equal(stored.filter((item) => item.type === 'identity.password.compromised_detected').length, 1);
+      assert.equal((await events.verify()).ok, true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('serializes concurrent in-memory sign-outs so only one completion event is emitted', async () => {
+    const now = 1_800_000_200_000;
+    const users = new InMemoryUserStore();
+    const sessions = new InMemorySessionStore();
+    const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
+    const uow = new InMemoryIdentityUnitOfWork({ users, sessions, events, clock: () => now });
+    const user = await users.create({ email: 'memory-signout@example.com', displayName: 'Memory', passwordHash: 'test', now });
+    const session: SessionRecord = {
+      idHash: 'b'.repeat(64),
+      userId: user.id,
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + 60_000,
+      ip: '127.0.0.1',
+      userAgent: 'CO-065 in-memory concurrency test',
+      revokedAt: null,
+      revokedReason: null,
+    };
+    await sessions.insert(session);
+    const event = (record: SessionRecord): EventDraft => ({
+      type: 'identity.sign_out.completed',
+      version: 1,
+      actor: { kind: 'user', id: record.userId },
+      subject: { type: 'user', id: record.userId },
+      payload: { sessionRef: record.idHash.slice(0, 12) },
+      correlationId: 'co-065-memory-concurrent-signout',
+    });
+
+    const results = await Promise.all([
+      uow.endSession({ idHash: session.idHash, now, event }),
+      uow.endSession({ idHash: session.idHash, now, event }),
+    ]);
+    assert.equal(results.filter(Boolean).length, 1);
+    const stored = await events.readFrom(1, 100);
+    assert.equal(stored.filter((item) => item.type === 'identity.sign_out.completed').length, 1);
+    assert.equal((await events.verify()).ok, true);
+  });
+
+  it('restores the exact in-memory password state if the compromise audit append fails', async () => {
+    const now = 1_800_000_300_000;
+    const users = new InMemoryUserStore();
+    const sessions = new InMemorySessionStore();
+    const failingEvents = {
+      append: async () => { throw new Error('injected in-memory audit failure'); },
+    } as unknown as EventStore;
+    const uow = new InMemoryIdentityUnitOfWork({ users, sessions, events: failingEvents, clock: () => now });
+    const user = await users.create({ email: 'memory-compromise@example.com', displayName: 'Memory', passwordHash: 'test', now });
+    await assert.rejects(
+      () => uow.markPasswordCompromised({
+        userId: user.id,
+        now,
+        event: (marked) => ({
+          type: 'identity.password.compromised_detected',
+          version: 1,
+          actor: { kind: 'user', id: marked.id },
+          subject: { type: 'user', id: marked.id },
+          payload: { exposures: 2 },
+          correlationId: 'co-065-memory-compromise',
+        }),
+      }),
+      /injected in-memory audit failure/,
+    );
+    const after = await users.findById(user.id);
+    assert.equal(after?.passwordCompromisedAt, null);
+    assert.equal(after?.version, user.version);
+  });
+
 });
