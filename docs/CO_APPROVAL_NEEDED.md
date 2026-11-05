@@ -238,3 +238,12 @@ The existing mail-provider, KMS/key-custody and external IdP dependencies remain
 | CO-028 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
 
 The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplying the original catalogue text does not by itself approve the RLS or KMS decisions; those approvals must be explicit and separately recorded.
+
+
+## CO-029–CO-044 permission and policy owner decisions (2026-11-05)
+
+- Exact feature-level Part 01 acceptance wording is required for every ID in this range; no role names or feature titles are inferred from the section heading.
+- Product/security owner must define the canonical roles, permission vocabulary, resource/action scope, role inheritance, delegation, assignment authority, policy precedence, deny/allow conflict handling and administrator override boundaries.
+- Tenant ownership and membership rules must be established alongside CO-015–CO-028. Permission checks cannot be implemented safely by guessing tenant semantics.
+- CO-030 currently has only identity session authentication evidence (`IdentityService.authenticate()` and `GET /v1/auth/me`). This does not grant resource- or tenant-level access. It remains PARTIAL.
+- Approval state: **NOT GRANTED**. Independent work on unrelated Core features may continue; do not add default-admin or permissive fallback roles.
