@@ -591,3 +591,30 @@ The following checks compare the current `mistral` implementation with `main`. T
 - CO-011 requires the exact agent principal model, credential issuance/rotation/revocation and allowed agent scopes. The event actor enum does not satisfy these requirements.
 - CO-012 remains partial pending exact acceptance criteria and explicit approval for any automated response or new telemetry retention.
 - Continue to CO-015 and other independent Core ranges; these identity gaps do not block unrelated work.
+
+
+## CO-015–CO-028 individual workspace / tenancy audit (2026-11-05)
+
+Compared the relevant Mistral and main paths before classification. No dedicated `src/modules/tenancy`, `src/modules/workspaces`, tenant-context, tenant-service or workspace-service implementation exists at the inspected paths in either branch. The AI workspace-retrieval module is outside CO and is not counted.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+| CO-015 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated workspace/tenant implementation evidence in either branch; exact feature title and behavior are absent from repository documentation. |
+| CO-016 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-017 — tenant isolation | **MISSING / OWNER-BLOCKED** | The progress record describes the unresolved app-code-only versus PostgreSQL RLS second-lock decision. No tenant-scoped repository/service or RLS migration/policy was found at the inspected paths. The owner has recorded app-side scoping as the initial direction, but has not approved the RLS boundary. |
+| CO-018 — encryption at rest / key custody | **MISSING / OWNER-BLOCKED** | No application encryption/key-management module was found at the inspected paths. The project record explicitly leaves the key source, rotation, recovery and backup-encryption boundary unresolved. Database-host encryption cannot be claimed as application-managed encryption. |
+| CO-019 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-020 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-021 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-022 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-023 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-024 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-025 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-026 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-027 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+| CO-028 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated implementation evidence; exact feature title and acceptance criteria are unavailable. |
+
+### CO-017 / CO-018 owner boundary
+- CO-017: confirm whether PostgreSQL RLS is required as a second isolation layer, and the intended database role/connection strategy. Do not ship permissive or guessed tenant policies.
+- CO-018: supply/approve the KMS or owner-managed key source, key rotation, recovery, service access and backup-encryption boundary. Do not invent cryptography or store secrets in plaintext.
+- The exact individual Part 01 descriptions for CO-015–CO-028 remain required before feature-level acceptance or schema semantics can be claimed. Continue unrelated Core work while these decisions remain open.
