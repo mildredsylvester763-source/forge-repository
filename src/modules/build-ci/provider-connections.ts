@@ -121,7 +121,7 @@ export class SqliteProviderConnectionStore implements ProviderConnectionStore {
   async listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]> {
     validateWorkspaceId(workspaceId); validateProvider(provider); required(connectionId, 'connectionId', 128);
     const rows = this.db.prepare(`SELECT ${EVENT_COLUMNS} FROM build_ci_provider_connection_events
-      WHERE workspace_id = ? AND provider = ? AND connection_id = ? ORDER BY occurred_at, event_id`)
+      WHERE workspace_id = ? AND provider = ? AND connection_id = ? ORDER BY rowid`)
       .all(workspaceId, provider, connectionId) as unknown as ProviderConnectionEventRow[];
     return Object.freeze(rows.map(eventFromRow));
   }
@@ -207,7 +207,7 @@ export class PostgresProviderConnectionStore implements ProviderConnectionStore 
   async listEvents(workspaceId: string, provider: WebhookProvider, connectionId: string): Promise<readonly ProviderConnectionEvent[]> {
     validateWorkspaceId(workspaceId); validateProvider(provider); required(connectionId, 'connectionId', 128);
     const result = await this.pool.query<ProviderConnectionEventRow>(`SELECT ${EVENT_COLUMNS} FROM build_ci_provider_connection_events
-      WHERE workspace_id = $1 AND provider = $2 AND connection_id = $3 ORDER BY occurred_at, event_id`,
+      WHERE workspace_id = $1 AND provider = $2 AND connection_id = $3 ORDER BY event_order`,
     [workspaceId, provider, connectionId]);
     return Object.freeze(result.rows.map(eventFromRow));
   }
