@@ -103,7 +103,7 @@ export function passkeyRoutes(
       },
     },
     '/v1/auth/passkeys/authentication/options': {
-      POST: async (): Promise<HttpResult> => ({ status: 200, body: await passkeys.beginAuthentication(meta(ctx)) }),
+      POST: async (ctx): Promise<HttpResult> => ({ status: 200, body: await passkeys.beginAuthentication(meta(ctx)) }),
     },
     '/v1/auth/passkeys/authentication/complete': {
       POST: async (ctx): Promise<HttpResult> => {
