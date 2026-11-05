@@ -408,3 +408,27 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-061: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-062: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
 - No graph ontology, node/edge types, source-of-truth rules, visibility, deletion or retention semantics were invented. These are owner-dependent product/data decisions and the exact Part 01 wording is absent; the approval register records the specific decisions needed.
+
+
+### CO-063–CO-080 event backbone and audit ledger audit (2026-11-05)
+- Compared the current main/Mistral implementations before this audit. Mistral differs in `src/kernel/events.ts` and `src/kernel/canonical.ts` (runtime envelope validation and canonical payload hardening), and in the identity unit-of-work plus SQLite/PostgreSQL identity stores (transactional identity writes). The SQLite/PostgreSQL event-store adapters, kernel migrations and identity event registry are byte-identical across branches.
+- Individual evidence-based classifications:
+  - CO-063: IMPLEMENTED documented foundation. `EventDraft`/`EventEnvelope`, runtime actor/subject/payload/cause validation, finite/range timestamp checks and deterministic canonical JSON are present. Focused CO typecheck and regression workflow passed on corrected commit `d8df572ea1f59ddf92a0382a489b105ac81881bf`. Exact Part 01 acceptance wording remains unavailable.
+  - CO-064: PARTIAL. SQLite/PostgreSQL append-only triggers and hash-linked sequence storage exist, and the verifier recomputes links/hashes. A real PostgreSQL integration/privilege run is not evidenced in this execution context; an internal chain alone cannot detect tail truncation.
+  - CO-065: PARTIAL. SQLite/PostgreSQL identity registration, sign-in session creation, sign-out and compromised-password transitions use transactional state-plus-event writes. This does not establish atomicity for every CO domain. EventDispatcher remains best-effort in-process delivery without durable retry/offset/dead-letter behavior.
+  - CO-066: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-067: PARTIAL. `src/modules/identity/events.ts` publishes the identity event names/version, but no global CO event-schema registry or complete catalog-wide registry is evidenced.
+  - CO-068: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-069: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-070: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-071: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-072: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-073: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-074: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-075: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-076: PARTIAL. Internal chain verification plus the new fail-closed `verifyChainAgainstAnchor()` primitive are focused-workflow verified. No trusted external anchor store or append/checkpoint coordination exists yet.
+  - CO-077: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-078: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-079: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-080: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+- These classifications use only explicit repository notes and code evidence. No names or acceptance criteria were invented for the unmapped IDs. The real-PostgreSQL proof, durable event-delivery policy and independent anchor destination remain in the approval register.
