@@ -718,3 +718,30 @@ Compared event store, canonicalization, migration, identity event registry and f
 - CO-065 remains partial until durable subscriber-delivery semantics are specified and implemented; the transactional source write alone does not establish delivery guarantees.
 - CO-076's verifier can compare a trusted checkpoint but cannot create trust. The owner must approve the independent anchor destination, retention/availability policy and credentials. A checkpoint in the same event database does not protect against database-level truncation.
 - CO-067 remains identity-scoped. Do not infer a global event registry from the existing identity event constants.
+
+
+## CO-081–CO-090 individual context engine audit (2026-11-05)
+
+Compared candidate CO context modules and stores in Mistral and main. No dedicated `src/modules/context`, `src/modules/context-engine`, `src/modules/project-context`, `src/kernel/context.ts` or `src/kernel/context-store.ts` implementation was found at the inspected paths. AI workspace retrieval, AI memory and TQ context used for test generation are separate feature families and are not counted as CO.
+
+| Feature | Classification | Evidence / limitation |
+| --- | --- | --- |
+| CO-081 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-082 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-083 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-084 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-085 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-086 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-087 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-088 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-089 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+| CO-090 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated CO context-engine module, feature specification or attributable context store/route was found at the inspected paths in either branch. Exact feature title and acceptance criteria are unavailable. |
+
+### Owner decisions required before implementation
+- Exact Part 01 description and acceptance criteria for each CO-081–CO-090 ID.
+- Approved context source types and source-of-truth hierarchy.
+- Data visibility, tenant/project scope, user consent and deletion behavior.
+- Expiry, retention, summarization, versioning and recovery semantics.
+- Any sensitive-data handling, access logging and export requirements.
+
+No context schema, retention period or source priority was invented. This range remains missing pending exact acceptance text and approved privacy/lifecycle rules; unrelated Core work continues.
