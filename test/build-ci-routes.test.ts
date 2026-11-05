@@ -96,6 +96,18 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
     assert.equal(shared.status, 200);
     const afterShare = await listTemplates(context({}, 'valid-session', { workspaceId: 'workspace-b' }));
     assert.equal((afterShare.body as { templates: unknown[] }).templates.length, 1);
+
+    const diffTemplateVersions = routes['/v1/build-ci/templates/versions/diff']?.GET;
+    assert.ok(diffTemplateVersions);
+    const templateDiff = await diffTemplateVersions(context({}, 'valid-session', {
+      workspaceId: 'workspace-b', templateId: template.templateId, fromVersion: '1', toVersion: '2',
+    }));
+    assert.equal(templateDiff.status, 200);
+    const templateDiffBody = templateDiff.body as { fromVersion: number; toVersion: number; diff: { hasChanges: boolean; changedFields: string[] } };
+    assert.equal(templateDiffBody.fromVersion, 1);
+    assert.equal(templateDiffBody.toVersion, 2);
+    assert.equal(templateDiffBody.diff.hasChanges, true);
+    assert.deepEqual(templateDiffBody.diff.changedFields, ['name']);
     const templateVersion = await readTemplateVersion(context({}, 'valid-session', {
       workspaceId: 'workspace-b', templateId: template.templateId, version: '2',
     }));
