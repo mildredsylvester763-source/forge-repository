@@ -65,8 +65,8 @@ function validPath(value: unknown): string | null {
   return value;
 }
 
-function githubNextPage(link: string | undefined): number | null | 'invalid' {
-  if (!link) return null;
+function githubNextPage(link: string | undefined, resultCount: number, currentPage: number): number | null | 'invalid' {
+  if (!link) return resultCount === PAGE_SIZE ? currentPage + 1 : null;
   const next = link.split(',').find((part) => /;\\s*rel="?next"?/i.test(part));
   if (!next) return null;
   const url = /<([^>]+)>/.exec(next)?.[1];
@@ -197,7 +197,7 @@ export class ProviderPullRequestChangedFilesResolver implements PullRequestChang
       if (!complete && reason === 'provider_limit') break;
 
       const nextPage = input.provider === 'github'
-        ? githubNextPage(header(response.headers, 'link'))
+        ? githubNextPage(header(response.headers, 'link'), response.body.length, page)
         : gitlabNextPage(response.headers, response.body.length, page);
       if (nextPage === null) break;
       if (nextPage === 'invalid' || nextPage !== page + 1) {
