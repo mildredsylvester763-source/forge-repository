@@ -568,3 +568,26 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Verification correction: workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) completed the isolated CO typecheck and test step successfully; the run included `test/totp.test.ts` and reported 88/88 tests passing. The previous note that the corrected vector rerun was pending is superseded.
 - No production MFA claim: no secret persistence, replay prevention, enrollment, login enforcement, recovery or account reset flow is implemented. The exact catalogue wording and owner policy remain outstanding.
 - **Owner inputs needed:** optional/mandatory/step-up policy; accepted algorithms, digits, period and drift; enrollment confirmation; KMS/key custody and rotation/recovery; backup-code and assisted-reset authority. No TOTP seed is stored or exposed by this primitive-only implementation.
+
+
+## CO-008–CO-014 individual identity audit (2026-11-05)
+
+The following checks compare the current `mistral` implementation with `main`. The original Part 01 wording for these IDs is not present in the repository, so the classifications below are limited to the feature labels and explicit gaps already recorded in project documentation.
+
+| Feature | Classification | Concrete evidence and boundary |
+| --- | --- | --- |
+| CO-008 — account verification / password recovery | **MISSING** | `docs/PROGRESS.md` explicitly lists email verification, password reset and recovery as outstanding under CO-008. The Mistral and main identity route tables do not expose verification, reset-request or reset-completion endpoints. No mail delivery provider is connected. Do not choose token lifetime, enumeration behavior, recovery identity proofing or session-revocation policy without the original acceptance text. |
+| CO-009 — desktop session tokens | **MISSING / ACCEPTANCE UNVERIFIED** | `docs/features/CO-007.md` explicitly says desktop token behavior is separate and not covered by CO-007. Mistral adds the native bearer route and shared session credential parser, but no desktop-specific client enrollment, token audience or lifecycle contract is evidenced. Do not count the native bearer path as desktop support. |
+| CO-010 — unnamed identity feature | **MISSING / ACCEPTANCE UNVERIFIED** | No individual CO-010 description or feature spec is present in the repository. The identity route/service files do not provide evidence that can safely be attributed to this unnamed ID. No title or behavior is inferred. |
+| CO-011 — agent identity | **MISSING** | The event envelope permits `ActorKind = 'agent'`, but that is audit attribution only. There is no agent credential issuance, authentication, identity lifecycle or revocation evidence in the identity service/routes. Agent actor metadata is not an authenticated agent principal. |
+| CO-012 — sign-in anomaly detection | **PARTIAL** | `src/modules/identity/identity-service.ts` compares the current request with currently active sessions and emits value-safe signal names. `docs/features/CO-012.md` records observe-only behavior. No historical behavioral model, alerting, risk threshold, challenge or automatic account action is implemented; exact catalogue acceptance remains unavailable. |
+| CO-013 — unnamed identity feature | **MISSING / ACCEPTANCE UNVERIFIED** | No individual CO-013 description/spec or attributable implementation evidence exists in the repository. No feature title or semantics are invented. |
+| CO-014 — unnamed identity feature | **MISSING / ACCEPTANCE UNVERIFIED** | No individual CO-014 description/spec or attributable implementation evidence exists in the repository. No feature title or semantics are invented. |
+
+### Ordered owner-blockers and next independent work
+- CO-008 requires the exact feature contract for email verification and recovery, approved identity-proofing and anti-enumeration behavior, token expiry/replay/session policy, plus a delivery provider and sender credentials for activation. No recovery endpoint or token store was added.
+- CO-009 requires the exact desktop-client audience, credential storage and revocation/expiry contract. Native CO-007 bearer sessions are not relabelled as desktop support.
+- CO-010, CO-013 and CO-014 remain blocked only on the missing exact catalogue descriptions and acceptance criteria; their feature names are intentionally not guessed.
+- CO-011 requires the exact agent principal model, credential issuance/rotation/revocation and allowed agent scopes. The event actor enum does not satisfy these requirements.
+- CO-012 remains partial pending exact acceptance criteria and explicit approval for any automated response or new telemetry retention.
+- Continue to CO-015 and other independent Core ranges; these identity gaps do not block unrelated work.
