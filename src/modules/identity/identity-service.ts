@@ -319,7 +319,7 @@ export class IdentityService {
     const owner = await this.d.users.findById(current.userId);
     if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
 
-    const target = await this.d.sessions.findActiveForUser(owner.id, sessionId);
+    const target = await this.d.sessions.findActiveForUser(owner.id, sessionId.toLowerCase());
     if (!target) throw new AppError(404, 'session_not_found', 'The session could not be found.');
 
     const revoked = await this.d.uow.endSession({
