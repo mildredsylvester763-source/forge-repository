@@ -117,8 +117,9 @@ export class SessionService {
   }
 
   /**
-   * Builds a new session and says which older ones must be retired to respect the per-user cap.
-   * Nothing is saved here: the identity unit of work saves the session together with its audit event.
+   * Builds a new session and passes the configured cap to the identity unit of work.
+   * Nothing is saved or counted here: active-session selection and retirement happen inside
+   * the same transaction that persists the session and its audit event.
    */
   async prepare(
     userId: string,
