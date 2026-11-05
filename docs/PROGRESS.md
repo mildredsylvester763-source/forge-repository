@@ -479,3 +479,14 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Post-push source inspection caught and corrected two escaping mistakes before the successful workflow: the parser uses `text.split(/\\r?\\n/)` and `/(\\d+)/`, and malformed response fixtures contain real TypeScript `\\n` escape sequences. Corrections are on Mistral commits `e42278d022a1e8b56b9bc5cd10fc63c6a3ee7df5` and `4de33697be66f020ee042010f77c8d845e017078`.
 - A concurrent subsequent Mistral commit `e60db6a483e2e0b7196b078a8382d6243ea539bf` adds an identity session-revocation event constant. It was preserved, not authored or treated as evidence that CO-006 is complete.
 
+## CO-006 session manager implementation delta (2026-11-05)
+
+- Compared `main` and `mistral` before implementation. The active Mistral branch is the Core destination; the one main-only commit remains a collaboration-rules documentation change and was not merged.
+- Added owner-scoped active-session queries that apply both absolute and idle-expiry checks.
+- Added `GET /v1/auth/sessions` and `POST /v1/auth/sessions/revoke`. The service derives the account from the validated cookie session; it does not accept a caller-supplied user ID.
+- Foreign and unknown session IDs resolve to the same 404 response. Current-session revocation clears the cookie; revoking another device leaves the current cookie untouched.
+- Added `identity.session.revoked` audit events and explicit `session_manager` reason handling. In-memory, SQLite and PostgreSQL unit-of-work paths share the same reason contract; the existing sign-out default remains `user_sign_out`.
+- Added `test/co-006-session-manager.test.ts` for owner isolation, token non-disclosure, malformed/unknown/foreign ID handling, audit event, other-device revoke and current-session cookie clearing.
+- **Classification:** implementation candidate present, but catalogue acceptance remains unverified until the exact owner-supplied CO-006 wording is available. Do not mark CO-006 as owner-accepted solely because the implementation exists.
+- **Verification boundary:** CO-focused workflow now typechecks the kernel/identity slice and directly imported tests without importing `src/app.ts`, which pulls in the unrelated AI module. The full repository CI still has a separate AI TypeScript syntax blocker in `src/modules/ai-training/sqlite-stores.ts`; no AI files were changed here. A real PostgreSQL connection is still not configured in the CO workflow, so the PostgreSQL adapter fallback is not native PostgreSQL proof.
+- **Delta carry-forward:** no CO-002/003 provider origins or credentials, CO-004 SSO trust metadata, CO-005/007/008/009 identity contracts, CO-017 RLS decision, CO-018 key custody, policy vocabulary, graph ontology, external event anchor, durable event-delivery policy, or CO-093/096 production deployment dependencies were removed or silently approved. They remain in `docs/CO_APPROVAL_NEEDED.md`.
