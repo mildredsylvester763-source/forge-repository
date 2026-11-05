@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { silentLogger } from '../src/kernel/logger.ts';
 import {
   GENESIS_HASH,
   InMemoryEventStore,
@@ -7,7 +8,7 @@ import {
   verifyChainAgainstAnchor,
 } from '../src/kernel/events.ts';
 
-const logger = { error: () => undefined };
+const logger = silentLogger;
 const draft = (id: string) => ({
   type: 'core.anchor_test.created',
   version: 1,

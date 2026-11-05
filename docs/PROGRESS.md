@@ -313,3 +313,9 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Added `test/co-076-anchor-verification.test.ts` for matching checkpoints, valid-prefix tail truncation, stale/mismatched checkpoints, malformed/unavailable checkpoints and preservation of local chain failures. Added it to `tsconfig.co.json` and the focused CO workflow.
 - Local isolated harness (event-kernel slice) result: 5 tests passed; isolated strict TypeScript check passed. The repository checkout could not be cloned into this execution environment, so these are not a substitute for the full repository workflow. The focused GitHub workflow is the authoritative verification still required for this commit.
 - Status remains PARTIAL: no external anchor persistence, append/checkpoint coordination, destination, retention or recovery behavior is selected. The owner decision and any external credentials remain listed in `docs/CO_APPROVAL_NEEDED.md`.
+
+
+### CO-076 first focused-CI failure and correction (2026-11-05)
+- The first repository run for commit `9a9bd3a60bdcfd0af88f6292e9447f467f7ea4a0`, focused workflow [42006508243](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42006508243), failed during the isolated TypeScript step; its test step was skipped. The full CI typecheck also failed and skipped the general test step.
+- Root causes in this change: the new `tsconfig.co.json` include entry was missing a trailing comma, and the test supplied a minimal logger object instead of the complete `Logger` contract.
+- Correction: restore valid JSON and use the repository's `silentLogger` implementation in the new test. No AI/TQ source was changed. The five-test isolated harness and strict isolated typecheck pass after this correction; the repository focused workflow must be rerun before this slice is verified.
