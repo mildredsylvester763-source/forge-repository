@@ -28,6 +28,7 @@ Working branch: mistral
 ## External credentials / accounts tracked
 
 - Supabase/PostgreSQL project and connection string (FORGE_DATABASE_URL) for real database integration proof.
+- A disposable PostgreSQL integration-test connection string (FORGE_TEST_POSTGRES_URL). The current CO-focused workflow ran with this secret unset, so PostgreSQL adapter tests used the SQLite-backed fallback and did not prove native PostgreSQL row-lock/transaction behavior.
 - Cloudflare account ID, R2 bucket, access key ID and secret for off-site backup storage.
 - Email delivery provider API key and verified sender/domain for verification and recovery flows.
 - Google OAuth client ID/secret if Google sign-in is selected.
