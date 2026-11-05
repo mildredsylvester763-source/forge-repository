@@ -9,6 +9,7 @@ on:
       - 'src/modules/identity/**'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
+      - 'test/co-065-postgres-uow.test.ts'
       - 'test/co-091-readiness.test.ts'
       - 'test/backup.test.ts'
       - 'test/rate-limit.test.ts'
@@ -33,6 +34,7 @@ jobs:
         run: |
           node --test \
             test/co-065-atomic-signout.test.ts \
+            test/co-065-postgres-uow.test.ts \
             test/co-065-postgres-uow.test.ts \
             test/co-091-readiness.test.ts \
             test/backup.test.ts \
