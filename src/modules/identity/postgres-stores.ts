@@ -227,8 +227,14 @@ export class PostgresIdentityUnitOfWork implements IdentityUnitOfWork {
     return created;
   }
 
-  async startSession(args: { session: SessionRecord; revokeIdHashes: readonly string[]; event: EventDraft }): Promise<void> {
+  async startSession(args: {
+    session: SessionRecord;
+    revokeIdHashes: readonly string[];
+    event: EventDraft;
+    userUpdate?: { userId: string; patch: UserPatch; now: number };
+  }): Promise<void> {
     const committed = await withTransaction(this.pool, async (conn) => {
+      if (args.userUpdate) await this.users.updateIn(conn, args.userUpdate.userId, args.userUpdate.patch, args.userUpdate.now);
       await this.sessions.insertIn(conn, args.session);
       const now = this.clock();
       for (const idHash of args.revokeIdHashes) await this.sessions.revokeIn(conn, idHash, 'session_limit', now);
