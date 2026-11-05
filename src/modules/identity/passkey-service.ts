@@ -19,7 +19,7 @@ import {
 } from './webauthn.ts';
 import { PasskeyCredentialExistsError, type PasskeyCredentialRecord, type PasskeyStore } from './passkey-store.ts';
 
-const CHALLENGE_TTL_MS = 5 * 60_000;
+const CHALLENGE_TTL_MS = 120_000;
 const INVALID_CREDENTIALS = () => new AppError(401, 'invalid_credentials', 'Invalid passkey credentials.');
 
 export interface PasskeyServiceConfig {
