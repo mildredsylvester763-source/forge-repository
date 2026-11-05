@@ -448,3 +448,19 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-089: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-090: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
 - The section heading "Context engine" is insufficient to infer context sources, user visibility, privacy boundaries, expiry, summarization or retention. No such behavior was invented. The exact original Part 01 text is required before a safe CO implementation can be designed.
+
+
+### CO-091–CO-100 platform reliability audit (2026-11-05)
+- Compared `main` and `mistral` before this audit. Mistral adds `src/kernel/health.ts` and focused readiness tests; its `rate-limit.ts`, `backup.ts` and `main.ts` differ from main. Main has none of the CO-focused readiness, rate-limit or backup regression files. The exact Mistral file SHAs and limitations are preserved in the earlier CO-091/093/096 implementation notes.
+- Individual evidence-based classifications:
+  - CO-091: PARTIAL. `/healthz` is storage-independent; `/readyz` proves the event-store/database can answer and returns safe 503 on failure. No evidence covers all future external dependencies or deployment SLO thresholds.
+  - CO-092: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-093: PARTIAL. Bounded in-memory sliding-window and account-lockout protections are tested. They do not coordinate limits across multiple application replicas; shared-store selection and abuse policy remain owner-dependent.
+  - CO-094: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-095: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-096: PARTIAL. SQLite snapshots require a checksum sidecar and pass SQLite integrity plus internal event-chain verification. Automated off-site PostgreSQL backup/restore and RPO/RTO proof are absent.
+  - CO-097: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-098: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-099: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-100: MISSING implementation evidence and OWNER-BLOCKED. Offline sync conflict resolution is explicitly flagged high risk; no merge/delete/authority precedence policy or exact catalogue acceptance wording is available.
+- The corrected focused workflow [42006742090](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42006742090) passed the isolated CO typecheck and focused CO tests covering the current readiness, rate-limit, backup and identity regressions. This does not convert distributed rate limiting or off-site PostgreSQL backup into complete features.

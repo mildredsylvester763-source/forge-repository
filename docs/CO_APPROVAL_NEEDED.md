@@ -82,3 +82,10 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 
 - CO-081–CO-090 have no dedicated CO context-engine implementation evidence in either branch. The Mistral workspace-retrieval module is AI-062–AI-072 and is excluded from CO.
 - The exact individual catalogue descriptions are required before context source, privacy, visibility, expiry, summarization or retention semantics can be implemented safely. No owner decision is assumed beyond the missing acceptance text.
+
+
+## Platform reliability audit note (2026-11-05)
+
+- CO-091, CO-093 and CO-096 remain partial with bounded, tested implementations only; deployment dependencies and owner decisions are listed above.
+- CO-100 remains owner-blocked until the exact catalogue wording and conflict authority/merge/delete policy are supplied. No offline synchronization behavior was guessed.
+- CO-092, CO-094, CO-095 and CO-097–CO-099 have no individual feature descriptions in the repository; exact acceptance text is needed before implementation.
