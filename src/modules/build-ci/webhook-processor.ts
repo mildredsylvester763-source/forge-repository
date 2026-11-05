@@ -81,10 +81,37 @@ export class WebhookDeliveryProcessor {
       // The service re-checks trigger authorization independently for every pipeline.
       // Run creation is idempotent per workspace/pipeline/source/event, so retries after
       // partial progress cannot create duplicate runs.
+      let event = delivery.event;
+      if (event.kind === 'pull_request') {
+        let paths = event.changedFiles;
+        let complete = event.changedFilesComplete === true;
+        if (this.changedFiles && event.pullRequestNumber !== undefined) {
+          try {
+            const result = await this.changedFiles.resolve({
+              connectionId: delivery.connectionId,
+              provider: delivery.provider,
+              workspaceId: delivery.workspaceId,
+              repository: delivery.repository,
+              pullRequestNumber: event.pullRequestNumber,
+            });
+            paths = result.paths;
+            complete = result.complete;
+          } catch {
+            complete = false;
+          }
+        } else if (paths === undefined) {
+          complete = false;
+        }
+        event = {
+          ...event,
+          ...(paths !== undefined ? { changedFiles: paths } : {}),
+          changedFilesComplete: complete,
+        };
+      }
       const outcomes = await this.buildCi.triggerWorkspaceEvent({
         workspaceId: delivery.workspaceId,
         actorId: connection.actorId,
-        event: delivery.event,
+        event,
         createdAt: new Date(this.now()).toISOString(),
       });
       const processedAt = new Date(this.now()).toISOString();
