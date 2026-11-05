@@ -64,7 +64,7 @@ export class HibpBreachChecker implements BreachChecker {
       const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
       return { status: 'unavailable', reason: timedOut ? 'timeout' : 'network_error' };
     }
-    if (!response.ok) return { status: 'unavailable', reason: `http_${response.status}` };
+    if (response.status !== 200) return { status: 'unavailable', reason: `http_${response.status}` };
 
     let text: string;
     try {
@@ -73,19 +73,33 @@ export class HibpBreachChecker implements BreachChecker {
       return { status: 'unavailable', reason: 'bad_response' };
     }
 
-    for (const line of text.split('\n')) {
-      const [candidate, countRaw] = line.trim().split(':');
-      if (candidate !== suffix) continue;
-      const count = Number.parseInt(countRaw ?? '', 10);
-      // Padding entries are returned with a count of 0 and must be ignored.
-      if (Number.isFinite(count) && count > 0) return { status: 'breached', count };
+    // A malformed or empty 200 response is not evidence that a password is clean. Treat it
+    // as unavailable so registration's default fail-closed policy cannot be bypassed.
+    const seen = new Set<string>();
+    let breachedCount = 0;
+    for (const rawLine of text.split(/\\r?\\n/)) {
+      const line = rawLine.trim();
+      if (line.length === 0) continue;
+      const match = /^([A-F0-9]{35}):(\\d+)$/i.exec(line);
+      if (!match) return { status: 'unavailable', reason: 'invalid_range_response' };
+
+      const candidate = (match[1] ?? '').toUpperCase();
+      const count = Number(match[2]);
+      if (!Number.isSafeInteger(count) || count < 0 || seen.has(candidate)) {
+        return { status: 'unavailable', reason: 'invalid_range_response' };
+      }
+      seen.add(candidate);
+      if (candidate === suffix) breachedCount = count;
     }
-    return { status: 'clean' };
+
+    if (seen.size === 0) return { status: 'unavailable', reason: 'invalid_range_response' };
+    // Padding entries have a count of zero and must never be treated as breaches.
+    return breachedCount > 0 ? { status: 'breached', count: breachedCount } : { status: 'clean' };
   }
 }
 
 async function readLimited(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return '';
+  if (!response.body) throw new Error('missing response body');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
