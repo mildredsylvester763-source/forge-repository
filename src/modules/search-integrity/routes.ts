@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.ts';
-import { IdentityService, type PublicUser } from '../identity/index.ts';
+import { IdentityService, sessionCredential, type PublicUser } from '../identity/index.ts';
 import type { SearchIntegrityService } from './search-integrity-service.ts';
 
 function invalidField(field: string, reason: string): AppError {
@@ -16,7 +16,7 @@ function rejectUnknownFields(body: Record<string, unknown>, allowed: readonly st
 /** Every route requires a signed-in user; cache entries and packs belong to their owner. */
 export function searchIntegrityRoutes(service: SearchIntegrityService, identity: IdentityService, cookie: { name: string }): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<PublicUser> => {
-    const auth = await identity.authenticate(ctx.cookie(cookie.name));
+    const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
     return auth.user;
   };
