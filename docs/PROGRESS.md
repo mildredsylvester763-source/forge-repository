@@ -545,10 +545,26 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Added cryptographic secret generation (20–64 bytes), canonical Base32 encode/decode, RFC 6238 HMAC-SHA1/SHA256/SHA512 code generation, explicit 6/8 digit and time-period configuration, explicit ±0–2 step verification window and constant-time candidate comparison.
 - Verification returns the matched moving factor so a future persistence implementation can atomically prevent replay. No TOTP secret store or MFA enforcement was added.
 - Added an explicit-option `otpauth://totp` provisioning URI generator; the URI contains the secret and must never be logged.
-- Focused verification currently includes RFC 6238 SHA-1 vectors, base32, drift-window, invalid input and provisioning URI tests. One erroneous test-vector value was corrected against the published timestamp grouping; the latest rerun is pending.
+- Focused verification includes RFC 6238 SHA-1 vectors, Base32, drift-window, invalid-input and provisioning-URI tests. The corrected vector suite was included in CO-focused workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400), whose isolated CO typecheck and regression-test step both completed successfully (88 tests, 88 passed, 0 failed). This is focused-slice evidence, not full-repository CI or real-PostgreSQL proof.
 - **Classification: PARTIAL.** Enrollment/confirmation, encrypted secret persistence, step replay CAS, step-up or mandatory enforcement, recovery/backup codes and support reset workflows remain unimplemented.
 
 ### Cross-feature transition
 - CO-003 provider selection/credentials, issuer/JWKS policy, verified-email and linking rules remain attached to CO-003 and are not moved into CO-004.
 - CO-005 MFA enforcement, recovery and seed key custody remain attached to CO-005. The TOTP primitive does not make CO-005 complete.
 - CO-007 native token transport remains separate. No OIDC provider login or native refresh token was silently enabled.
+
+
+## CO-004 and CO-005 ordered audit checkpoint (2026-11-05)
+
+### CO-004 — enterprise SSO
+- **Classification: MISSING / OWNER-BLOCKED.** The Mistral branch has no CO-004 feature specification, SSO route, or dedicated SAML/OIDC federation implementation. The corresponding files are also absent from `main`; the existing provider-neutral OIDC authorization transaction for CO-003 is not enterprise SSO and is not counted.
+- Evidence: `docs/CO_APPROVAL_NEEDED.md` records customer-specific issuer metadata, signing certificates and tenant federation settings as not supplied. No SSO-specific HTTP surface or trust configuration is present in `src/modules/identity/routes.ts`.
+- Exact CO-004 Part 01 acceptance wording is unavailable. Do not choose SAML, OIDC, just-in-time provisioning, domain discovery, account linking or tenant-mapping semantics by assumption.
+- **Owner inputs needed:** exact CO-004 catalogue text; protocol(s) and supported federation profile; account/tenant provisioning and linking rules. Customer-specific issuer metadata, signing certificates, client credentials (if applicable), callback/ACS URLs and test IdP access are activation-time inputs.
+- Independent work may resume once the protocol/profile and provisioning contract are verified. No external SSO provider has been connected and no production activation is claimed.
+
+### CO-005 — multi-factor authentication
+- **Classification: PARTIAL.** `src/modules/identity/totp.ts` and `test/totp.test.ts` provide RFC 6238 TOTP primitives, canonical Base32 handling, explicit algorithm/digit/period/window parameters, constant-time code comparison and the matched moving factor required for future replay prevention. `docs/features/CO-005.md` records the missing enrollment, encrypted seed persistence, replay store, enforcement and recovery paths.
+- Verification correction: workflow [42024518400](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42024518400) completed the isolated CO typecheck and test step successfully; the run included `test/totp.test.ts` and reported 88/88 tests passing. The previous note that the corrected vector rerun was pending is superseded.
+- No production MFA claim: no secret persistence, replay prevention, enrollment, login enforcement, recovery or account reset flow is implemented. The exact catalogue wording and owner policy remain outstanding.
+- **Owner inputs needed:** optional/mandatory/step-up policy; accepted algorithms, digits, period and drift; enrollment confirmation; KMS/key custody and rotation/recovery; backup-code and assisted-reset authority. No TOTP seed is stored or exposed by this primitive-only implementation.
