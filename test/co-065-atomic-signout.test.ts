@@ -275,4 +275,61 @@ describe('CO-065 atomic identity audit writes', () => {
     assert.equal(after?.version, user.version);
   });
 
+  it('enforces the per-user session cap for concurrent sign-ins inside the SQLite transaction', async () => {
+    const db = openDatabase(':memory:');
+    const now = 1_800_000_600_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+      const events = new SqliteEventStore({ db, clock: () => now, logger: silentLogger });
+      const users = new SqliteUserStore(db);
+      const sessions = new SqliteSessionStore(db);
+      const uow = new SqliteIdentityUnitOfWork({ db, users, sessions, events, clock: () => now });
+      const user = await users.create({
+        email: 'session-cap@example.com',
+        displayName: 'Session Cap',
+        passwordHash: 'test-hash-only',
+        now,
+      });
+      const records: SessionRecord[] = ['f', '0'].map((letter) => ({
+        idHash: letter.repeat(64),
+        userId: user.id,
+        createdAt: now,
+        lastSeenAt: now,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'CO-001 session-cap concurrency test',
+        revokedAt: null,
+        revokedReason: null,
+      }));
+      const event = (record: SessionRecord): EventDraft => ({
+        type: 'identity.sign_in.succeeded',
+        version: 1,
+        actor: { kind: 'user', id: record.userId },
+        subject: { type: 'user', id: record.userId },
+        payload: { sessionRef: record.idHash.slice(0, 12), rehashed: false, passwordChangeRequired: false },
+        correlationId: `co-001-session-cap-${record.idHash.slice(0, 4)}`,
+      });
+
+      await Promise.all(records.map((session) => uow.startSession({
+        session,
+        maxPerUser: 1,
+        event: event(session),
+      })));
+
+      const active = await sessions.listActiveByUser(user.id, now);
+      assert.equal(active.length, 1, 'concurrent sign-ins must not exceed the configured cap');
+      const all = records.map(async (record) => sessions.findByHash(record.idHash));
+      const stored = await Promise.all(all);
+      assert.equal(stored.filter((record) => record?.revokedAt === null).length, 1);
+      assert.equal(stored.filter((record) => record?.revokedReason === 'session_limit').length, 1);
+      const committed = await events.readFrom(1, 100);
+      assert.equal(committed.filter((item) => item.type === 'identity.sign_in.succeeded').length, 2);
+      assert.equal((await events.verify()).ok, true);
+    } finally {
+      db.close();
+    }
+  });
+
+
 });
