@@ -26,6 +26,7 @@
     "test/webauthn.test.ts",
     "test/passkey-store.test.ts",
     "test/passkey-service.test.ts",
+    "test/passkey-routes.test.ts",
     "test/config.test.ts"
   ]
 }
