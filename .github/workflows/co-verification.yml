@@ -21,6 +21,7 @@ on:
       - 'test/password.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
+      - 'test/co-012-anomaly.test.ts'
       - '.github/workflows/co-verification.yml'
   pull_request:
     branches:
@@ -56,4 +57,5 @@ jobs:
             test/identity-throttle.test.ts \
             test/password.test.ts \
             test/identity-service.test.ts \
-            test/co-006-session-manager.test.ts
+            test/co-006-session-manager.test.ts \
+            test/co-012-anomaly.test.ts
