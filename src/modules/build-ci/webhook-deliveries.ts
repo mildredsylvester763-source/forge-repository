@@ -271,7 +271,7 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
       input.workspaceId, input.before ? new Date(input.before.receivedAt).toISOString() : null,
       input.before ? new Date(input.before.receivedAt).toISOString() : null,
       input.before?.deliveryRowId ?? null, input.limit + 1,
-    ) as DeliveryRow[];
+    ) as unknown as DeliveryRow[];
     const hasMore = rows.length > input.limit;
     const page = rows.slice(0, input.limit).map(deadLetterFromRow);
     const last = page[page.length - 1];
@@ -307,7 +307,7 @@ export class SqliteWebhookDeliveryStore implements WebhookDeliveryStore {
     if (!workspaceId.trim() || workspaceId.length > 128 || !deliveryRowId.trim() || deliveryRowId.length > 128) throw new TypeError('workspaceId and deliveryRowId are required');
     const rows = this.db.prepare(`SELECT event_id, delivery_row_id, workspace_id, actor_id, event_type, occurred_at, metadata_json
       FROM build_ci_webhook_delivery_events WHERE workspace_id = ? AND delivery_row_id = ?
-      ORDER BY occurred_at, event_id`).all(workspaceId, deliveryRowId) as WebhookDeliveryReplayEventRow[];
+      ORDER BY occurred_at, event_id`).all(workspaceId, deliveryRowId) as unknown as WebhookDeliveryReplayEventRow[];
     return Object.freeze(rows.map(replayEventFromRow));
   }
 
