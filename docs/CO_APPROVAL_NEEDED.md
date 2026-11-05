@@ -149,3 +149,20 @@ The register is append-only in meaning: a feature completion may change an item'
 - CO-007's token audience and native-client session lifecycle requirements remain attached to CO-007; they do not close or approve CO-009.
 - CO-006 session manager implementation remains distinct from CO-007 bearer transport. Its exact catalogue acceptance still needs reconciliation.
 - Earlier external requirements (CO-004 SSO metadata/certificates; CO-017 RLS decision; CO-018 KMS/key custody; CO-029–044 policy semantics; CO-045–050 graph ontology; CO-063/064/076 independent external anchor; CO-065 durable delivery; CO-093 shared rate-limit store; CO-096 R2 and restore objectives; CO-100 sync conflict policy) remain recorded and unchanged. No credential or owner approval was supplied by these implementations.
+
+## CO-002 passkey lifecycle: verified implementation and sealed activation register (2026-11-05)
+
+**Implementation evidence:** CO-002 backend ceremony, challenge/credential storage adapters, owner-scoped credential lifecycle, audit coupling, passkey-specific IP throttling and browser/native completion routes are present. Focused workflow 42024518400 passed 88/88 tests.
+
+| Dependency / external role | Required input or action | State | Approval evidence | Next action / feature |
+| --- | --- | --- | --- | --- |
+| Product owner | Exact CO-002 Part 01 acceptance text; supported authenticator and discoverable-credential requirements | NOT SUPPLIED / NOT APPROVED | No explicit acceptance recorded | Reconcile against original CO-002 catalogue before final feature acceptance |
+| Domain / DNS / hosting owner | Production RP ID, exact HTTPS origins, and evidence that FORGE deployment controls them | NOT SUPPLIED / ACTIVATION BLOCKED | No domain supplied or approved | Attach to CO-002 production activation; do not substitute test origins |
+| Security / identity owner | Attestation posture, algorithm allowlist, backup-eligible credential semantics and authenticator policy | IMPLEMENTATION DEFAULTS DOCUMENTED; OWNER APPROVAL NOT GRANTED | Focused tests are implementation evidence only | Review CO-002 security policy before enabling passkeys in production |
+| Database / platform operator | Real PostgreSQL service for migration, unique constraint, challenge-consumption CAS, audit transaction and restore integration tests | NOT CONFIGURED | No PostgreSQL integration secret/service supplied | Attach to CO-002 adapter acceptance and CO-064/065 evidence; retain SQLite tests as narrower proof |
+| SRE / platform operator | Shared rate-limit store and multi-replica consistency | NOT APPROVED / NOT CONFIGURED | Current throttle is in-memory | Move to CO-093 shared enforcement; do not claim cross-replica rate limiting |
+| Native app team / mobile security reviewer | HTTPS use and platform secure-storage integration for native passkey bearer session | NOT VERIFIED | Backend route returns opaque server-side session token only | Carry to CO-007 client integration; no token-at-rest approval inferred |
+
+**Positive approval: NOT GRANTED.** A passing focused workflow does not approve a production RP domain, domain ownership, attestation policy, algorithm policy, PostgreSQL deployment, distributed throttling or native-client secure storage.
+
+**Feature transition rule:** CO-002 remains the owner of its RP/origin/authenticator dependencies. The native bearer result is cross-referenced by CO-007 only for client transport; CO-007 retains its token audience, refresh/re-authentication, device enrollment and offline lifecycle decisions. No external staff member or approval record is removed when work advances.
