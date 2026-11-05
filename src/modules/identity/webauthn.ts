@@ -154,7 +154,10 @@ function validateRpOriginPair(rpId: string, origins: readonly string[]): void {
   validateOrigins(origins);
   for (const origin of origins) {
     const hostname = new URL(origin).hostname.toLowerCase();
-    if (hostname !== rpId && hostname !== 'localhost' && !hostname.endsWith('.' + rpId)) {
+    if (hostname === 'localhost' && rpId !== 'localhost') {
+      fail('rp_id_origin_mismatch', 'A localhost origin requires the localhost RP ID');
+    }
+    if (hostname !== rpId && !hostname.endsWith('.' + rpId)) {
       fail('rp_id_origin_mismatch', 'Every configured origin must be the RP ID or a subdomain of it');
     }
     if (rpId === 'localhost' && hostname !== 'localhost') {
@@ -471,8 +474,7 @@ export function verifyPasskeyAssertion(
     readonly credential: StoredPasskey;
   },
 ): VerifiedPasskeyAssertion {
-  validateRpId(input.config.rpId);
-  validateOrigins(input.config.origins);
+  validateRpOriginPair(input.config.rpId, input.config.origins);
   const credentialId = validateCredentialResponse(response.id, response.rawId, response.type);
   if (credentialId.toString('base64url') !== input.credential.credentialId) {
     fail('credential_id_mismatch', 'Assertion credential does not match the selected credential');
