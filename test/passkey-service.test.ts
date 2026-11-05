@@ -138,6 +138,8 @@ describe('CO-002 passkey service lifecycle', () => {
     assert.equal(authenticatedUser, user.id);
     assert.equal(result.sessionToken, session.sessionToken);
     assert.equal((await store.findCredentialById(credentialId))?.signCount, 1);
+    const audit = await events.readFrom(1, 10);
+    assert.ok(audit.some((entry) => entry.type === IdentityEvents.PasskeyAuthenticated), 'counter advancement must append a passkey authentication event');
     await assertAppError(() => service.completeAuthentication(response, meta), 401, 'invalid_credentials');
   });
 
