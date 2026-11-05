@@ -18,8 +18,6 @@
     "test/pg-helpers.ts",
     "test/sqlite-pool.ts",
     "test/password.test.ts",
-    "test/identity.test.ts",
-    "test/identity.sqlite.test.ts",
-    "test/identity.postgres.test.ts"
+    "test/identity-service.test.ts"
   ]
 }
