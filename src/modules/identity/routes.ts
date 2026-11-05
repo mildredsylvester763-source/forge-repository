@@ -48,6 +48,25 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
       },
     },
 
+    '/v1/auth/sessions': {
+      GET: async (ctx): Promise<HttpResult> => {
+        const sessions = await identity.listSessions(ctx.cookie(cookie.name));
+        return { status: 200, body: { sessions } };
+      },
+    },
+
+    '/v1/auth/sessions/revoke': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { sessionId: { max: 64 } });
+        const result = await identity.revokeSession(ctx.cookie(cookie.name), body.sessionId, meta(ctx));
+        return {
+          status: 200,
+          body: { revoked: result.revoked },
+          ...(result.revokedCurrentSession ? { headers: { 'Set-Cookie': clearCookie } } : {}),
+        };
+      },
+    },
+
     '/v1/auth/me': {
       GET: async (ctx): Promise<HttpResult> => {
         const auth = await identity.authenticate(ctx.cookie(cookie.name));
