@@ -530,3 +530,25 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - **Classification:** implementation-complete for the currently coded backend ceremony/lifecycle; not owner-accepted and not production-activated. Exact catalogue acceptance text is still unavailable. PostgreSQL adapter has not yet been exercised against a real PostgreSQL CI service. Shared/distributed throttle enforcement remains CO-093 work.
 - **Activation hold:** relying-party production domain/origins, customer domain-control evidence, accepted authenticator/attestation policy and production database proof remain attached to CO-002. None was supplied or inferred.
 - **Feature transition:** the native bearer completion path is recorded under CO-007 as an integration dependency, but it does not transfer or close CO-007 token audience/refresh/device decisions. CO-002 retains its own RP and authenticator dependencies.
+
+## CO-003 / CO-005 identity-extension implementation delta (2026-11-05)
+
+### CO-003 — provider-neutral OIDC groundwork
+- Added strict provider configuration validation and an authorization-code transaction core with cryptographic state, nonce and PKCE S256.
+- State and nonce are stored as SHA-256 digests. The PKCE verifier stays server-side in the in-memory transaction store; it is never returned from the authorization-start operation.
+- Callback state consumption is one-time; expiry, replay and wrong-provider callback attempts fail closed. Concurrent callback attempts can consume a state only once.
+- No provider, credentials, redirect URI, issuer, account-linking rule, external token exchange, ID-token/JWKS verifier or callback HTTP endpoint was invented.
+- Focused run [42025408190](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42025408190) passed typecheck and **94/94 tests** with the OIDC authorization transaction suite included.
+- **Classification: PARTIAL / NOT ACTIVATED.** The transaction store is in-memory and does not survive restart or support multi-replica routing; provider-specific validation and safe account linking remain open.
+
+### CO-005 — TOTP primitives
+- Added cryptographic secret generation (20–64 bytes), canonical Base32 encode/decode, RFC 6238 HMAC-SHA1/SHA256/SHA512 code generation, explicit 6/8 digit and time-period configuration, explicit ±0–2 step verification window and constant-time candidate comparison.
+- Verification returns the matched moving factor so a future persistence implementation can atomically prevent replay. No TOTP secret store or MFA enforcement was added.
+- Added an explicit-option `otpauth://totp` provisioning URI generator; the URI contains the secret and must never be logged.
+- Focused verification currently includes RFC 6238 SHA-1 vectors, base32, drift-window, invalid input and provisioning URI tests. One erroneous test-vector value was corrected against the published timestamp grouping; the latest rerun is pending.
+- **Classification: PARTIAL.** Enrollment/confirmation, encrypted secret persistence, step replay CAS, step-up or mandatory enforcement, recovery/backup codes and support reset workflows remain unimplemented.
+
+### Cross-feature transition
+- CO-003 provider selection/credentials, issuer/JWKS policy, verified-email and linking rules remain attached to CO-003 and are not moved into CO-004.
+- CO-005 MFA enforcement, recovery and seed key custody remain attached to CO-005. The TOTP primitive does not make CO-005 complete.
+- CO-007 native token transport remains separate. No OIDC provider login or native refresh token was silently enabled.
