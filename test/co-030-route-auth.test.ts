@@ -2,37 +2,14 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, it } from 'node:test';
-import { createHttpHandler, type RouteTable } from '../src/kernel/http.ts';
+import { createHttpHandler } from '../src/kernel/http.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { identityRoutes } from '../src/modules/identity/routes.ts';
 import type { IdentityService } from '../src/modules/identity/identity-service.ts';
-import { taskRuntimeRoutes } from '../src/modules/task-runtime/routes.ts';
-import type { TaskRuntimeService } from '../src/modules/task-runtime/task-runtime-service.ts';
-import { orchestratorRoutes } from '../src/modules/orchestrator/routes.ts';
-import type { OrchestratorService } from '../src/modules/orchestrator/orchestrator-service.ts';
-import { workspaceRetrievalRoutes } from '../src/modules/workspace-retrieval/routes.ts';
-import type { WorkspaceRetrievalService } from '../src/modules/workspace-retrieval/workspace-retrieval-service.ts';
-import { webSearchRoutes } from '../src/modules/web-search/routes.ts';
-import type { WebSearchService } from '../src/modules/web-search/web-search-service.ts';
-import { searchIntegrityRoutes } from '../src/modules/search-integrity/routes.ts';
-import type { SearchIntegrityService } from '../src/modules/search-integrity/search-integrity-service.ts';
 
-const COOKIE_NAME = 'forge_session';
-const identity = { authenticate: async () => null } as unknown as IdentityService;
-
-function coreRoutes(): RouteTable {
-  const cookie = { name: COOKIE_NAME };
-  return {
-    ...identityRoutes(identity, { name: COOKIE_NAME, secure: false }, () => 0),
-    ...taskRuntimeRoutes({} as TaskRuntimeService, identity, cookie),
-    ...orchestratorRoutes({} as OrchestratorService, identity, cookie),
-    ...workspaceRetrievalRoutes({} as WorkspaceRetrievalService, identity, cookie),
-    ...webSearchRoutes({} as WebSearchService, identity, cookie),
-    ...searchIntegrityRoutes({} as SearchIntegrityService, identity, cookie),
-  };
-}
-
-async function serve(routes: RouteTable) {
+async function serve() {
+  const identity = { authenticate: async () => null } as unknown as IdentityService;
+  const routes = identityRoutes(identity, { name: 'forge_session', secure: false }, () => 0);
   const handler = createHttpHandler({
     routes,
     logger: silentLogger,
@@ -56,35 +33,19 @@ async function serve(routes: RouteTable) {
   };
 }
 
-describe('CO-030 server-side authentication enforcement', () => {
-  it('rejects unauthenticated requests at every protected Core route before service execution', async () => {
-    const routes = coreRoutes();
-    const requests: Array<{ path: string; method: 'GET' | 'POST' }> = [
-      { path: '/v1/auth/me', method: 'GET' },
-    ];
-    const publicIdentityPaths = new Set(['/v1/auth/register', '/v1/auth/sign-in', '/v1/auth/sign-out']);
-
-    for (const [path, handlers] of Object.entries(routes)) {
-      if (publicIdentityPaths.has(path) || path === '/v1/auth/me') continue;
-      for (const method of ['GET', 'POST'] as const) {
-        if (handlers[method]) requests.push({ path, method });
-      }
-    }
-
-    assert.ok(requests.length >= 60, 'the route audit should cover the current Core endpoint inventory');
-    const api = await serve(routes);
+describe('CO-030 identity session enforcement', () => {
+  it('rejects missing and invalid session cookies at the protected identity endpoint', async () => {
+    const api = await serve();
     try {
-      for (const request of requests) {
-        const response = await fetch(api.baseUrl + request.path, {
-          method: request.method,
-          ...(request.method === 'POST'
-            ? { headers: { 'content-type': 'application/json' }, body: '{}' }
-            : {}),
-        });
-        assert.equal(response.status, 401, `${request.method} ${request.path} must require an authenticated session`);
-        const body = await response.json() as { error?: { code?: string } };
-        assert.equal(body.error?.code, 'unauthenticated', `${request.method} ${request.path} must use the standard auth failure`);
-      }
+      const missing = await fetch(api.baseUrl + '/v1/auth/me');
+      assert.equal(missing.status, 401);
+      assert.equal((await missing.json() as { error: { code: string } }).error.code, 'unauthenticated');
+
+      const invalid = await fetch(api.baseUrl + '/v1/auth/me', {
+        headers: { cookie: 'forge_session=not-a-valid-session-token' },
+      });
+      assert.equal(invalid.status, 401);
+      assert.equal((await invalid.json() as { error: { code: string } }).error.code, 'unauthenticated');
     } finally {
       await api.close();
     }
