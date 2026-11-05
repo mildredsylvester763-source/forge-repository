@@ -332,4 +332,68 @@ describe('CO-065 atomic identity audit writes', () => {
   });
 
 
+  it('rolls back session-cap revocations when the sign-in audit event fails', async () => {
+    const db = openDatabase(':memory:');
+    const now = 1_800_000_700_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+      const events = new SqliteEventStore({ db, clock: () => now, logger: silentLogger });
+      const users = new SqliteUserStore(db);
+      const sessions = new SqliteSessionStore(db);
+      const uow = new SqliteIdentityUnitOfWork({ db, users, sessions, events, clock: () => now });
+      const user = await users.create({
+        email: 'session-cap-rollback@example.com',
+        displayName: 'Session Cap Rollback',
+        passwordHash: 'test-hash-only',
+        now,
+      });
+      const existing: SessionRecord = {
+        idHash: '1'.repeat(64),
+        userId: user.id,
+        createdAt: now - 1000,
+        lastSeenAt: now - 1000,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'existing session',
+        revokedAt: null,
+        revokedReason: null,
+      };
+      const incoming: SessionRecord = {
+        ...existing,
+        idHash: '2'.repeat(64),
+        createdAt: now,
+        lastSeenAt: now,
+        userAgent: 'new session',
+      };
+      await sessions.insert(existing);
+      const invalidEvent: EventDraft = {
+        type: 'INVALID EVENT TYPE',
+        version: 1,
+        actor: { kind: 'user', id: user.id },
+        subject: { type: 'user', id: user.id },
+        payload: {},
+        correlationId: 'co-001-session-cap-rollback',
+      };
+      await assert.rejects(
+        () => uow.startSession({ session: incoming, maxPerUser: 1, event: invalidEvent }),
+        /invalid event type/,
+      );
+      assert.equal((await sessions.findByHash(existing.idHash))?.revokedAt, null);
+      assert.equal(await sessions.findByHash(incoming.idHash), null);
+
+      await uow.startSession({
+        session: incoming,
+        maxPerUser: 1,
+        event: { ...invalidEvent, type: 'identity.sign_in.succeeded', payload: { sessionRef: incoming.idHash.slice(0, 12), rehashed: false, passwordChangeRequired: false } },
+      });
+      assert.equal((await sessions.findByHash(existing.idHash))?.revokedReason, 'session_limit');
+      assert.equal((await sessions.findByHash(incoming.idHash))?.revokedAt, null);
+      assert.equal((await sessions.listActiveByUser(user.id, now)).length, 1);
+    } finally {
+      db.close();
+    }
+  });
+
+
 });
