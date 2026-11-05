@@ -83,6 +83,77 @@ describe('CO-065 atomic identity audit writes', () => {
   });
 
 
+  it('rolls back password rehash and session creation when the sign-in event cannot be written', async () => {
+    const db = openDatabase(':memory:');
+    const now = 1_800_000_050_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+      const events = new SqliteEventStore({ db, clock: () => now, logger: silentLogger });
+      const users = new SqliteUserStore(db);
+      const sessions = new SqliteSessionStore(db);
+      const uow = new SqliteIdentityUnitOfWork({ db, users, sessions, events, clock: () => now });
+      const user = await users.create({
+        email: 'atomic-rehash@example.com',
+        displayName: 'Atomic Rehash',
+        passwordHash: 'old-test-hash',
+        now,
+      });
+      const session: SessionRecord = {
+        idHash: 'd'.repeat(64),
+        userId: user.id,
+        createdAt: now,
+        lastSeenAt: now,
+        expiresAt: now + 60_000,
+        ip: '127.0.0.1',
+        userAgent: 'CO-065 rehash transaction test',
+        revokedAt: null,
+        revokedReason: null,
+      };
+      const invalidEvent: EventDraft = {
+        type: 'INVALID EVENT TYPE',
+        version: 1,
+        actor: { kind: 'user', id: user.id },
+        subject: { type: 'user', id: user.id },
+        payload: { rehashed: true },
+        correlationId: 'co-065-atomic-rehash-failure',
+      };
+
+      await assert.rejects(
+        () => uow.startSession({
+          session,
+          revokeIdHashes: [],
+          userUpdate: { userId: user.id, patch: { passwordHash: 'new-test-hash' }, now },
+          event: invalidEvent,
+        }),
+        /invalid event type/,
+      );
+      const afterFailure = await users.findById(user.id);
+      assert.equal(afterFailure?.passwordHash, 'old-test-hash');
+      assert.equal(afterFailure?.version, user.version);
+      assert.equal(await sessions.findByHash(session.idHash), null);
+      assert.equal((await events.readFrom(1, 100)).length, 0);
+
+      await uow.startSession({
+        session,
+        revokeIdHashes: [],
+        userUpdate: { userId: user.id, patch: { passwordHash: 'new-test-hash' }, now },
+        event: {
+          ...invalidEvent,
+          type: 'identity.sign_in.succeeded',
+          correlationId: 'co-065-atomic-rehash-success',
+        },
+      });
+      assert.equal((await users.findById(user.id))?.passwordHash, 'new-test-hash');
+      assert.equal((await sessions.findByHash(session.idHash))?.revokedAt, null);
+      const committed = await events.readFrom(1, 100);
+      assert.equal(committed.filter((item) => item.type === 'identity.sign_in.succeeded').length, 1);
+      assert.equal((await events.verify()).ok, true);
+    } finally {
+      db.close();
+    }
+  });
+
   it('rolls back password-compromise state when its security event cannot be written', async () => {
     const db = openDatabase(':memory:');
     const now = 1_800_000_100_000;
