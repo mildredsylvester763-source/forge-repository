@@ -216,3 +216,25 @@ The role/person dependencies above are retained as durable records. Advancing to
 | CO-014 | Exact CO-014 Part 01 description and acceptance criteria | No feature title or behavior is evidenced in the repository; guessing would fabricate requirements. | NOT SUPPLIED |
 
 The existing mail-provider, KMS/key-custody and external IdP dependencies remain in the register. These entries do not replace or discharge those earlier dependencies.
+
+
+## CO-015–CO-028 individual audit carry-forward (2026-11-05)
+
+| Feature | Owner input required | Reason / safe continuation |
+| --- | --- | --- |
+| CO-015 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists; do not invent workspace lifecycle semantics. |
+| CO-016 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists; do not invent membership or invitation semantics. |
+| CO-017 | Explicit decision on PostgreSQL RLS as a second tenant-isolation boundary, including database roles/connection strategy | Tenant scoping must be designed without accidentally bypassing or weakening isolation. App-side scoping remains the recorded initial direction; RLS is not approved. |
+| CO-018 | KMS/owner-managed key source and approval for rotation, recovery, service access and backup encryption | No application key-management/encryption layer exists; secret and backup protection depends on this boundary. |
+| CO-019 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-020 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-021 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-022 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-023 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-024 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-025 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-026 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-027 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+| CO-028 | Exact Part 01 description and acceptance criteria | No dedicated implementation evidence exists. |
+
+The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplying the original catalogue text does not by itself approve the RLS or KMS decisions; those approvals must be explicit and separately recorded.
