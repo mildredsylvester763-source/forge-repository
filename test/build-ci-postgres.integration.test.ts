@@ -459,12 +459,23 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     assert.ok(deadLetterPage.items.some((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId));
     assert.equal(deadLetterPage.items.find((item) => item.deliveryRowId === deadLetterClaim.deliveryRowId)?.lastError,
       'Webhook delivery processing failed.');
-    assert.deepEqual(await webhookDeliveries.replayFailed({
-      workspaceId: 'pg-workspace',
-      deliveryRowId: deadLetterClaim.deliveryRowId,
-      actorId: 'integration-test',
-      replayedAt: '2026-11-04T00:16:00.000Z',
-    }), { replayed: true, previousAttempts: 1 });
+    const concurrentReplayResults = await Promise.all([
+      webhookDeliveries.replayFailed({
+        workspaceId: 'pg-workspace',
+        deliveryRowId: deadLetterClaim.deliveryRowId,
+        actorId: 'integration-test',
+        replayedAt: '2026-11-04T00:16:00.000Z',
+      }),
+      webhookDeliveries.replayFailed({
+        workspaceId: 'pg-workspace',
+        deliveryRowId: deadLetterClaim.deliveryRowId,
+        actorId: 'integration-test',
+        replayedAt: '2026-11-04T00:16:01.000Z',
+      }),
+    ]);
+    assert.equal(concurrentReplayResults.filter((result) => result.replayed).length, 1);
+    assert.equal(concurrentReplayResults.filter((result) => !result.replayed).length, 1);
+    assert.equal(concurrentReplayResults.find((result) => result.replayed)?.previousAttempts, 1);
     const postgresReplay = await webhookDeliveries.listReplayEvents('pg-workspace', deadLetterClaim.deliveryRowId);
     assert.equal(postgresReplay.length, 1);
     assert.equal(postgresReplay[0]?.actorId, 'integration-test');
