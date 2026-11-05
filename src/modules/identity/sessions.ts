@@ -151,7 +151,7 @@ export class SessionService {
     const now = this.clock();
     if (record.revokedAt !== null) return null;
     if (now >= record.expiresAt) return null;
-    if (now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
+    if (record.lastSeenAt > now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
     if (now - record.lastSeenAt > TOUCH_INTERVAL_MS) record = (await this.store.touch(idHash, now)) ?? record;
     return record;
   }
@@ -161,7 +161,7 @@ export class SessionService {
     const now = this.clock();
     const records = await this.store.listActiveByUser(userId, now);
     return records
-      .filter((record) => record.revokedAt === null && record.expiresAt > now && now - record.lastSeenAt < this.config.idleTimeoutMs)
+      .filter((record) => record.revokedAt === null && record.expiresAt > now && record.lastSeenAt <= now && now - record.lastSeenAt < this.config.idleTimeoutMs)
       .sort((a, b) => b.lastSeenAt - a.lastSeenAt || b.createdAt - a.createdAt || a.idHash.localeCompare(b.idHash));
   }
 
@@ -170,7 +170,7 @@ export class SessionService {
     const record = await this.store.findByHash(idHash);
     if (!record || record.userId !== userId || record.revokedAt !== null) return null;
     const now = this.clock();
-    if (record.expiresAt <= now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
+    if (record.expiresAt <= now || record.lastSeenAt > now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
     return record;
   }
 
