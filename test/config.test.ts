@@ -57,6 +57,27 @@ describe('configuration safety', () => {
     assert.throws(() => loadConfig({ FORGE_ENV: 'development', FORGE_BACKUP_DIR: '/tmp/b' }), ConfigError);
     assert.throws(() => loadConfig({ FORGE_ENV: 'development', FORGE_DATABASE_URL: 'postgresql://localhost/f', FORGE_BACKUP_DIR: '/tmp/b' }), ConfigError);
   });
+  it('requires WebAuthn RP ID and exact origins together and validates their relationship', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_WEBAUTHN_RP_ID: 'forge.example' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_WEBAUTHN_ORIGINS: 'https://forge.example' })), ConfigError);
+    assert.throws(() => loadConfig(prod({
+      FORGE_WEBAUTHN_RP_ID: 'forge.example',
+      FORGE_WEBAUTHN_ORIGINS: 'https://attacker.example',
+    })), ConfigError);
+    assert.throws(() => loadConfig(prod({
+      FORGE_WEBAUTHN_RP_ID: 'forge.example',
+      FORGE_WEBAUTHN_ORIGINS: 'https://forge.example,https://forge.example',
+    })), ConfigError);
+    const configured = loadConfig(prod({
+      FORGE_WEBAUTHN_RP_ID: 'forge.example',
+      FORGE_WEBAUTHN_ORIGINS: 'https://forge.example,https://app.forge.example',
+      FORGE_WEBAUTHN_RP_NAME: 'FORGE Workspace',
+    }));
+    assert.equal(configured.passkeys.rpId, 'forge.example');
+    assert.deepEqual(configured.passkeys.origins, ['https://forge.example', 'https://app.forge.example']);
+    assert.equal(configured.passkeys.rpName, 'FORGE Workspace');
+  });
+
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
     assert.equal(c.password.currentPepperVersion, 3);
