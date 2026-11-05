@@ -123,15 +123,10 @@ export class SessionService {
   async prepare(
     userId: string,
     meta: { ip: string; userAgent: string },
-  ): Promise<{ token: string; session: SessionRecord; revokeIdHashes: string[] }> {
+  ): Promise<{ token: string; session: SessionRecord; maxPerUser: number }> {
     const now = this.clock();
-    const active = await this.store.listActiveByUser(userId, now);
-    const revokeIdHashes: string[] = [];
-    if (active.length >= this.config.maxPerUser) {
-      const surplus = [...active].sort((a, b) => a.lastSeenAt - b.lastSeenAt).slice(0, active.length - this.config.maxPerUser + 1);
-      revokeIdHashes.push(...surplus.map((x) => x.idHash));
-    }
-    // A fresh token on every sign-in: session fixation is impossible by construction.
+    // The unit of work enforces the cap inside the same transaction as session and event creation.
+    // Reading the active-session list here would be stale under concurrent sign-ins.
     const token = randomBytes(32).toString('base64url');
     const session: SessionRecord = {
       idHash: hashSessionToken(token),
@@ -144,7 +139,7 @@ export class SessionService {
       revokedAt: null,
       revokedReason: null,
     };
-    return { token, session, revokeIdHashes };
+    return { token, session, maxPerUser: this.config.maxPerUser };
   }
 
   async validate(token: string | undefined): Promise<SessionRecord | null> {
