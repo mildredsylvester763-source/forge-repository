@@ -165,7 +165,7 @@ describe('CO-002 passkey service lifecycle', () => {
     const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
     const store = new InMemoryPasskeyStore(events);
     const identity = { signInWithPasskey: async () => { throw new Error('not used'); } } as unknown as IdentityService;
-    const service = new PasskeyService({ store, identity, clock: () => now, config });
+    const service = new PasskeyService({ store, identity, throttle, clock: () => now, config });
     const credentialId = randomBytes(32).toString('base64url');
     await store.createCredential({
       credentialId, userId: user.id, publicKeySpki: Buffer.from('private-not-returned').toString('base64'),
