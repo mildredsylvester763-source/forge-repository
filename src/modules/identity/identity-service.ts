@@ -341,6 +341,21 @@ export class IdentityService {
     };
   }
 
+  /** Rate-limit public passkey challenge issuance independently from password sign-in. */
+  async checkPasskeyOptions(meta: RequestMeta): Promise<void> {
+    const decision = this.d.throttle.checkIp('passkey', meta.ip);
+    if (!decision.allowed) {
+      await this.emitBestEffort(
+        IdentityEvents.SignInThrottled,
+        { kind: 'anonymous', id: meta.ip },
+        { type: 'ip', id: meta.ip },
+        { scope: 'passkey_options' },
+        meta,
+      );
+      throw tooManyAttempts(decision.retryAfterMs);
+    }
+  }
+
   /** Complete a passkey-authenticated sign-in without running password-only checks. */
   async signInWithPasskey(userId: string, meta: RequestMeta): Promise<SignInResult> {
     const anon: Actor = { kind: 'anonymous', id: meta.ip };
