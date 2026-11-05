@@ -37,7 +37,7 @@ export interface PasskeyStore {
   createCredential(record: PasskeyCredentialRecord, event: EventDraft): Promise<void>;
   findCredentialById(credentialId: string): Promise<PasskeyCredentialRecord | null>;
   listCredentialsForUser(userId: string): Promise<PasskeyCredentialRecord[]>;
-  updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number }): Promise<boolean>;
+  updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number; event: EventDraft }): Promise<boolean>;
   deleteCredentialForUser(userId: string, credentialId: string, event: EventDraft): Promise<boolean>;
 }
 
@@ -75,7 +75,16 @@ export class InMemoryPasskeyStore implements PasskeyStore {
   private readonly challenges = new Map<string, PasskeyChallengeRecord>();
   private readonly credentials = new Map<string, PasskeyCredentialRecord>();
   private readonly events: EventStore;
+  private queue: Promise<void> = Promise.resolve();
   constructor(events: EventStore) { this.events = events; }
+
+  private async exclusive<T>(operation: () => Promise<T> | T): Promise<T> {
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try { return await operation(); } finally { release(); }
+  }
 
   async createChallenge(record: PasskeyChallengeRecord): Promise<void> {
     validateChallenge(record);
@@ -104,17 +113,20 @@ export class InMemoryPasskeyStore implements PasskeyStore {
     return [...this.credentials.values()].filter((r) => r.userId === userId)
       .sort((a, b) => a.createdAt - b.createdAt || a.credentialId.localeCompare(b.credentialId));
   }
-  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number }): Promise<boolean> {
-    const current = this.credentials.get(args.credentialId);
-    if (!current || current.userId !== args.userId) return false;
-    if (current.signCount > 0 && args.signCount > 0 && args.signCount <= current.signCount) return false;
-    this.credentials.set(args.credentialId, {
-      ...current,
-      signCount: args.signCount > current.signCount ? args.signCount : current.signCount,
-      backedUp: args.backedUp,
-      lastUsedAt: args.now,
+  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number; event: EventDraft }): Promise<boolean> {
+    return this.exclusive(async () => {
+      const current = this.credentials.get(args.credentialId);
+      if (!current || current.userId !== args.userId) return false;
+      if (current.signCount > 0 && args.signCount > 0 && args.signCount <= current.signCount) return false;
+      await this.events.append(args.event);
+      this.credentials.set(args.credentialId, {
+        ...current,
+        signCount: args.signCount > current.signCount ? args.signCount : current.signCount,
+        backedUp: args.backedUp,
+        lastUsedAt: args.now,
+      });
+      return true;
     });
-    return true;
   }
   async deleteCredentialForUser(userId: string, id: string, event: EventDraft): Promise<boolean> {
     const current = this.credentials.get(id);
@@ -228,12 +240,16 @@ export class SqlitePasskeyStore implements PasskeyStore {
   async listCredentialsForUser(userId: string): Promise<PasskeyCredentialRecord[]> {
     return (this.listCredentials.all(userId) as unknown as CredentialRow[]).map(toCredential);
   }
-  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number }): Promise<boolean> {
-    const result = this.updateCredential.run(
-      args.signCount, args.signCount, args.backedUp ? 1 : 0, args.now,
-      args.credentialId, args.userId, args.signCount, args.signCount,
-    );
-    return Number(result.changes) === 1;
+  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number; event: EventDraft }): Promise<boolean> {
+    const committed = transaction(this.db, () => {
+      const result = this.updateCredential.run(
+        args.signCount, args.signCount, args.backedUp ? 1 : 0, args.now,
+        args.credentialId, args.userId, args.signCount, args.signCount,
+      );
+      return Number(result.changes) === 1 ? this.events.appendSync(args.event) : null;
+    });
+    if (committed) this.events.notify(committed);
+    return committed !== null;
   }
   async deleteCredentialForUser(userId: string, id: string, event: EventDraft): Promise<boolean> {
     const committed = transaction(this.db, () => {
@@ -308,14 +324,19 @@ export class PostgresPasskeyStore implements PasskeyStore {
     const result = await this.pool.query<CredentialRow>('SELECT * FROM passkey_credentials WHERE user_id = $1 ORDER BY created_at, credential_id', [userId]);
     return result.rows.map(toCredential);
   }
-  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number }): Promise<boolean> {
-    const result = await this.pool.query(
-      'UPDATE passkey_credentials ' +
-      'SET sign_count = CASE WHEN $1 > sign_count THEN $1 ELSE sign_count END, backed_up = $2, last_used_at = $3 ' +
-      'WHERE credential_id = $4 AND user_id = $5 AND ($1 = 0 OR sign_count = 0 OR sign_count < $1)',
-      [args.signCount, args.backedUp, args.now, args.credentialId, args.userId],
-    );
-    return result.rowCount === 1;
+  async updateAfterAssertion(args: { userId: string; credentialId: string; signCount: number; backedUp: boolean; now: number; event: EventDraft }): Promise<boolean> {
+    let committed: EventEnvelope | null = null;
+    await withTransaction(this.pool, async (conn) => {
+      const result = await conn.query(
+        'UPDATE passkey_credentials ' +
+        'SET sign_count = CASE WHEN $1 > sign_count THEN $1 ELSE sign_count END, backed_up = $2, last_used_at = $3 ' +
+        'WHERE credential_id = $4 AND user_id = $5 AND ($1 = 0 OR sign_count = 0 OR sign_count < $1)',
+        [args.signCount, args.backedUp, args.now, args.credentialId, args.userId],
+      );
+      if (result.rowCount === 1) committed = await this.events.appendIn(conn, args.event);
+    });
+    if (committed) this.events.notify(committed);
+    return committed !== null;
   }
   async deleteCredentialForUser(userId: string, id: string, event: EventDraft): Promise<boolean> {
     let committed: EventEnvelope | null = null;
