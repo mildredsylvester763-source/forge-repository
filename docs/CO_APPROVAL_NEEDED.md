@@ -54,3 +54,10 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 
 - CO-015–CO-028 have no dedicated workspace/tenant implementation evidence in either branch. The Mistral `workspace-retrieval` module is an AI retrieval feature and is excluded from CO.
 - CO-017 remains owner-blocked on the application-only versus PostgreSQL RLS decision. CO-018 remains owner-blocked on the KMS/key source, rotation and recovery boundary. The exact original feature wording for the other IDs in this range is absent; do not invent membership, invitation, ownership-transfer, deletion or billing semantics.
+
+
+## Permissions and policy audit note (2026-11-05)
+
+- CO-030 is partial: identity session validation exists for `GET /v1/auth/me`, but this is not proof of resource-level or tenant-level authorization.
+- CO-029 and CO-031–CO-044 have no dedicated CO permissions/policy implementation evidence in either branch. The AI web-search domain-policy engine is not CO and is not counted.
+- Exact feature-level catalogue wording and the owner's role, permission, delegation and policy-precedence decisions are required before adding authorization rules.

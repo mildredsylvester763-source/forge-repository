@@ -362,3 +362,25 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
   - CO-027: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-028: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
 - No guessed membership, invitation, transfer, deletion, billing-owner or tenant-lifecycle semantics were implemented. The approval register records the missing catalogue text and the owner decisions that would change schema/security behavior. There is no safe feature-level code change to make until those contracts are supplied; independent CO work remains available elsewhere.
+
+
+### CO-029–CO-044 permissions and policy audit (2026-11-05)
+- Compared `main` and `mistral` before this audit. Neither source tree contains a CO authorization/permissions/roles/policy module. The only matching Mistral path outside identity is `src/modules/web-search/engine/domain-policy.ts`, which belongs to the AI web-search feature range and is excluded from CO. `src/modules/identity/routes.ts` and `src/kernel/http.ts` are byte-identical across branches.
+- Individual evidence-based classifications:
+  - CO-029: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-030: PARTIAL. `IdentityService.authenticate()` is used by `GET /v1/auth/me` and the focused regression checks missing/invalid identity session cookies. This is identity-session authentication only; no CO resource/tenant authorization policy module or reusable policy guard is evidenced.
+  - CO-031: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-032: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-033: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-034: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-035: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-036: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-037: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-038: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-039: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-040: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-041: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-042: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-043: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+  - CO-044: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
+- The approval register still blocks security-sensitive policy implementation on exact catalogue wording and the owner's role, permission, delegation and precedence model. No roles, inheritance rules or allow precedence were invented. No safe independent CO policy code change is currently defined by the repository documents.
