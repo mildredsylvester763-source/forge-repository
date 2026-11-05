@@ -5,6 +5,7 @@ import { InMemoryEventStore, type EventStore } from './kernel/events.ts';
 import { createHttpHandler, type RouteTable } from './kernel/http.ts';
 import { createLogger, type Logger } from './kernel/logger.ts';
 import { kernelMigrations } from './kernel/migrations.ts';
+import { healthRoutes } from './kernel/health.ts';
 import { migrate, openDatabase, type Database } from './kernel/sqlite.ts';
 import { PostgresEventStore } from './kernel/postgres-events.ts';
 import type { SqlPool } from './kernel/sql.ts';
@@ -284,13 +285,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const aiTraining = new AiTrainingService({ store: storage.aiTraining, events, clock });
 
   const routes: RouteTable = {
-    '/healthz': { GET: async () => ({ status: 200, body: { status: 'ok' } }) },
-    '/readyz': {
-      GET: async () => {
-        const head = await events.head(); // also proves the database answers
-        return { status: 200, body: { status: 'ready', auditSeq: head.seq } };
-      },
-    },
+    ...healthRoutes(events, logger),
     ...identityRoutes(identity, config.cookie, clock),
     ...taskRuntimeRoutes(tasks, identity, config.cookie),
     ...orchestratorRoutes(orchestrator, identity, config.cookie),
