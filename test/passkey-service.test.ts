@@ -70,7 +70,7 @@ describe('CO-002 passkey service lifecycle', () => {
     const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
     const store = new InMemoryPasskeyStore(events);
     const identity = { signInWithPasskey: async () => { throw new Error('not used'); } } as unknown as IdentityService;
-    const service = new PasskeyService({ store, identity, clock: () => now, config });
+    const service = new PasskeyService({ store, identity, throttle, clock: () => now, config });
     const options = await service.beginRegistration(user, meta);
     assert.equal(options.rp.id, config.rpId);
     assert.equal(options.user.name, user.email);
@@ -135,7 +135,7 @@ describe('CO-002 passkey service lifecycle', () => {
       },
     } as unknown as IdentityService;
     const service = new PasskeyService({ store, identity, throttle, clock: () => now + 1000, config });
-    const options = await service.beginAuthentication();
+    const options = await service.beginAuthentication(meta);
     const client = clientData(options.challenge);
     const authData = authenticatorData(config.rpId, 1);
     const signedBytes = Buffer.concat([authData, hash(client)]);
