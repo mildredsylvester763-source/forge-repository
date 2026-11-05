@@ -42,3 +42,9 @@ Secrets must be supplied through deployment secret configuration, never committe
 ## Catalogue source limitation
 
 The repository currently contains docs/features/CO-001.md but no individual feature specifications for CO-002–CO-100. docs/PROGRESS.md contains section ranges and selected notes only. The original Part 01 catalogue remains the acceptance authority when its exact text is available. Until then, feature-level requirements not explicitly written in repository docs are marked acceptance-criteria-unverified rather than invented.
+
+## Identity-range audit note (2026-11-05)
+
+- CO-006 is partial, not complete: active-session listing/revocation primitives and transactional session-cap enforcement exist, but no user-facing session manager route or accepted device/revocation behavior is documented.
+- CO-011 is partial, not complete: the event actor enum includes `agent`, but there is no per-agent credential or identity lifecycle.
+- CO-005–CO-014 exact individual catalogue descriptions remain unavailable. Do not infer the unnamed IDs from the section heading. The safe work is to fix existing demonstrable defects and wait for the exact acceptance text or owner-approved semantics before adding security-sensitive flows.

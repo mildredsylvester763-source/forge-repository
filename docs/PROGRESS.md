@@ -319,3 +319,26 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - The first repository run for commit `9a9bd3a60bdcfd0af88f6292e9447f467f7ea4a0`, focused workflow [42006508243](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42006508243), failed during the isolated TypeScript step; its test step was skipped. The full CI typecheck also failed and skipped the general test step.
 - Root causes in this change: the new `tsconfig.co.json` include entry was missing a trailing comma, and the test supplied a minimal logger object instead of the complete `Logger` contract.
 - Correction: restore valid JSON and use the repository's `silentLogger` implementation in the new test. No AI/TQ source was changed. The five-test isolated harness and strict isolated typecheck pass after this correction; the repository focused workflow must be rerun before this slice is verified.
+
+
+### CO-076 verification result (2026-11-05)
+- Corrected commit `d8df572ea1f59ddf92a0382a489b105ac81881bf` passed focused workflow [42006742090](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42006742090): isolated CO TypeScript check and the independent CO kernel/identity regression step both succeeded. The new CO-076 test file contains five assertions covering the anchor contract and truncation case.
+- Full repository CI [42006742138](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42006742138) failed at `npm run typecheck`; the general test step was skipped. This is the already recorded repository-wide blocker in the AI-only `src/modules/ai-training/sqlite-stores.ts`; no AI/TQ file was changed in this run. Do not count the general suite as executed.
+- CO-076 remains PARTIAL despite the verified pure helper: there is still no independent anchor persistence, checkpoint update coordination, destination, retention or recovery policy.
+
+### CO-002–CO-014 identity audit (2026-11-05)
+- Compared `main` and `mistral` identity trees and source before this audit. Both branches contain the same 16 identity source files; neither adds a passkey, OAuth/social, SAML/SSO, MFA, recovery, native-token or agent-identity module. `src/modules/identity/routes.ts`, `index.ts`, `events.ts` and `src/config.ts` are identical across branches. Mistral's `identity-service.ts` and `sessions.ts` differ because of its transactional sign-in/sign-out/session-cap work, not because the missing identity features have been added.
+- `src/modules/identity/routes.ts` exposes only register, sign-in, sign-out and `GET /v1/auth/me`. No session-management, MFA, recovery, token or external-identity route was found. The identity tree contains no passkey/OAuth/SAML/TOTP/recovery source file.
+- Individual evidence-based classifications (exact Part 01 wording is still absent for this range):
+  - CO-002: MISSING implementation evidence for passkeys; owner must confirm supported authenticators and relying-party origins.
+  - CO-003: MISSING implementation evidence for social sign-in; provider choice, OAuth origins and client credentials are owner-dependent.
+  - CO-004: MISSING implementation evidence for enterprise SSO; customer-specific SAML/OIDC metadata and tenancy/provisioning semantics are required.
+  - CO-005: MISSING MFA implementation. `docs/features/CO-001.md` only identifies the integration point after password verification and before session preparation; factor and recovery policy remain unspecified.
+  - CO-006: PARTIAL. `SessionStore.listActiveByUser()`, `revokeAllForUser()`, and transactional per-user session-cap enforcement exist in `src/modules/identity/sessions.ts` and the identity unit of work. There is no session-manager route or documented device/revocation UX contract.
+  - CO-007 and CO-009: MISSING native-client token implementation evidence. CO-001 documentation says Android and desktop tokens belong to these IDs but does not state which ID maps to which client; no bearer-token audience/lifecycle contract or route exists.
+  - CO-008: MISSING recovery/password-change endpoints. CO-001 documentation explicitly says there is no password-change endpoint and identifies session revocation/password-compromise clearing as the later integration point. Recovery email provider credentials are still required.
+  - CO-010: MISSING implementation evidence; the repository does not identify this individual feature's name or acceptance criteria.
+  - CO-011: PARTIAL. The shared event envelope permits `Actor.kind = 'agent'`, but no per-agent identity, credential or lifecycle implementation exists.
+  - CO-012: MISSING anomaly-detection implementation. Identity sign-in events exist and are subscribable, but no anomaly detector/subscriber exists.
+  - CO-013 and CO-014: MISSING implementation evidence; individual feature names and acceptance criteria are not present in repository documentation.
+- No CO-002–CO-014 implementation was guessed. Owner-dependent provider, origin, SSO, MFA/recovery, native-token and agent-identity decisions remain isolated in `docs/CO_APPROVAL_NEEDED.md`; unrelated CO work continues.
