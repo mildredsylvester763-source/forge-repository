@@ -316,3 +316,20 @@ These items are deployment/owner validation inputs, not reasons to pause provide
 | Native app validation | Native client secure credential storage and HTTPS integration test | Requires real native client integration | Server bearer-session path exists; no native client has been validated |
 
 The user has stated that provider credentials and deployment values will be supplied after the backend/application is built. Do not block independent CO implementation waiting for them. Do not fabricate secrets, origins, accounts, owner approvals or production test results.
+
+
+## CO-003 provider-neutral OIDC external validation register (2026-11-06)
+
+| Item | Required input / owner validation | Why | Safe work already completed / next step |
+| --- | --- | --- | --- |
+| Provider selection | Owner-approved provider shortlist and provider administrator accounts | Do not assume Google, Apple, GitHub or another provider is the intended product choice | Provider-neutral authorization, discovery, token exchange and verification engine is built and testable without selecting a vendor |
+| Per-provider client credentials | Client ID and client secret where the provider requires a confidential client; stored in server-side deployment secrets | Required for real provider token exchange; never put secrets in frontend code or repository | Runtime accepts optional server-side client secret; test credentials are synthetic fixtures only |
+| Provider endpoints | Issuer, authorization endpoint, token endpoint, JWKS URI and exact redirect/callback URI for each environment | Must match the provider's official metadata and registered application settings | OIDC discovery validator checks exact issuer, HTTPS endpoints, code flow, public subject support, supported signing algorithms and token endpoint auth methods |
+| Account linking | Explicit policy for linking a provider issuer+subject to an existing FORGE account; confirm whether auto-link by verified email is allowed | Email claims are not a stable cross-provider identity key; automatic linking can permit account takeover if policy is guessed | Current verifier returns provider-scoped subject and does not auto-link by email or create accounts |
+| Account creation | Owner decision whether first-time social sign-in may create a new FORGE account and which profile fields are accepted | User lifecycle, consent and duplicate-account behavior are product semantics | No automatic account creation is implemented |
+| Email trust | Owner/security approval of verified-email handling and whether providers lacking `email_verified` may sign in | Identity proof and email ownership are distinct | Result explicitly marks email verified only when the signed claim is boolean true |
+| Callback/session policy | Approved callback behavior, error UX, session lifetime and session event semantics | Must integrate with existing identity session/audit model without bypassing it | Token callback engine returns a verified identity only; route and FORGE session issuance remain to be implemented |
+| Transaction persistence | Owner-approved encryption/key-custody source for the PKCE verifier plus durable Postgres/SQLite transaction-store deployment | Verifier is currently held in process memory; storing it plaintext would expose live OAuth transactions | State/nonce hashes are persisted only in the in-memory store today; durable encrypted implementation remains next independent backend work |
+| Key rotation/incident response | Credential rotation owner and incident-response procedure | Provider secrets and signing keys rotate independently | No provider credentials are stored in source; JWKS is retrieved per callback and token verification pins to provider key ID/algorithm |
+
+These are activation or owner-policy dependencies, not reasons to stop provider-neutral implementation. Do not fabricate provider credentials or silently choose account-linking semantics.
