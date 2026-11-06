@@ -808,3 +808,27 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 ### Next ordered work
 - Continue to CO-003 after this CO-002 verification checkpoint. Before each feature, compare `main` and `mistral`, inspect both feature implementations and tests, classify, then implement safe independent work.
 - Keep social-provider client IDs/secrets as deployment inputs only. Build and test provider-neutral OAuth/OIDC state, nonce, PKCE, callback, issuer/audience/signature validation and account-linking logic where repository requirements support it; do not invent supported providers or account-linking semantics when exact feature criteria are absent.
+
+
+## CO-003 implementation continuation checkpoint (2026-11-06 09:54 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before CO-003 implementation, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `76a24d599b123f733f7ae2015269e4561a760105`; Mistral was 392 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main did not contain `src/modules/identity/oidc-authorization.ts`, `test/oidc-authorization.test.ts` or `docs/features/CO-003.md`; those provider-neutral OIDC transaction files/spec were Mistral-only. No main changes were ported.
+- Classification: **PARTIAL**. Existing state/nonce/PKCE transaction groundwork was expanded into a provider-neutral authorization-code exchange, OIDC discovery/JWKS validation and signed ID-token verifier. The exact Part 01 acceptance text for CO-003 remains unavailable, and no account-linking/session route is claimed.
+
+### Implemented and verified
+- New `src/modules/identity/oidc-token.ts`: bounded OIDC discovery and JWKS fetch; exact discovery issuer validation; secure endpoint validation; authorization-code exchange using PKCE and optional server-side client secret; no redirect following; bounded response parsing; RS256, PS256, ES256 and EdDSA/Ed25519 ID-token signature verification; issuer, audience, azp, exp, iat, nbf and nonce validation; explicit `emailVerified` handling.
+- New `src/modules/identity/oidc-authentication.ts`: consumes one-time state before network calls, exchanges the authorization code, retrieves provider signing keys and returns only a verified OIDC identity. Replayed callbacks are rejected before another provider request.
+- `test/oidc-token.test.ts`: validates RS256, ES256, EdDSA, token exchange, OIDC discovery, JWKS handling, claim mismatches, verified-email semantics and full callback orchestration.
+- Focused workflow [42190915585](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42190915585): isolated CO typecheck **passed**; **110 tests passed, 0 failed**.
+- Relevant commits: `b7a98269d56e48ed50c7ee438749c146b1521aae` (token engine), `c6d0d755c93e18c6b2b42c18ff3d854d4936596f` (token tests), `52859156d76505b8ea519d9b1b8de28870af4c7a` (focused typecheck inclusion), `3ab6cf82ec9aed0d64864f3895dd042b20502439` (workflow inclusion), `96fd781c1f5e3a862d73768db35a052804b19889` and `a1629ddcefb3b4a960439b5db6861c1bc127d213` (Fetch RequestInit compatibility corrections), `b1571db11a5f9b47ab16a607953389b5bb058e5b` (algorithm allow-list fix), `74b065f783d7a6fefd35d5c3c42503640b726ef6` (ES256/EdDSA tests), `b15a95219b2679f88dba1ab686de2a916c135f2e` (workflow trigger), `ef6df648ce6a1c04bd4816918c542fbc6315d156` (callback orchestration), `b255c30e016fb32c7d34373a4dc8d862d0082c25` (callback test), `11cb65cffc4f4e69e2ec2f13c3772cf31d59b6c2` (discovery validation), `595aa99aff3ede7e0c649b302ed0381df8f6a131` (discovery test).
+- Full repository CI continues to fail outside CO at `src/modules/ai-training/sqlite-stores.ts`; AI/TQ was not modified.
+
+### Remaining CO-003 work and external inputs
+- No HTTP callback route, external identity-to-user mapping, account-link policy, account creation, or FORGE session issuance exists yet. These remain necessary before claiming social sign-in is complete.
+- The transaction store remains in-memory. Multi-instance/restart continuity requires a durable store and approved encryption/key-custody design for the PKCE verifier.
+- Provider shortlist and per-provider issuer/client ID/client secret/token endpoint/JWKS endpoint/callback URI are deployment inputs. No provider has been selected or credentials invented.
+- Account-linking/auto-provisioning rules and verified-email policy need owner approval. Until then, do not silently match provider email to an existing FORGE account or create a user automatically.
+- Continue safe provider-neutral implementation while these external inputs/semantics remain outstanding.
