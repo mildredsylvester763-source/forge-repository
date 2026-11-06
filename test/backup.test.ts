@@ -30,15 +30,15 @@ describe('verified backups', () => {
 
     const sidecar = `${backup.path}.sha256`;
     const recorded = readFileSync(sidecar, 'utf8');
-    writeFileSync(sidecar, (recorded.trim().split(/\\s+/)[0] ?? '') + '\\tbackup.sqlite\\n');
+    writeFileSync(sidecar, (recorded.trim().split(/\s+/)[0] ?? '') + '\tbackup.sqlite\n');
     assert.equal(verifyBackup(backup.path).ok, true);
     unlinkSync(sidecar);
     assert.deepEqual(verifyBackup(backup.path), { ok: false, reason: 'checksum_missing' });
 
-    writeFileSync(sidecar, 'not-a-sha256  backup.sqlite\\n');
+    writeFileSync(sidecar, 'not-a-sha256  backup.sqlite\n');
     assert.deepEqual(verifyBackup(backup.path), { ok: false, reason: 'checksum_invalid' });
 
-    writeFileSync(sidecar, `${'0'.repeat(64)}  backup.sqlite\\n`);
+    writeFileSync(sidecar, `${'0'.repeat(64)}  backup.sqlite\n`);
     assert.deepEqual(verifyBackup(backup.path), { ok: false, reason: 'checksum_mismatch' });
 
     writeFileSync(sidecar, recorded);
