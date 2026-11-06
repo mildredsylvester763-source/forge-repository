@@ -192,8 +192,11 @@ export class PostgresSessionStore implements SessionStore {
   }
 
   async touch(idHash: string, now: number): Promise<SessionRecord | null> {
-    await this.pool.query('UPDATE sessions SET last_seen_at = $1 WHERE id_hash = $2', [now, idHash]);
-    return this.findByHash(idHash);
+    const updated = await this.pool.query<SessionRow>(
+      'UPDATE sessions SET last_seen_at = $1 WHERE id_hash = $2 AND revoked_at IS NULL AND expires_at > $1 RETURNING *',
+      [now, idHash],
+    );
+    return updated.rows[0] ? toSession(updated.rows[0]) : null;
   }
 
   async revoke(idHash: string, reason: string, now: number): Promise<void> {
