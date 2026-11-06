@@ -816,3 +816,9 @@ No new credentials, external accounts or positive owner approvals were supplied 
 - **CO-096:** SQLite backup hardening is implemented in this continuation (streamed checksum reads; strict retention and schedule input validation). PostgreSQL/off-site R2 backup remains open. Required deployment inputs remain Cloudflare account ID, R2 bucket, access key ID/secret, PostgreSQL backup source/credentials, and owner-approved retention, RPO/RTO and restore drill. No credential was fabricated and no production backup was activated.
 
 The CO-096 local helper checks passed before the commit; the focused GitHub workflow is the repository-level verification for the changed backup source/test paths. Do not close the PostgreSQL/R2 items on the strength of SQLite tests.
+
+
+### CO-096 verification result (2026-11-06)
+- Focused CO workflow [42198755984](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42198755984) passed `npx tsc -p tsconfig.co.json --noEmit` and 147/147 tests at `ec0a6e26dc57fe610902598e210ba7e0ca2821fd`, including the three new backup regressions.
+- Full CI [42198756014](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42198756014) failed during type-checking before tests because of TS1005 syntax errors in out-of-scope `src/modules/ai-training/sqlite-stores.ts` lines 503–657. Do not modify AI/TQ to address this CO run.
+- The focused result validates the SQLite backup hardening only; it does not close PostgreSQL/R2 backup, restore, retention or RPO/RTO dependencies.
