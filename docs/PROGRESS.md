@@ -1161,3 +1161,8 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - The route/auth test was executed in an isolated local harness: 4 passed, 0 failed. Its isolated TypeScript slice check passed. The latest full CO-focused CI baseline remains run `42193333427` (133 passed, 0 failed) on the unchanged source tree; the expanded test awaits its post-commit CI run.
 - No tenant/resource authorization policy, membership model or role/action vocabulary is established. Exact Part 01 CO-030 acceptance wording is unavailable; CO-017 and CO-029–CO-044 owner decisions remain separate.
 - No AI/TQ files were changed. Evidence is recorded in `docs/features/CO-030.md` and this progress entry. Continue to CO-031.
+
+### CO-030 post-commit verification (2026-11-06)
+
+- Focused workflow run `42194856313` on `e392e5738c9782dcb11dfd8255c3e14fde6ef462`: `npx tsc -p tsconfig.co.json --noEmit` passed; `node --test` passed **136 tests, 0 failed**. This includes the expanded CO-030 cookie/bearer route regressions.
+- Full CI run `42194856335`: `npm run typecheck` failed on out-of-scope AI-only `src/modules/ai-training/sqlite-stores.ts` with TS1005 syntax errors at lines 503–657; the full test step was skipped. No AI/TQ files were changed to repair it.

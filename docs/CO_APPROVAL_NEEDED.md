@@ -540,3 +540,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Verification:** CO-030 route coverage was expanded for valid cookie, valid bearer and malformed Authorization behavior. A local isolated harness passed 4/4 tests and its focused type-check passed; the full CO-focused workflow must confirm the expanded test after commit.
 - **Remaining boundary:** session authentication is not tenant/resource authorization. CO-017 and CO-029–CO-044 owner decisions remain unresolved, and the exact original Part 01 CO-030 acceptance text is still required before claiming completion.
 - **Scope protection:** no AI or TQ source files were modified.
+
+### CO-030 verification update (2026-11-06)
+
+- Focused CI run `42194856313` passed the isolated CO type-check and all **136 tests** after the cookie/bearer route-test expansion.
+- Full CI run `42194856335` failed before tests on TypeScript syntax errors in out-of-scope `src/modules/ai-training/sqlite-stores.ts` (TS1005, lines 503–657). No AI/TQ changes are authorized under this task.
+- CO-030 remains PARTIAL because session authentication does not establish tenant/resource authorization and the exact Part 01 acceptance wording is unavailable.
