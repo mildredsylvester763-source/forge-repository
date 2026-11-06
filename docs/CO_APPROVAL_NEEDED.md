@@ -374,3 +374,16 @@ These decisions do not block independent CO backend work. The user has stated th
 | Administrator session control | Confirm whether tenant/security administrators require revoke-all or audit-view controls | Administrative authority changes account access | Not implemented; owner decision required before adding admin powers |
 
 The concurrent idle-touch/revocation race has been fixed and covered by a regression test. These owner questions do not block independent CO implementation.
+
+
+## CO-007 native-client token activation inputs (2026-11-06)
+
+| Item | Owner input / validation | Why | Current implementation |
+| --- | --- | --- | --- |
+| Exact catalogue acceptance | Supply original Part 01 CO-007 wording | The repository's native session contract may not capture all native-client requirements | Opaque bearer session support is implemented and tested; acceptance remains unverified |
+| Token audience/model | Confirm whether the opaque server-managed session token is acceptable for every native client or a separate scoped token is required | Avoid inventing JWT claims, audience or offline semantics | Reuses the existing opaque session model; no JWT or OAuth access token is created |
+| Refresh lifecycle | Decide refresh-token rotation versus reauthentication and expected offline behavior | This affects revocation, device state and compromise handling | No refresh token or offline grace period is implemented |
+| Native device security | Validate Android Keystore/iOS Keychain storage, TLS-only transport and secure logout/erase behavior in real apps | These require actual native clients and platform APIs | Backend accepts bearer credentials and fails closed on malformed Authorization headers |
+| Device enrollment | Decide whether device attestation, device naming or per-device enrollment is required | Device trust is a separate product/security policy | Not assumed or implemented in this CO slice |
+
+No external API credentials are needed for the current opaque bearer-session backend. The remaining items do not block independent CO work.
