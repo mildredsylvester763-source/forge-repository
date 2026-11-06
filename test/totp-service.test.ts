@@ -9,6 +9,13 @@ import { TotpFactorError, TotpFactorService } from '../src/modules/identity/totp
 
 const totp: TotpOptions = { algorithm: 'sha1', digits: 6, periodSeconds: 30 };
 
+function insertUser(db: ReturnType<typeof openDatabase>, userId: string, now: number): void {
+  db.prepare(
+    'INSERT INTO users (id, email, display_name, password_hash, status, created_at, updated_at, password_changed_at, password_compromised_at, version) ' +
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)',
+  ).run(userId, userId + '@example.test', userId, 'test-hash', 'active', now, now, now);
+}
+
 describe('CO-005 encrypted TOTP factor lifecycle', () => {
   it('encrypts enrollment secrets, confirms a factor and prevents moving-factor replay', async () => {
     const db = openDatabase(':memory:');
@@ -16,6 +23,7 @@ describe('CO-005 encrypted TOTP factor lifecycle', () => {
     try {
       migrate(db, 'kernel', kernelMigrations);
       migrate(db, 'identity', identityMigrations);
+      insertUser(db, 'user-totp-1', now);
       const store = new SqliteTotpFactorStore(db);
       const service = new TotpFactorService({
         store,
@@ -36,7 +44,8 @@ describe('CO-005 encrypted TOTP factor lifecycle', () => {
       assert.equal(row.secret_tag.length, 22);
 
       const confirmationCode = generateTotpCode(secret, now, totp);
-      assert.equal(await service.confirmEnrollment('user-totp-1', '000000'), false);
+      const wrongCode = confirmationCode === '000000' ? '000001' : '000000';
+      assert.equal(await service.confirmEnrollment('user-totp-1', wrongCode), false);
       assert.equal(await service.confirmEnrollment('user-totp-1', confirmationCode), true);
       assert.equal(await service.status('user-totp-1'), 'active');
       assert.equal(await service.verifyAndConsume('user-totp-1', confirmationCode), false, 'enrollment code is already consumed');
@@ -60,6 +69,7 @@ describe('CO-005 encrypted TOTP factor lifecycle', () => {
     try {
       migrate(db, 'kernel', kernelMigrations);
       migrate(db, 'identity', identityMigrations);
+      insertUser(db, 'user-totp-expire', now);
       const service = new TotpFactorService({
         store: new SqliteTotpFactorStore(db),
         encryptionKey: Buffer.alloc(32, 8),
@@ -85,6 +95,7 @@ describe('CO-005 encrypted TOTP factor lifecycle', () => {
     try {
       migrate(db, 'kernel', kernelMigrations);
       migrate(db, 'identity', identityMigrations);
+      insertUser(db, 'user-totp-key', now);
       const store = new SqliteTotpFactorStore(db);
       const owner = new TotpFactorService({
         store,
