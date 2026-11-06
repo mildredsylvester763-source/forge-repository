@@ -81,8 +81,11 @@ export class ProviderConnectionOperations {
   }
 
   private async requireSecretReference(secretRef: string, workspaceId: string): Promise<void> {
-    if (!isWorkspaceScopedProviderSecretReference(secretRef, workspaceId)) {
+    if (!isWorkspaceScopedProviderSecretReference(secretRef)) {
       throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+    }
+    if (!isWorkspaceScopedProviderSecretReference(secretRef, workspaceId)) {
+      throw new TypeError('secretRef belongs to a different workspace');
     }
     let secret: string | null;
     try { secret = await this.secrets.resolve(secretRef); } catch { secret = null; }
