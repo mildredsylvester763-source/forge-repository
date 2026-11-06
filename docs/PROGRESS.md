@@ -1057,3 +1057,12 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Repository progress and approval registers explicitly say the CO-016 title/acceptance criteria are unavailable.
 - No dedicated source module, feature document, test or migration exists on Mistral. No membership/invitation semantics were invented.
 - Evidence and required owner input recorded in `docs/features/CO-016.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. No code/tests added.
+
+
+## CO-017 audit checkpoint (2026-11-06 10:18 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `b060d1f0d2509041b4b18189accfe40c45a8efb9`; 491 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Neither branch has a general tenant-scoped data-access layer or PostgreSQL RLS policies/migrations.
+- Mistral's `tenant_id` on `agent_credentials` only binds an agent credential; it does not provide row isolation for business data. Identity stores have no tenant membership join. Kernel contains no tenant context/query guard.
+- The owner has not approved app-only scoping versus PostgreSQL RLS, nor supplied database role/connection strategy. No tenant policy was guessed or implemented.
+- Evidence and required owner decision recorded in `docs/features/CO-017.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Proceed to CO-018.
