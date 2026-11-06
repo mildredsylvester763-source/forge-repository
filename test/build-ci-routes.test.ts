@@ -203,6 +203,15 @@ test('Build & CI HTTP routes derive actor from authenticated session and reject 
       }, 'valid-session')),
       (error: unknown) => error instanceof Error && error.name === 'AppError',
     );
+    await assert.rejects(
+      () => trigger(context({
+        workspaceId: 'workspace-a',
+        pipelineId: 'http-pipeline',
+        event: { kind: 'manual', changedFiles: [] },
+      }, 'valid-session')),
+      (error: unknown) => error instanceof Error && error.name === 'AppError',
+      'manual/API callers cannot submit fabricated or empty provider changed-file evidence',
+    );
 
     const dryRun = routes['/v1/build-ci/pipelines/dry-run']?.POST;
     assert.ok(dryRun);
