@@ -387,3 +387,19 @@ The concurrent idle-touch/revocation race has been fixed and covered by a regres
 | Device enrollment | Decide whether device attestation, device naming or per-device enrollment is required | Device trust is a separate product/security policy | Not assumed or implemented in this CO slice |
 
 No external API credentials are needed for the current opaque bearer-session backend. The remaining items do not block independent CO work.
+
+
+## CO-008 email verification and recovery inputs (2026-11-06)
+
+| Item | Owner input / external validation | Why | Current implementation |
+| --- | --- | --- | --- |
+| Exact acceptance | Original Part 01 CO-008 wording | Existing repository notes group verification and recovery but do not define every route/behavior | One-time token primitives are implemented; exact catalogue acceptance remains unavailable |
+| Email delivery | Provider account, API key, verified sender domain, templates and callback links | Required only to send live verification/recovery messages | No provider is selected or credential fabricated; token service returns raw tokens only to its internal caller |
+| Anti-enumeration | Decide generic responses, timing/queue behavior and abuse/rate limits | Recovery endpoints must not disclose whether an email is registered | No HTTP routes or response behavior is enabled yet |
+| Token lifetime | Approve separate email-verification and password-recovery TTLs | Different account takeover risk and usability requirements | Service requires explicit TTL configuration within bounded safe limits; no defaults selected |
+| Email verification policy | Decide whether unverified users can sign in, and whether email changes require re-verification | Controls account access and ownership assertions | Token consumption is implemented; verified-email state and sign-in enforcement are not |
+| Password recovery proofing | Confirm proofing method, password policy, session revocation scope and audit semantics | Recovery transfers account control and must integrate atomically with session/security state | Tokens are version-bound and one-time; password update/session revoke transaction is not wired |
+| Recovery and MFA interaction | Decide whether password recovery may reset MFA or require separate assisted recovery | Prevents recovery from bypassing factor security | No MFA reset/recovery path is implemented |
+| PostgreSQL verification | Real PostgreSQL service and credentials for concurrency/migration tests | SQLite test success does not prove Postgres behavior | PostgreSQL adapter/migration exists but has not been live-tested |
+
+These inputs do not block independent backend work. Provider credentials and sender-domain values will be supplied by the owner at activation time.
