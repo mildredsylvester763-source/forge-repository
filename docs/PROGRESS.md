@@ -1383,3 +1383,50 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-056 title, description and acceptance criteria are unavailable.
 - Neither branch contains a CO-056 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
 - No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-056.md`. Continue to CO-057.
+
+## CO-057 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-057 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-057 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-057.md`. Continue to CO-058.
+
+
+## CO-058 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-058 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-058 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-058.md`. Continue to CO-059.
+
+
+## CO-059 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-059 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-059 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-059.md`. Continue to CO-060.
+
+
+## CO-060 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-060 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-060 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-060.md`. Continue to CO-061.
+
+
+## CO-061 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-061 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-061 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-061.md`. Continue to CO-062.
+
+
+## CO-062 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c0a0a1efa32417d53ef4c85b7c078da5fd9ac9d9`; Mistral 533 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-062 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-062 specification, dedicated project-graph module, graph test, schema or migration. The TQ integration graph and AI workspace retrieval are excluded.
+- No ontology or schema was inferred. Required owner input: exact Part 01 wording plus approved graph ontology, provenance, visibility, lifecycle, deletion and retention semantics. Evidence is recorded in `docs/features/CO-062.md`. Continue to CO-063.

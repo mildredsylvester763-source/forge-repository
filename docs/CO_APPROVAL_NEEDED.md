@@ -737,3 +737,44 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Required:** exact original Part 01 CO-056 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
 - **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+## CO-057 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-057 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-058 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-058 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-059 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-059 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-060 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-060 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-061 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-061 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-062 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-062 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
