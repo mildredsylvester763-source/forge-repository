@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { kernelMigrations } from '../src/kernel/migrations.ts';
+import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
+import { identityMigrations } from '../src/modules/identity/migrations.ts';
+import { SqliteSamlCacheProvider } from '../src/modules/identity/saml-cache.ts';
 import {
   createInMemorySamlCacheProvider,
   SamlService,
@@ -62,6 +66,33 @@ describe('CO-004 enterprise SAML service-provider foundation', () => {
       samlResponse: Buffer.from('<not-saml/>').toString('base64'),
       relayState: 'browser-session-correlation',
     }));
+  });
+
+
+  it('atomically consumes persistent SQLite request IDs and replayed assertion IDs', async () => {
+    const db = openDatabase(':memory:');
+    let now = 1_800_000_000_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+      const cache = new SqliteSamlCacheProvider({ db, ttlMs: 60_000, clock: () => now });
+      const saved = await cache.saveAsync('_request_1', 'request-id-1');
+      assert.equal(saved?.value, 'request-id-1');
+      assert.equal(saved?.createdAt, now);
+      assert.equal(await cache.getAsync('_request_1'), 'request-id-1');
+      assert.equal(await cache.saveAsync('_request_1', 'duplicate'), null);
+      assert.equal(await cache.consumeAsync('_request_1'), 'request-id-1');
+      assert.equal(await cache.consumeAsync('_request_1'), null);
+
+      assert.equal(await cache.saveIfAbsentAsync('_assertion_1', 'assertion-id-1', now + 1000), true);
+      assert.equal(await cache.saveIfAbsentAsync('_assertion_1', 'duplicate', now + 1000), false);
+      now += 1001;
+      assert.equal(await cache.consumeAsync('_assertion_1'), null);
+      assert.equal(await cache.saveIfAbsentAsync('_assertion_1', 'assertion-id-1', now + 1000), true);
+      assert.equal(await cache.removeAsync('_assertion_1'), 'assertion-id-1');
+    } finally {
+      db.close();
+    }
   });
 
   it('bounds SAML request, assertion-age and clock-skew windows', () => {
