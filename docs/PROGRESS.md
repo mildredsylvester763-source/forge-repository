@@ -952,3 +952,18 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - No delivery provider, HTTP routes, email verification state, password reset hash update, session revocation or recovery audit workflow is wired.
 - Account-enumeration response, token TTL, identity-proofing, password reset policy, verified-email gating and session revocation scope need owner decisions before activation.
 - PostgreSQL adapter/migration has not been live-tested. Provider credentials and sender-domain verification remain external activation inputs.
+
+
+## CO-009 audit checkpoint (2026-11-06 10:10 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Main head `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral head `f00da15fe6b6bfa941474ab0a828e86522a7b883`; Mistral was 457 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main identity directory has no bearer request-auth helper or native-token tests. Mistral adds CO-007 `request-auth.ts`, native sign-in/sign-out routes and `test/co-007-native-token.test.ts`, but these contain no desktop-specific audience, device enrollment, refresh or credential-lifecycle contract.
+- `docs/CO_APPROVAL_NEEDED.md` explicitly states that CO-009 desktop token behavior is separate from CO-007 and the exact desktop contract is NOT SUPPLIED / NOT APPROVED.
+- Classification: **MISSING / OWNER-BLOCKED**. No code change made because the security contract is undefined; no guessed JWT/refresh/device-token implementation is safe.
+
+### Evidence and next step
+- Evidence recorded in `docs/features/CO-009.md`, `docs/PROGRESS.md`, `docs/CO_APPROVAL_NEEDED.md`, `src/modules/identity/request-auth.ts`, `src/modules/identity/routes.ts`, and `test/co-007-native-token.test.ts`.
+- Required owner input: exact CO-009 Part 01 wording; desktop client audience; whether per-device registration/attestation is required; token expiry/refresh/rotation/offline policy; secure-storage and revocation requirements.
+- No tests were added because no implementation was safe to write against an unknown contract. Proceed to CO-010 rather than waiting for owner input.
