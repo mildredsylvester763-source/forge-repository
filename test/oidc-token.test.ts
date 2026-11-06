@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { describe, it } from 'node:test';
+import { InMemoryOidcTransactionStore, OidcAuthorizationService, type OidcProviderConfig } from '../src/modules/identity/oidc-authorization.ts';
+import { OidcAuthenticationService } from '../src/modules/identity/oidc-authentication.ts';
 import {
   exchangeOidcAuthorizationCode,
   fetchOidcJwks,
@@ -176,6 +178,59 @@ describe('CO-003 provider-neutral OIDC token security', () => {
       codeVerifier: 'A'.repeat(43),
       environment: 'production',
     }, fetcher), (error: unknown) => error instanceof TypeError && !error.message.includes('sensitive-provider-error'));
+  });
+
+
+  it('completes the provider-neutral callback pipeline and consumes state before replay', async () => {
+    const provider: OidcProviderConfig & { tokenEndpoint: string; jwksUri: string; clientSecret: string } = {
+      providerId: 'identity-provider',
+      issuer: 'https://issuer.example.test',
+      authorizationEndpoint: 'https://issuer.example.test/authorize',
+      tokenEndpoint: 'https://issuer.example.test/token',
+      jwksUri: 'https://issuer.example.test/jwks',
+      clientId: 'forge-client',
+      clientSecret: 'deployment-secret',
+      redirectUri: 'https://app.forge.test/v1/auth/oidc/callback',
+      scopes: ['openid', 'email', 'profile'],
+      environment: 'production',
+    };
+    let callbackNonce = '';
+    let tokenExchangeCount = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url === provider.tokenEndpoint) {
+        tokenExchangeCount += 1;
+        const form = new URLSearchParams(String(init?.body));
+        assert.equal(form.get('code'), 'authorization-code');
+        assert.equal(form.get('client_secret'), 'deployment-secret');
+        assert.equal(form.get('redirect_uri'), provider.redirectUri);
+        return new Response(JSON.stringify({ id_token: token({ nonce: callbackNonce }) }), { status: 200 });
+      }
+      if (url === provider.jwksUri) return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+      throw new Error('unexpected provider endpoint');
+    };
+    const authorization = new OidcAuthorizationService({
+      store: new InMemoryOidcTransactionStore(),
+      clock: () => now,
+    });
+    const service = new OidcAuthenticationService({
+      authorization,
+      providers: [provider],
+      clock: () => now,
+      fetcher,
+    });
+    const started = await service.begin(provider.providerId);
+    const url = new URL(started.authorizationUrl);
+    callbackNonce = url.searchParams.get('nonce')!;
+    const state = url.searchParams.get('state')!;
+    const identity = await service.complete(provider.providerId, state, 'authorization-code');
+    assert.equal(identity.subject, 'provider-user-123');
+    assert.equal(identity.emailVerified, true);
+    await assert.rejects(
+      () => service.complete(provider.providerId, state, 'authorization-code'),
+      (error: unknown) => error instanceof Error && error.message.includes('invalid or expired'),
+    );
+    assert.equal(tokenExchangeCount, 1, 'replayed state must be rejected before another provider request');
   });
 
   it('fetches a bounded JWKS document and rejects duplicate key identifiers', async () => {
