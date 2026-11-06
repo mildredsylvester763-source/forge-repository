@@ -518,3 +518,10 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** exact Part 01 CO-027 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. No dedicated implementation evidence exists on either branch.
+
+## CO-028 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-028 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The section heading does not establish CO-028's individual behavior.
+- **Why it matters:** workspace, membership, invitation, tenant, ownership and billing contracts are distinct and cannot safely be assigned to this ID without the source catalogue.
+- **Safe continuation:** audit CO-029 independently; do not use AI workspace-retrieval or unrelated identity/kernel behavior as CO evidence.
