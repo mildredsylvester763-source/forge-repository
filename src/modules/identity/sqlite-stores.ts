@@ -151,7 +151,7 @@ export class SqliteSessionStore implements SessionStore {
       `INSERT INTO sessions (id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent, revoked_at, revoked_reason)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
     );
-    this.touchStmt = db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?');
+    this.touchStmt = db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ? AND revoked_at IS NULL AND expires_at > ?');
     this.revokeStmt = db.prepare('UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE id_hash = ? AND revoked_at IS NULL');
     this.revokeAll = db.prepare('UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE user_id = ? AND revoked_at IS NULL');
     this.active = db.prepare('SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ?');
@@ -180,7 +180,8 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async touch(idHash: string, now: number): Promise<SessionRecord | null> {
-    this.touchStmt.run(now, idHash);
+    const updated = this.touchStmt.run(now, idHash, now);
+    if (Number(updated.changes) !== 1) return null;
     return this.findByHash(idHash);
   }
 
