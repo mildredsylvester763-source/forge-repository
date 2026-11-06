@@ -525,3 +525,10 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The section heading does not establish CO-028's individual behavior.
 - **Why it matters:** workspace, membership, invitation, tenant, ownership and billing contracts are distinct and cannot safely be assigned to this ID without the source catalogue.
 - **Safe continuation:** audit CO-029 independently; do not use AI workspace-retrieval or unrelated identity/kernel behavior as CO evidence.
+
+## CO-029 feature-definition and authorization follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-029 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not define CO-029's individual behavior.
+- **Security decisions:** the role/permission vocabulary, resource/action scope, inheritance, delegation, assignment authority and policy precedence must be owner-approved before authorization rules are introduced.
+- **Safe continuation:** audit CO-030 using its existing documented session-authentication behavior; do not infer that it supplies tenant/resource authorization.
