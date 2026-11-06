@@ -1049,3 +1049,11 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Only the CO-015–CO-028 section heading "Workspaces and tenancy" is present; no individual CO-015 feature title or acceptance criteria exist.
 - Mistral has no dedicated workspace/tenancy module or CO-015 source/test/migration evidence. The catalogue checklist marks the section not started.
 - No code or tests were added. Exact CO-015 wording is required before implementation. Evidence recorded in `docs/features/CO-015.md`.
+
+
+## CO-016 audit checkpoint (2026-11-06 10:17 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `5bdeef4f01a0e378691223d37e3831088b4bae01`; 488 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Repository progress and approval registers explicitly say the CO-016 title/acceptance criteria are unavailable.
+- No dedicated source module, feature document, test or migration exists on Mistral. No membership/invitation semantics were invented.
+- Evidence and required owner input recorded in `docs/features/CO-016.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. No code/tests added.
