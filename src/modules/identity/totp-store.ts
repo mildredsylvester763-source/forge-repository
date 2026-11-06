@@ -126,7 +126,7 @@ export class SqliteTotpFactorStore implements TotpFactorStore {
     ).run(now, matchedStep, userId, createdAt, now).changes) === 1);
   }
 
-  async consumeStep(userId: string, expectedStep: number, matchedStep: number, now: number): Promise<boolean> {
+  async consumeStep(userId: string, expectedStep: number, matchedStep: number, _now: number): Promise<boolean> {
     validateUserId(userId);
     if (!Number.isSafeInteger(expectedStep) || !Number.isSafeInteger(matchedStep) || matchedStep <= expectedStep) return false;
     return transaction(this.db, () => Number(this.db.prepare(
