@@ -49,7 +49,9 @@ function webhookProvider(value: unknown): 'github' | 'gitlab' {
 function providerSecretReference(value: unknown, workspaceId: string): string {
   const reference = textField(value, 'secretRef', 512);
   const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}$').exec(reference);
-  if (!match) throw new AppError(400, 'invalid_request', 'secretRef must use a workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference.');
+  if (!match || match[2] === '.' || match[2] === '..') {
+    throw new AppError(400, 'invalid_request', 'secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference.');
+  }
   if (match[2] !== workspaceId) throw new AppError(400, 'invalid_request', 'secretRef belongs to a different workspace.');
   return reference;
 }
