@@ -26,6 +26,35 @@ function validateExpiry(now: number, expiresAt: number): void {
   }
 }
 
+export class NamespacedSamlCacheProvider implements CacheProvider {
+  private readonly prefix: string;
+  private readonly inner: CacheProvider;
+
+  constructor(providerId: string, inner: CacheProvider) {
+    if (!/^[a-z][a-z0-9_-]{1,47}$/.test(providerId)) throw new TypeError('SAML cache namespace is invalid');
+    this.prefix = 'saml:' + providerId + ':';
+    this.inner = inner;
+  }
+
+  saveAsync(key: string, value: string): Promise<CacheItem | null> {
+    return this.inner.saveAsync(this.prefix + key, value);
+  }
+  getAsync(key: string): Promise<string | null> {
+    return this.inner.getAsync(this.prefix + key);
+  }
+  removeAsync(key: string | null): Promise<string | null> {
+    return this.inner.removeAsync(key === null ? null : this.prefix + key);
+  }
+  consumeAsync(key: string): Promise<string | null> {
+    if (!this.inner.consumeAsync) throw new TypeError('SAML cache provider must support atomic consumeAsync');
+    return this.inner.consumeAsync(this.prefix + key);
+  }
+  saveIfAbsentAsync(key: string, value: string, expiresAtMs: number): Promise<boolean> {
+    if (!this.inner.saveIfAbsentAsync) throw new TypeError('SAML cache provider must support atomic saveIfAbsentAsync');
+    return this.inner.saveIfAbsentAsync(this.prefix + key, value, expiresAtMs);
+  }
+}
+
 export class SqliteSamlCacheProvider implements CacheProvider {
   private readonly db: Database;
   private readonly ttlMs: number;
