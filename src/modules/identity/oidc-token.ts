@@ -280,7 +280,6 @@ export async function fetchOidcJwks(
     method: 'GET',
     headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     redirect: 'error',
-    cache: 'no-store',
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) return fail('OIDC JWKS endpoint rejected the request (HTTP ' + response.status + ')');
