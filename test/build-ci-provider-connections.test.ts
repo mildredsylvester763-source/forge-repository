@@ -51,6 +51,9 @@ test('provider metadata rejects inline credential values and malformed secret re
       workspaceId: 'workspace-alpha', actorId: 'workspace-service-1', repository: 'team/private-api' };
     await assert.rejects(() => store.create({ ...base, secretRef: 'ghp_this-is-not-a-vault-reference' }), /workspace-scoped/);
     await assert.rejects(() => store.create({ ...base, secretRef: 'vault://forge/path?token=inline' }), /workspace-scoped/);
+    await assert.rejects(() => store.create({
+      ...base, workspaceId: '..', secretRef: 'vault://forge/../github/secret',
+    }), /valid workspace-scoped/);
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM build_ci_provider_connections').get() as { count: number }).count, 0);
   } finally { db.close(); }
 });
