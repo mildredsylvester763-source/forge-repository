@@ -1041,3 +1041,11 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - No feature document, dedicated source/test/migration evidence is attributable to CO-014. Existing identity capabilities are not reassigned to this ID.
 - No code or tests were added because the target behavior is unknown. Evidence is recorded in `docs/features/CO-014.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`.
 - Required owner input: exact Part 01 CO-014 title, description and acceptance criteria. Continue to CO-015.
+
+
+## CO-015 audit checkpoint (2026-11-06 10:16 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `393431dbf46e7211440f9c9240f70a373014b928`; 485 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Only the CO-015–CO-028 section heading "Workspaces and tenancy" is present; no individual CO-015 feature title or acceptance criteria exist.
+- Mistral has no dedicated workspace/tenancy module or CO-015 source/test/migration evidence. The catalogue checklist marks the section not started.
+- No code or tests were added. Exact CO-015 wording is required before implementation. Evidence recorded in `docs/features/CO-015.md`.
