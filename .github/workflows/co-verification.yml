@@ -15,6 +15,7 @@ on:
       - 'test/sqlite-pool.ts'
       - 'test/co-091-readiness.test.ts'
       - 'test/co-030-route-auth.test.ts'
+      - 'test/authorization.test.ts'
       - 'test/backup.test.ts'
       - 'test/rate-limit.test.ts'
       - 'test/identity-throttle.test.ts'
@@ -66,6 +67,7 @@ jobs:
             test/co-065-atomic-signout.test.ts \
             test/co-065-postgres-uow.test.ts \
             test/co-030-route-auth.test.ts \
+            test/authorization.test.ts \
             test/co-091-readiness.test.ts \
             test/backup.test.ts \
             test/rate-limit.test.ts \
