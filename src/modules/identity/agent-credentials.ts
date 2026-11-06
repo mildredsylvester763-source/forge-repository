@@ -279,13 +279,15 @@ export class AgentCredentialService {
     return { credentialId: created.record.credentialId, token: created.token, expiresAt: created.record.expiresAt };
   }
 
-  async authenticate(token: string, expectedTenantId?: string): Promise<AgentPrincipal | null> {
+  async authenticate(token: string, expectedTenantId: string): Promise<AgentPrincipal | null> {
     if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return null;
+    try { validateIdentity('agent-check', expectedTenantId); } catch { return null; }
     const hash = createHash('sha256').update(token, 'ascii').digest('hex');
     const record = await this.store.findByHash(hash);
     const now = this.clock();
     if (!record || record.revokedAt !== null || record.expiresAt <= now ||
-        (expectedTenantId !== undefined && record.tenantId !== expectedTenantId)) return null;
+        record.tenantId !== expectedTenantId || record.scopes.length < 1 ||
+        record.scopes.some((scope) => !this.config.allowedScopes.includes(scope))) return null;
     if (!await this.store.touchLastUsed(record.credentialId, now)) return null;
     return {
       agentId: record.agentId,
