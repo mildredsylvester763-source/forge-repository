@@ -73,6 +73,18 @@ test('provider connection operations are workspace-authorized, secret-safe and a
     }
     assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'malformed path references must be rejected before vault lookup');
 
+    membership(db, '..', 'dotdot-owner', 'owner', new Date(now).toISOString());
+    membership(db, '..', 'dotdot-member', 'member', new Date(now).toISOString());
+    await assert.rejects(
+      () => operations.create({
+        workspaceId: '..', actorId: 'dotdot-owner', deliveryActorId: 'dotdot-member',
+        connectionId: 'dotdot-workspace-reference', provider: 'github', repository: 'team/repo',
+        secretRef: 'vault://forge/../github/secret',
+      }),
+      /valid workspace-scoped/,
+    );
+    assert.equal(resolveCalls.length, callsBeforeCrossWorkspace, 'dot-segment workspace IDs must be rejected before vault lookup');
+
     for (const invalid of [
       { provider: 'github' as const, repository: 'group/subgroup/project' },
       { provider: 'gitlab' as const, repository: 'group//project' },
