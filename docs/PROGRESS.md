@@ -976,3 +976,26 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Mistral's `identity-anomaly.ts` is documented and tracked as CO-012, not CO-010; it must not be relabelled to inflate CO-010 progress.
 - Neither branch has a CO-010 feature document, dedicated source/test/migration evidence. No implementation or test was added because the target behavior is unknown.
 - Evidence and owner request recorded in `docs/features/CO-010.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Continue to CO-011/next independently specified work.
+
+
+## CO-011 implementation continuation checkpoint (2026-11-06 10:12 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before CO-011 work, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `b562bacfb4289c45cc654b6bf48c9d6b9d976bb5`; Mistral was 462 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main and Mistral both have the generic event `Actor.kind = 'agent'` concept, but this is audit metadata only. Neither branch had an agent credential store, principal authentication or credential lifecycle.
+- Classification: **PARTIAL**. A scoped, tenant-bound opaque agent credential engine is implemented; agent principal registry, route authorization and delegation semantics remain owner-dependent.
+
+### Implemented and verified
+- New `src/modules/identity/agent-credentials.ts`: random opaque credentials, SHA-256 hash-only storage, explicit tenant binding, configured scope allowlist, expiry, last-used tracking, individual revoke, tenant-scoped revoke-all and atomic rotate.
+- Added SQLite and PostgreSQL stores and identity migration v6 (`agent_credentials`).
+- `AgentCredentialService.authenticate` requires the expected tenant and rejects revoked/expired credentials, scope data outside the configured allowlist and credentials concurrently revoked during last-used update.
+- New `test/agent-credentials.test.ts`: hash-only storage, tenant mismatch, scope allowlist, expiry, rotation, individual revocation and tenant-scoped revoke-all.
+- Focused workflow [42193074634](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42193074634): isolated CO typecheck **passed**; **130 tests passed, 0 failed**.
+- Relevant commits: `ff1fe4eaf4bc6e91e06614c44d5b30b4a0641749` (agent credential service/store), `ce81f6874ef68109b5d8ceb7254d9df3e43ef350` (SQLite schema), `df43bd2b82dd8e9a7b7e323e52b38d02e0b5b2c6` (PostgreSQL schema), `734184c97d706da3f0141eee7dfb44a329aa2f7d` (tenant/scope validation), `be8cfd85bfa8736bd896b206a243287f7b936e3f` (agent credential tests), `a2c122b1464ed91d356456af94961639bb210b2a` (focused typecheck inclusion), `b6933952921cb9fe0442a68d7804bff414db829e` (focused workflow inclusion).
+- Full repository CI remains failing outside CO in AI-only `src/modules/ai-training/sqlite-stores.ts`; AI/TQ files were not modified.
+
+### Remaining CO-011 owner decisions
+- Agent principal types/registry, creator/owner and credential rotation authority, tenant binding source, scopes, delegation/impersonation, audience, workload identity and audit event policy.
+- No routes or application authorization integration are enabled until the principal and scope model is approved.
+- PostgreSQL adapter/migration have not been live-tested.
