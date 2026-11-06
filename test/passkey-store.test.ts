@@ -100,6 +100,12 @@ describe('CO-002 passkey storage', () => {
       const record = credential('user-a');
       await store.createCredential(record, event('identity.passkey.registered', 'user-a'));
       assert.equal((await store.findCredentialById(record.credentialId))?.userId, 'user-a');
+      assert.equal(await store.updateAfterAssertion({
+        userId: 'user-a', credentialId: record.credentialId, signCount: 1, backedUp: true, now: now + 1,
+        event: event('identity.passkey.authenticated', 'user-a'),
+      }), false, 'SQLite must not allow backup state for a non-backup-eligible credential');
+      assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 0);
+
       assert.equal((await store.listCredentialsForUser('user-a')).length, 1);
 
       db.exec("CREATE TRIGGER reject_passkey_audit BEFORE INSERT ON events " +
