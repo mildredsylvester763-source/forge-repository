@@ -298,3 +298,21 @@ No external anchor account, database secret or owner approval was supplied in th
 | CO-100 | Exact Part 01 description; conflict authority, merge/delete rules, offline replay and user-visible resolution policy | Conflict resolution can silently lose or overwrite user work if semantics are guessed. No sync implementation is added until approved. |
 
 All items remain NOT SUPPLIED / NOT APPROVED where applicable. The existing R2, database, limiter and operational dependencies remain preserved in this register.
+
+
+## CO-002 external validation and activation register (2026-11-06)
+
+These items are deployment/owner validation inputs, not reasons to pause provider-neutral backend work:
+
+| Item | Required input / validation | Why it remains external | Current handling |
+| --- | --- | --- | --- |
+| WebAuthn RP ID | Final production relying-party hostname | Must be controlled by the deploying organization and align with browser origins | Configurable through `FORGE_WEBAUTHN_RP_ID`; validation is implemented; no production hostname invented |
+| Allowed origins | Exact HTTPS origins for production web clients | Origin trust must match the real deployed frontend domains | Configurable through `FORGE_WEBAUTHN_ORIGINS`; exact origin and RP relationship validation implemented |
+| RP display name | Owner-approved product display name | User-facing authenticator prompt branding | Configurable through `FORGE_WEBAUTHN_RP_NAME`; safe development default only |
+| Attestation/authenticator policy | Owner/security approval of `none` attestation and accepted algorithms/authenticator posture | Product/security risk acceptance, not a missing coding primitive | Current code implements `none` attestation and ES256, Ed25519 and RS256; approval remains not granted |
+| Backup-eligible credential policy | Owner/security approval of discoverable credentials and synced passkeys | This determines acceptable authenticator/account recovery posture | Code validates backup flags and immutable backup eligibility; approval remains not granted |
+| PostgreSQL verification | Real PostgreSQL integration service/credentials and migration/restore run | Cannot claim native PostgreSQL validation from SQLite-backed tests | Adapter and migrations exist; focused CI currently verifies SQLite/in-memory path |
+| Distributed rate limits | Approved shared Postgres or Redis store and connection/configuration | Process-local limiter cannot coordinate across replicas | Dedicated passkey bucket exists; shared-store work remains outstanding |
+| Native app validation | Native client secure credential storage and HTTPS integration test | Requires real native client integration | Server bearer-session path exists; no native client has been validated |
+
+The user has stated that provider credentials and deployment values will be supplied after the backend/application is built. Do not block independent CO implementation waiting for them. Do not fabricate secrets, origins, accounts, owner approvals or production test results.
