@@ -49,6 +49,44 @@ describe('CO-012 observe-only sign-in anomaly assessment', () => {
     );
   });
 
+
+  it('reports insufficient metadata when active sessions have no usable fingerprint', () => {
+    assert.deepEqual(
+      assessSignInAnomaly(
+        { ip: '198.51.100.10', userAgent: 'New browser' },
+        [{ ip: 'unknown', userAgent: '' }, { ip: 'not-an-ip', userAgent: 'unknown' }],
+      ),
+      { baseline: 'insufficient_metadata', signals: [] },
+    );
+  });
+
+  it('compares each metadata dimension only when that dimension exists in the baseline', () => {
+    assert.deepEqual(
+      assessSignInAnomaly(
+        { ip: '198.51.100.11', userAgent: 'Known browser' },
+        [{ ip: 'unknown', userAgent: 'Known browser' }],
+      ),
+      { baseline: 'active_sessions', signals: [] },
+    );
+    assert.deepEqual(
+      assessSignInAnomaly(
+        { ip: '192.0.2.10', userAgent: 'New browser' },
+        [{ ip: '192.0.2.10', userAgent: '' }],
+      ),
+      { baseline: 'active_sessions', signals: [] },
+    );
+  });
+
+  it('does not label an IP-only request as a new device when no complete device baseline exists', () => {
+    assert.deepEqual(
+      assessSignInAnomaly(
+        { ip: '198.51.100.12', userAgent: '' },
+        [{ ip: '192.0.2.10', userAgent: '' }, { ip: 'unknown', userAgent: 'Known browser' }],
+      ),
+      { baseline: 'active_sessions', signals: ['new_active_session_ip'] },
+    );
+  });
+
   it('returns signal names only, never the supplied IP or user-agent values', () => {
     const result = assessSignInAnomaly({ ip: '198.51.100.77', userAgent: 'Private Browser 9.2' }, existing);
     const serialized = JSON.stringify(result);
