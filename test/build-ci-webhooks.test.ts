@@ -284,7 +284,7 @@ test('webhook delivery claims use leases, bounded retries, and reject stale work
 
 test('push webhook normalizers reject unsafe repository paths and mark the path list incomplete', () => {
   const commits = [{
-    added: ['src/safe.ts', '../outside.ts', '/etc/passwd', 'src/../secrets.env', 'src\windows-path.ts', 'src//empty-segment.ts', 'src/./dot-segment.ts'],
+    added: ['src/safe.ts', '../outside.ts', '/etc/passwd', 'src/../secrets.env', 'src\\windows-path.ts', 'src//empty-segment.ts', 'src/./dot-segment.ts'],
     modified: ['src/also-safe.ts'],
     removed: [],
   }];
