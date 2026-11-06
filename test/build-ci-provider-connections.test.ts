@@ -54,6 +54,12 @@ test('provider metadata rejects inline credential values and malformed secret re
     await assert.rejects(() => store.create({
       ...base, workspaceId: '..', secretRef: 'vault://forge/../github/secret',
     }), /valid workspace-scoped/);
+    await assert.rejects(() => store.create({
+      ...base, repository: 'team/../private', secretRef: 'vault://forge/workspace-alpha/github/secret',
+    }), /GitHub repository/);
+    await assert.rejects(() => store.create({
+      ...base, provider: 'gitlab', repository: 'group//project', secretRef: 'vault://forge/workspace-alpha/github/secret',
+    }), /GitLab repository/);
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM build_ci_provider_connections').get() as { count: number }).count, 0);
   } finally { db.close(); }
 });
