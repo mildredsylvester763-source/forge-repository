@@ -292,3 +292,13 @@ Read-only Mistral API inspection confirms its current Task Runtime is not a drop
 - No approval is implied by implementation or green CI. No pending dependency is deleted or transferred merely because source code is complete. Any transfer must be a dated, evidenced change after the source feature reaches its acceptance boundary and the receiving catalogue ID is confirmed.
 - All BD implementation remains isolated to `gpt-part2-build-ci`; no merge or deployment is performed. Protected branches remain outside this work.
 - **Current feature status remains partial / not owner-accepted.** The passing 216-test run is useful verification evidence but does not close outstanding production integrations, external staff setup or owner approvals.
+
+### 2026-11-06 BD-017 continuation — GitHub rename-path correctness (GPT branch)
+
+- Corrected the GitHub pull-request changed-files adapter to include both `previous_filename` and current `filename` for rename records. Path-based validation therefore sees the source and destination paths instead of silently omitting the old path.
+- Added regression tests for valid rename responses and malformed previous paths. A malformed old path is not trusted; the valid current path is retained and the response is explicitly marked incomplete so path-filter evaluation fails open with a degraded reason.
+- Latest code head: `0e8762b8987ba36536d54b9a19910dd16376e4ec`.
+- GitHub Actions run `42188266058` for that exact head completed successfully: typecheck passed, production build passed, and all 218 tests passed (0 failures, 0 skipped), including the real PostgreSQL integration suite.
+- BD-017 remains partial pending external GitHub/GitLab integration permissions, production provider transport provisioning and the owner decision on supported glob compatibility. No owner approval is implied by CI.
+- BD-001 still lacks an actual task-runtime registry contract and explicit safe template-upgrade conflict policy. BD-016 still lacks production vault/KMS provisioning, trusted service identity, event/outbox publication, operational SLO/alerts and task execution. BD-029 and BD-030 have their described implementation/test coverage, but owner report/metadata/retention/protected-rollback decisions remain pending in `BUILD_CI_EXTERNAL_DEPENDENCIES.md`.
+- All work remains isolated to `gpt-part2-build-ci`. No merge, deployment, or changes to `main` or `mistral` were made. The scheduler remains a distinct workstream.
