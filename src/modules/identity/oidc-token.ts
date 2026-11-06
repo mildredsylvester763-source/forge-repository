@@ -42,6 +42,14 @@ export interface OidcIdTokenVerificationInput {
   readonly clockSkewSeconds?: number;
 }
 
+export interface OidcDiscoveryMetadata {
+  readonly issuer: string;
+  readonly authorizationEndpoint: string;
+  readonly tokenEndpoint: string;
+  readonly jwksUri: string;
+  readonly idTokenSigningAlgorithms: readonly string[];
+}
+
 export interface OidcTokenExchangeInput {
   readonly tokenEndpoint: string;
   readonly clientId: string;
@@ -268,6 +276,58 @@ export async function exchangeOidcAuthorizationCode(
     ...(accessToken ? { accessToken } : {}),
     ...(tokenType ? { tokenType } : {}),
     ...(expiresIn !== undefined ? { expiresIn } : {}),
+  };
+}
+
+export async function fetchOidcDiscovery(
+  issuer: string,
+  environment: 'development' | 'test' | 'production',
+  fetcher: typeof fetch = fetch,
+): Promise<OidcDiscoveryMetadata> {
+  let issuerUrl: URL;
+  try { issuerUrl = new URL(issuer); }
+  catch { return fail('OIDC issuer must be an absolute URL'); }
+  if (issuerUrl.search || issuerUrl.hash || issuerUrl.username || issuerUrl.password) return fail('OIDC issuer URL is invalid');
+  validEndpoint(issuer, environment);
+  const base = issuer.endsWith('/') ? issuer.slice(0, -1) : issuer;
+  const discoveryUrl = base + '/.well-known/openid-configuration';
+  const response = await fetcher(discoveryUrl, {
+    method: 'GET',
+    headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) return fail('OIDC discovery endpoint rejected the request (HTTP ' + response.status + ')');
+  const metadata = await readBoundedJson(response, MAX_JWKS_BYTES);
+  if (metadata.issuer !== issuer) return fail('OIDC discovery issuer does not exactly match the configured issuer');
+  const authorizationEndpoint = stringClaim(metadata.authorization_endpoint, 'discovery authorization_endpoint', 2048);
+  const tokenEndpoint = stringClaim(metadata.token_endpoint, 'discovery token_endpoint', 2048);
+  const jwksUri = stringClaim(metadata.jwks_uri, 'discovery jwks_uri', 2048);
+  validEndpoint(authorizationEndpoint, environment);
+  validEndpoint(tokenEndpoint, environment);
+  validEndpoint(jwksUri, environment);
+  if (!Array.isArray(metadata.response_types_supported) || !metadata.response_types_supported.includes('code')) {
+    return fail('OIDC provider does not advertise authorization-code response support');
+  }
+  if (!Array.isArray(metadata.subject_types_supported) || !metadata.subject_types_supported.includes('public')) {
+    return fail('OIDC provider does not advertise public subject identifiers');
+  }
+  const supported = metadata.id_token_signing_alg_values_supported;
+  const accepted = ['RS256', 'PS256', 'ES256', 'EdDSA'];
+  if (!Array.isArray(supported) || !supported.some((value) => accepted.includes(String(value)))) {
+    return fail('OIDC provider does not advertise a supported ID token signing algorithm');
+  }
+  const authMethods = metadata.token_endpoint_auth_methods_supported;
+  if (authMethods !== undefined &&
+      (!Array.isArray(authMethods) || !authMethods.some((value) => value === 'client_secret_post' || value === 'none'))) {
+    return fail('OIDC provider advertises no supported token endpoint authentication method');
+  }
+  return {
+    issuer,
+    authorizationEndpoint,
+    tokenEndpoint,
+    jwksUri,
+    idTokenSigningAlgorithms: supported.filter((value): value is string => typeof value === 'string' && accepted.includes(value)),
   };
 }
 
