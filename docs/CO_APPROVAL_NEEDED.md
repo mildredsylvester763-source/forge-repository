@@ -433,3 +433,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 - The observe-only detector is implemented and now avoids false positives when the active-session baseline lacks usable metadata.
 - Still requires owner approval for exact catalogue acceptance, any risk score/threshold, alert recipient, challenge/lockout/revocation response and any historical IP/user-agent retention.
 - Current behavior is advisory only; no automated account-access decision is made. No extra telemetry retention or geolocation is inferred.
+
+
+## CO-013 missing feature definition follow-up (2026-11-06)
+
+- **Required:** exact Part 01 CO-013 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. No adjacent identity capability is attributed to CO-013 without evidence. No implementation is guessed.
