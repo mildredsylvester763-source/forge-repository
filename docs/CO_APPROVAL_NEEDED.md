@@ -470,3 +470,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** approve KMS versus owner-managed key source; service identity/access; key IDs and rotation/re-encryption; database/file encryption scope; backup encryption; restore/key-loss recovery; and exact Part 01 acceptance wording.
 - **State:** NOT APPROVED / OWNER-BLOCKED. Existing TOTP-specific AES-GCM with an injected key is not a general encryption-at-rest system. No custom key/envelope design is added until the owner boundary is supplied.
+
+
+## CO-020 individual feature definition (2026-11-06)
+
+- **Required:** exact Part 01 CO-020 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. No dedicated implementation evidence exists on either branch.
