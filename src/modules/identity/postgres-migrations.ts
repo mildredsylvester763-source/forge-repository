@@ -64,4 +64,17 @@ export const pgIdentityMigrations: readonly Migration[] = [
       CREATE INDEX passkey_credentials_user_idx ON passkey_credentials (user_id, created_at);
     `,
   },
+  {
+    version: 3,
+    name: 'saml_replay_and_request_cache',
+    sql: `
+      CREATE TABLE saml_cache (
+        cache_key   TEXT PRIMARY KEY CHECK (length(cache_key) BETWEEN 1 AND 512),
+        cache_value TEXT NOT NULL CHECK (length(cache_value) <= 4096),
+        created_at  BIGINT NOT NULL,
+        expires_at  BIGINT NOT NULL CHECK (expires_at > created_at)
+      );
+      CREATE INDEX saml_cache_expiry_idx ON saml_cache (expires_at);
+    `,
+  },
 ];
