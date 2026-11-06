@@ -451,3 +451,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** exact Part 01 CO-015 feature title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The section label Workspaces and tenancy is not enough to define ownership, membership, lifecycle or data-isolation behavior.
+
+
+## CO-016 individual feature definition (2026-11-06)
+
+- **Required:** exact Part 01 CO-016 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. Do not infer invitations, membership or role behavior from the workspace/tenancy section heading.
