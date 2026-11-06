@@ -83,6 +83,43 @@ describe('CO-003 provider-neutral OIDC token security', () => {
     assert.throws(() => verifyOidcIdToken(verification(token({ nbf: Math.floor(now / 1000) + 600 }))), /not active/);
   });
 
+
+  it('verifies ES256 P-256 ID tokens using JOSE IEEE-P1363 signatures', () => {
+    const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const key = {
+      ...pair.publicKey.export({ format: 'jwk' }),
+      kid: 'ec-provider-key',
+      use: 'sig',
+      alg: 'ES256',
+      key_ops: ['verify'],
+    } as OidcJwk;
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const input = encode({ alg: 'ES256', typ: 'JWT', kid: 'ec-provider-key' }) + '.' + encode({
+      iss: 'https://issuer.example.test', aud: 'forge-client', sub: 'ec-user',
+      iat: Math.floor(now / 1000) - 5, exp: Math.floor(now / 1000) + 300, nonce,
+    });
+    const jwt = input + '.' + sign('sha256', Buffer.from(input), { key: pair.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+    assert.equal(verifyOidcIdToken({ ...verification(jwt), jwks: [key] }).subject, 'ec-user');
+  });
+
+  it('verifies EdDSA Ed25519 ID tokens', () => {
+    const pair = generateKeyPairSync('ed25519');
+    const key = {
+      ...pair.publicKey.export({ format: 'jwk' }),
+      kid: 'ed-provider-key',
+      use: 'sig',
+      alg: 'EdDSA',
+      key_ops: ['verify'],
+    } as OidcJwk;
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const input = encode({ alg: 'EdDSA', typ: 'JWT', kid: 'ed-provider-key' }) + '.' + encode({
+      iss: 'https://issuer.example.test', aud: 'forge-client', sub: 'ed-user',
+      iat: Math.floor(now / 1000) - 5, exp: Math.floor(now / 1000) + 300, nonce,
+    });
+    const jwt = input + '.' + sign(null, Buffer.from(input), pair.privateKey).toString('base64url');
+    assert.equal(verifyOidcIdToken({ ...verification(jwt), jwks: [key] }).subject, 'ed-user');
+  });
+
   it('does not treat an unverified email claim as proof of account ownership', () => {
     const identity = verifyOidcIdToken(verification(token({ email_verified: false })));
     assert.equal(identity.email, 'owner@example.test');
