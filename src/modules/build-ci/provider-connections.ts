@@ -46,7 +46,22 @@ function timestamp(value: string, field: string): void {
 }
 function validateSecretRef(value: string, workspaceId?: string): void {
   required(value, 'secretRef', 512);
-  const match = new RegExp('^(?:secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}
+  const match = /^(?:secret|vault|kms):\/\/forge\/(?:workspaces\/)?([^/]+)\/(.+)$/.exec(value);
+  const namespace = match?.[1];
+  const path = match?.[2];
+  if (!match || !namespace || !/^[A-Za-z0-9._-]{1,128}$/.test(namespace) ||
+      namespace === '.' || namespace === '..' || !path) {
+    throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+  }
+  const segments = path.split('/');
+  if (segments.length > 16 || !segments.every((segment) =>
+    /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(segment))) {
+    throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+  }
+  if (workspaceId !== undefined && namespace !== workspaceId) {
+    throw new TypeError('secretRef belongs to a different workspace');
+  }
+}
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
   required(input.actorId, 'actorId', 128); if (input.createdBy !== undefined) required(input.createdBy, 'createdBy', 128);
