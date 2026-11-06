@@ -19,6 +19,34 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
   try {
     await migrateBuildCiPostgres(testPool.pool);
     const providerConnections = new PostgresProviderConnectionStore(testPool.pool);
+    await assert.rejects(() => providerConnections.create({
+      connectionId: 'pg-invalid-repository',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/../private-app',
+      secretRef: 'vault://forge/pg-workspace/github/invalid',
+    }), /GitHub repository/);
+    await assert.rejects(() => providerConnections.create({
+      connectionId: 'pg-invalid-workspace-reference',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/private-app',
+      secretRef: 'vault://forge/../github/invalid',
+    }), /valid workspace-scoped/);
+    await assert.rejects(() => providerConnections.create({
+      connectionId: 'pg-cross-workspace-reference',
+      provider: 'github',
+      workspaceId: 'pg-workspace',
+      actorId: 'integration-test',
+      repository: 'team/private-app',
+      secretRef: 'vault://forge/another-workspace/github/invalid',
+    }), /different workspace/);
+    const invalidProviderRows = await testPool.pool.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM build_ci_provider_connections WHERE connection_id LIKE 'pg-invalid-%' OR connection_id = 'pg-cross-workspace-reference'",
+    );
+    assert.equal(Number(invalidProviderRows.rows[0]?.count ?? 0), 0);
     const providerConnection = await providerConnections.create({
       connectionId: 'pg-github-installation',
       provider: 'github',
