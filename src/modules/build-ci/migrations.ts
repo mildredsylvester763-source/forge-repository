@@ -614,7 +614,7 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
     version: 11,
     name: 'monotonic_pipeline_head_version',
     sql: `
-      CREATE FUNCTION build_pipelines_validate_current_version() RETURNS trigger LANGUAGE plpgsql AS $
+      CREATE FUNCTION build_pipelines_validate_current_version() RETURNS trigger LANGUAGE plpgsql AS $build_ci_head$
       BEGIN
         IF NEW.current_version < OLD.current_version THEN
           RAISE EXCEPTION 'pipeline current_version must be monotonic';
@@ -629,7 +629,7 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         END IF;
         RETURN NEW;
       END;
-      $;
+      $build_ci_head$;
       CREATE TRIGGER build_pipelines_current_version_monotonic
         BEFORE UPDATE OF current_version ON build_pipelines
         FOR EACH ROW EXECUTE FUNCTION build_pipelines_validate_current_version();
