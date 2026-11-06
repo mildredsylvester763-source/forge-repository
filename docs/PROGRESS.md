@@ -881,3 +881,29 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - No login/step-up enforcement route, recovery codes, assisted reset, notifications or MFA audit-event integration is claimed.
 - PostgreSQL adapter/migration have not been validated against a live PostgreSQL service.
 - Continue independent backend work; do not block the CO sequence on these owner inputs.
+
+
+## CO-006 implementation continuation checkpoint (2026-11-06 10:07 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before CO-006 work, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `29cfe446fa3012540fa765e68080667da44af1b8`; Mistral was 436 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main had the session store core but did not have the Mistral request-auth helper, session-manager routes, session-revocation event constant, or `test/co-006-session-manager.test.ts`. Mistral had the complete owner-scoped session manager route and transactional revoke path.
+- Classification: **IMPLEMENTED against repository-documented behavior; catalogue acceptance unverified** because exact Part 01 CO-006 wording is not present.
+
+### Defect found and fixed
+- `SessionService.validate()` previously fell back to the stale pre-touch record when `SessionStore.touch()` returned null. If a concurrent request revoked or removed the session between the initial read and touch, this could allow the stale record to authenticate.
+- Changed validation to fail closed when conditional touch returns null, revoked state or expired state.
+- Changed the in-memory store to refuse touching revoked/expired sessions; SQLite touch now updates only where `revoked_at IS NULL AND expires_at > now`; PostgreSQL uses the same conditional predicate and `RETURNING *`.
+- Added a regression test in `test/co-006-session-manager.test.ts` for concurrent revocation/removal during idle touch.
+
+### Verification
+- Focused workflow [42192318904](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42192318904): isolated CO typecheck **passed**; **121 tests passed, 0 failed**.
+- Relevant commits: `54e50a3a789dd8dd650e5887d7478f601fb7d6d8` (fail closed on failed touch), `c480bd19d5809ef1c5675dd15eec1fff2d02c4f3` (conditional SQLite touch), `4c411566894d4970ae62bc628219bcb890ed408b` (conditional PostgreSQL touch), `f448999cb5558a2b91c861522b25dea0d612cc6b` (race regression test).
+- Full repository CI remains blocked by syntax errors in AI-only `src/modules/ai-training/sqlite-stores.ts`; no AI/TQ files were changed.
+
+### Remaining boundaries
+- Exact Part 01 acceptance wording remains required for owner catalogue sign-off.
+- IP address and user-agent retention/privacy duration should be reconciled with the owner's data policy. The API currently exposes these values only to the authenticated session owner.
+- Administrator-wide session management, device naming/location enrichment and bulk UX are not claimed unless required by the exact catalogue entry.
+- CO-006 does not close separate CO-007/CO-009 native token semantics or CO-005 MFA policy.
