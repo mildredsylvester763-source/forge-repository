@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { isValidRepositoryPath } from './changed-files.ts';
 import type { JsonValue, TriggerEvent } from './pipeline.ts';
 
 export type WebhookProvider = 'github' | 'gitlab';
@@ -98,15 +99,11 @@ function pathsFromCommits(value: unknown, expectedCommitCount?: unknown, provide
       const list = commit[key];
       if (!Array.isArray(list)) { complete = false; continue; }
       for (const entry of list) {
-        const path = text(entry, 1024);
-        // Repository paths are untrusted webhook data. Reject absolute paths,
-        // traversal segments and platform separators before any path filtering.
-        if (!path || path.startsWith('/') || path.includes('\\') || /[\r\n\0]/.test(path) ||
-            path.split('/').some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
+        if (!isValidRepositoryPath(entry)) {
           complete = false;
           continue;
         }
-        paths.add(path);
+        paths.add(entry);
         if (paths.size >= 5000) {
           complete = false;
           return Object.freeze({ paths: Object.freeze([...paths]), complete });
