@@ -500,3 +500,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** exact Part 01 CO-024 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. No dedicated implementation evidence exists on either branch.
+
+
+## CO-025 individual feature definition (2026-11-06)
+
+- **Required:** exact Part 01 CO-025 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. No dedicated implementation evidence exists on either branch.
