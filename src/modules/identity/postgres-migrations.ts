@@ -98,4 +98,20 @@ export const pgIdentityMigrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 5,
+    name: 'hashed_identity_action_tokens',
+    sql: `
+      CREATE TABLE identity_action_tokens (
+        token_hash   TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+        user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        purpose      TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_recovery')),
+        user_version BIGINT NOT NULL CHECK (user_version >= 1),
+        created_at   BIGINT NOT NULL,
+        expires_at   BIGINT NOT NULL CHECK (expires_at > created_at)
+      );
+      CREATE INDEX identity_action_tokens_user_purpose_idx ON identity_action_tokens (user_id, purpose);
+      CREATE INDEX identity_action_tokens_expiry_idx ON identity_action_tokens (expires_at);
+    `,
+  },
 ];
