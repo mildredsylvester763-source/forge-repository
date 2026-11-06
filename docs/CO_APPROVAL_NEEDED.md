@@ -439,3 +439,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** exact Part 01 CO-013 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. No adjacent identity capability is attributed to CO-013 without evidence. No implementation is guessed.
+
+
+## CO-014 missing feature definition follow-up (2026-11-06)
+
+- **Required:** exact Part 01 CO-014 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. No existing identity feature is attributed to CO-014 without evidence; no implementation is guessed.
