@@ -403,3 +403,10 @@ No external API credentials are needed for the current opaque bearer-session bac
 | PostgreSQL verification | Real PostgreSQL service and credentials for concurrency/migration tests | SQLite test success does not prove Postgres behavior | PostgreSQL adapter/migration exists but has not been live-tested |
 
 These inputs do not block independent backend work. Provider credentials and sender-domain values will be supplied by the owner at activation time.
+
+
+## CO-010 missing feature definition follow-up (2026-11-06)
+
+- **Required:** exact Part 01 CO-010 feature title, description and acceptance criteria.
+- **Why:** neither main nor Mistral contains a source/test/migration attributable to this unnamed feature. Mistral's anomaly detector is explicitly CO-012 and must not be misattributed.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. No code was guessed or changed. Continue independent CO work.
