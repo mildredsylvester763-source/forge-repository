@@ -221,3 +221,36 @@ describe('CO-006 owner-scoped session manager', () => {
     }
   });
 });
+
+
+describe('CO-006 session validation race safety', () => {
+  it('fails closed when a session is concurrently revoked or removed during an idle-touch update', async () => {
+    const now = 1_800_000_000_000;
+    const token = randomBytes(32).toString('base64url');
+    const record: SessionRecord = {
+      idHash: hashSessionToken(token),
+      userId: 'race-user',
+      createdAt: now - 120_000,
+      lastSeenAt: now - 120_000,
+      expiresAt: now + 3_600_000,
+      ip: '192.0.2.10',
+      userAgent: 'CO-006 race test',
+      revokedAt: null,
+      revokedReason: null,
+    };
+    const store = {
+      findByHash: async () => record,
+      touch: async () => null,
+      insert: async () => undefined,
+      revoke: async () => undefined,
+      revokeAllForUser: async () => 0,
+      listActiveByUser: async () => [record],
+    };
+    const sessions = new SessionService({
+      store,
+      clock: () => now,
+      config: { idleTimeoutMs: 3_600_000, absoluteTimeoutMs: 86_400_000, maxPerUser: 5 },
+    });
+    assert.equal(await sessions.validate(token), null, 'a failed conditional touch must not fall back to stale authorization');
+  });
+});
