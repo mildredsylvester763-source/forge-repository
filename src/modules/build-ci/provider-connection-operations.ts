@@ -2,11 +2,13 @@ import type { PipelineAuthorizer } from './store.ts';
 import { PipelineAuthorizationError } from './store.ts';
 import type { WebhookProvider } from './webhooks.ts';
 import { errorCode } from '../../kernel/sql.ts';
-import type {
-  ProviderConnectionEvent,
-  ProviderConnectionRecord,
-  ProviderConnectionStore,
-  ProviderSecretResolver,
+import {
+  isValidProviderRepository,
+  isWorkspaceScopedProviderSecretReference,
+  type ProviderConnectionEvent,
+  type ProviderConnectionRecord,
+  type ProviderConnectionStore,
+  type ProviderSecretResolver,
 } from './provider-connections.ts';
 
 const RESOURCE_ID = 'provider-connections';
@@ -46,10 +48,7 @@ function validateProvider(value: string): asserts value is WebhookProvider {
   if (value !== 'github' && value !== 'gitlab') throw new TypeError('provider is invalid');
 }
 function validateRepository(value: string, provider: WebhookProvider): void {
-  if (typeof value !== 'string' || value.length > 256) throw new TypeError('repository is invalid');
-  const parts = value.split('/');
-  if ((provider === 'github' && parts.length !== 2) || (provider === 'gitlab' && parts.length < 2) ||
-      parts.some((part) => !/^[A-Za-z0-9_.-]{1,100}$/.test(part) || part === '.' || part === '..')) {
+  if (!isValidProviderRepository(value, provider)) {
     throw new TypeError(provider === 'github' ? 'GitHub repository must be owner/repo.' : 'GitLab repository must be group[/subgroup]/project.');
   }
 }
@@ -82,12 +81,9 @@ export class ProviderConnectionOperations {
   }
 
   private async requireSecretReference(secretRef: string, workspaceId: string): Promise<void> {
-    if (typeof secretRef !== 'string' || secretRef.length > 512) throw new TypeError('secretRef is invalid');
-    const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}$').exec(secretRef);
-    if (!match || match[2] === '.' || match[2] === '..') {
+    if (!isWorkspaceScopedProviderSecretReference(secretRef, workspaceId)) {
       throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
     }
-    if (match[2] !== workspaceId) throw new TypeError('secretRef belongs to a different workspace');
     let secret: string | null;
     try { secret = await this.secrets.resolve(secretRef); } catch { secret = null; }
     if (typeof secret !== 'string' || secret.length === 0) throw new ProviderSecretReferenceUnavailableError();
