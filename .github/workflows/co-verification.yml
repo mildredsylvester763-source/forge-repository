@@ -29,6 +29,7 @@ on:
       - 'test/oidc-token.test.ts'
       - 'test/saml-service.test.ts'
       - 'test/totp.test.ts'
+      - 'test/totp-service.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-007-native-token.test.ts'
@@ -76,6 +77,7 @@ jobs:
             test/oidc-token.test.ts \
             test/saml-service.test.ts \
             test/totp.test.ts \
+            test/totp-service.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
