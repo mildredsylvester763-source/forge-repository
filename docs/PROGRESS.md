@@ -967,3 +967,12 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Evidence recorded in `docs/features/CO-009.md`, `docs/PROGRESS.md`, `docs/CO_APPROVAL_NEEDED.md`, `src/modules/identity/request-auth.ts`, `src/modules/identity/routes.ts`, and `test/co-007-native-token.test.ts`.
 - Required owner input: exact CO-009 Part 01 wording; desktop client audience; whether per-device registration/attestation is required; token expiry/refresh/rotation/offline policy; secure-storage and revocation requirements.
 - No tests were added because no implementation was safe to write against an unknown contract. Proceed to CO-010 rather than waiting for owner input.
+
+
+## CO-010 audit checkpoint (2026-11-06 10:11 Africa/Lagos)
+
+- Branch comparison before audit: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `70886f9056ceb89c006e37c8305ca0f692f22323`; 459 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. The exact CO-010 feature title and acceptance criteria are absent.
+- Mistral's `identity-anomaly.ts` is documented and tracked as CO-012, not CO-010; it must not be relabelled to inflate CO-010 progress.
+- Neither branch has a CO-010 feature document, dedicated source/test/migration evidence. No implementation or test was added because the target behavior is unknown.
+- Evidence and owner request recorded in `docs/features/CO-010.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Continue to CO-011/next independently specified work.
