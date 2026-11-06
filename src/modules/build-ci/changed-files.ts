@@ -174,6 +174,14 @@ export class ProviderPullRequestChangedFilesResolver implements PullRequestChang
           const path = validPath(item.filename);
           if (!path) { complete = false; reason ??= 'incomplete_diff'; }
           else paths.add(path);
+
+          // GitHub reports previous_filename for renamed files. Include both
+          // sides so path filters cannot miss validation for the source path.
+          if (item.previous_filename !== undefined) {
+            const previousPath = validPath(item.previous_filename);
+            if (!previousPath) { complete = false; reason ??= 'incomplete_diff'; }
+            else paths.add(previousPath);
+          }
         } else {
           if (item.collapsed === true || item.too_large === true) {
             complete = false;
