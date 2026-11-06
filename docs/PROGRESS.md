@@ -856,3 +856,28 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Real PostgreSQL integration/cache concurrency testing remains outstanding. SQLite tests do not prove PostgreSQL behavior.
 - SLO, encrypted assertions, SP key rotation and customer certificate rollover remain unimplemented unless exact catalogue criteria later require them.
 - External customer IdP details and approval items are listed in `docs/CO_APPROVAL_NEEDED.md`. Do not wait for credentials to continue independent CO backend work.
+
+
+## CO-005 implementation continuation checkpoint (2026-11-06 10:05 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before CO-005 work, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `6ee2a659b0dac91abde38566bd8e71c5bd640341`; Mistral was 433 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main did not contain `src/modules/identity/totp.ts`, `test/totp.test.ts` or `docs/features/CO-005.md`; Mistral contained the documented RFC 6238 primitive slice.
+- Classification: **PARTIAL**. TOTP primitives were extended with encrypted enrollment, confirmation, SQLite/PostgreSQL persistence and atomic replay prevention. MFA enforcement and recovery remain owner-policy dependent.
+
+### Implemented and verified
+- New `src/modules/identity/totp-store.ts`: SQLite and PostgreSQL factor stores with atomic enrollment activation and moving-factor compare-and-swap; one pending/active factor per user; factor deletion/cancel and pending-expiry operations.
+- New `src/modules/identity/totp-service.ts`: AES-256-GCM encrypted seed storage with user-bound associated data, injected 32-byte key, pending enrollment expiry, confirmation before activation, immediate consumption of the enrollment step, replay-safe verification, and code-verified factor disable.
+- Identity migration v4 adds `totp_factors` to SQLite and PostgreSQL schemas. The secret is not stored in plaintext; the encryption key is not stored in the database or source.
+- New `test/totp-service.test.ts`: encryption-at-rest, confirmation, wrong-code handling, replay rejection, concurrent same-code consumption, pending expiry, wrong-key failure and constructor policy bounds.
+- Focused workflow [42192070778](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42192070778): isolated CO typecheck **passed**; **120 tests passed, 0 failed**.
+- Relevant commits: `d8441de38c54fc18bce624421a63b762f7e6f301` (factor stores), `2059b9e275074d596850124c45615bc6f48885b9` (SQLite schema), `0214c1692fb569168c4de4c121e1b98bb763196c` (PostgreSQL schema), `b757bda21a7cd4c5d13994eaadffc242c646bb3e` (store typecheck correction), `15250cba931c573ee81bb5e69012792b275a4fcf` (encrypted enrollment service), `2683589ab1689486382cad394b375ce0e02de21f` (service tests), `ea6bffd6a3fd0ee5fbb5ef6f81472b95f26828c0` (test fixture correction), `87261c76503028b289a938bdacba293f570b695f` (focused typecheck inclusion), `c6d513083850c89661d7c129dbea667c8111c6ad` (workflow inclusion), `694a72f9f5df383a85eaf2ae97bc81fa762d6b51` (unused parameter correction).
+- Full repository CI remains blocked by unrelated syntax errors in AI-only `src/modules/ai-training/sqlite-stores.ts`; no AI/TQ files were touched.
+
+### Remaining CO-005 work and owner inputs
+- MFA policy (optional/mandatory/tenant/step-up), accepted algorithms/digits/period/drift, enrollment and recovery behavior remain unapproved.
+- Production 32-byte encryption key source, KMS/key rotation, backup and recovery are owner/security dependencies. The service accepts an injected key; application wiring is intentionally not enabled without approved key custody.
+- No login/step-up enforcement route, recovery codes, assisted reset, notifications or MFA audit-event integration is claimed.
+- PostgreSQL adapter/migration have not been validated against a live PostgreSQL service.
+- Continue independent backend work; do not block the CO sequence on these owner inputs.
