@@ -5,6 +5,7 @@ import { InMemoryOidcTransactionStore, OidcAuthorizationService, type OidcProvid
 import { OidcAuthenticationService } from '../src/modules/identity/oidc-authentication.ts';
 import {
   exchangeOidcAuthorizationCode,
+  fetchOidcDiscovery,
   fetchOidcJwks,
   verifyOidcIdToken,
   type OidcJwk,
@@ -231,6 +232,33 @@ describe('CO-003 provider-neutral OIDC token security', () => {
       (error: unknown) => error instanceof Error && error.message.includes('invalid or expired'),
     );
     assert.equal(tokenExchangeCount, 1, 'replayed state must be rejected before another provider request');
+  });
+
+
+  it('validates OIDC discovery issuer, endpoints, response type, subject type and signing algorithms', async () => {
+    const metadata = {
+      issuer: 'https://issuer.example.test',
+      authorization_endpoint: 'https://issuer.example.test/authorize',
+      token_endpoint: 'https://issuer.example.test/token',
+      jwks_uri: 'https://issuer.example.test/jwks',
+      response_types_supported: ['code'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256', 'ES256'],
+      token_endpoint_auth_methods_supported: ['client_secret_post'],
+    };
+    let requested = '';
+    const fetcher: typeof fetch = async (input) => {
+      requested = String(input);
+      return new Response(JSON.stringify(metadata), { status: 200 });
+    };
+    const discovered = await fetchOidcDiscovery(metadata.issuer, 'production', fetcher);
+    assert.equal(requested, 'https://issuer.example.test/.well-known/openid-configuration');
+    assert.equal(discovered.tokenEndpoint, metadata.token_endpoint);
+    assert.deepEqual(discovered.idTokenSigningAlgorithms, ['RS256', 'ES256']);
+    await assert.rejects(() => fetchOidcDiscovery(metadata.issuer, 'production', async () =>
+      new Response(JSON.stringify({ ...metadata, issuer: 'https://attacker.example' }), { status: 200 })), /does not exactly match/);
+    await assert.rejects(() => fetchOidcDiscovery(metadata.issuer, 'production', async () =>
+      new Response(JSON.stringify({ ...metadata, id_token_signing_alg_values_supported: ['HS256'] }), { status: 200 })), /supported ID token signing algorithm/);
   });
 
   it('fetches a bounded JWKS document and rejects duplicate key identifiers', async () => {
