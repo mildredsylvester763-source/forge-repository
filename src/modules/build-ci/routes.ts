@@ -117,7 +117,9 @@ function triggerEvent(value: unknown, allowExternalKinds = false): TriggerEvent 
 
 function authenticatedTriggerEvent(value: unknown, idempotencyKey: string | undefined): TriggerEvent {
   if (!isRecord(value)) throw new AppError(400, 'invalid_request', 'event must be an object.');
-  exact(value, ['kind', 'branch', 'baseBranch', 'changedFiles', 'commitSha', 'pullRequestNumber', 'payload'], ['kind']);
+  // Changed-file lists are provider-owned evidence. A manual/API caller must
+  // not be able to submit an empty or fabricated list to suppress path filters.
+  exact(value, ['kind', 'branch', 'baseBranch', 'commitSha', 'pullRequestNumber', 'payload'], ['kind']);
   if (value.kind !== 'manual' && value.kind !== 'api') {
     throw new AppError(400, 'invalid_request', 'Only manual and API trigger kinds are accepted here.');
   }
@@ -130,7 +132,6 @@ function authenticatedTriggerEvent(value: unknown, idempotencyKey: string | unde
     ...(value.baseBranch !== undefined ? { baseBranch: id(value.baseBranch, 'event.baseBranch') } : {}),
     ...(value.commitSha !== undefined ? { commitSha: id(value.commitSha, 'event.commitSha') } : {}),
     ...(value.pullRequestNumber !== undefined ? { pullRequestNumber: value.pullRequestNumber as number } : {}),
-    ...(value.changedFiles !== undefined ? { changedFiles: value.changedFiles as string[] } : {}),
     ...(value.payload !== undefined ? { payload: value.payload as { readonly [key: string]: JsonValue } } : {}),
   };
   if (event.pullRequestNumber !== undefined && (!Number.isSafeInteger(event.pullRequestNumber) || event.pullRequestNumber < 1)) {
