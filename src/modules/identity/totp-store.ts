@@ -1,4 +1,4 @@
-import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
+import type { SqlPool } from '../../kernel/sql.ts';
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { TotpOptions } from './totp.ts';
 
