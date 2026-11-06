@@ -1236,3 +1236,50 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-038 title, description and acceptance criteria are unavailable.
 - Neither branch contains a CO-038 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
 - No feature-specific code or migration was added. Required owner input: exact Part 01 CO-038 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-038.md`. Continue to CO-039.
+
+## CO-039 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-039 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-039 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-039 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-039.md`. Continue to CO-040.
+
+
+## CO-040 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-040 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-040 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-040 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-040.md`. Continue to CO-041.
+
+
+## CO-041 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-041 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-041 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-041 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-041.md`. Continue to CO-042.
+
+
+## CO-042 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-042 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-042 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-042 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-042.md`. Continue to CO-043.
+
+
+## CO-043 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-043 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-043 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-043 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-043.md`. Continue to CO-044.
+
+
+## CO-044 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `4c44e347a800adda4de84f9af9f0c6a2daf31aad`; Mistral 529 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-044 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-044 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
+- No feature-specific code or migration was added. Required owner input: exact Part 01 CO-044 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-044.md`. Continue to CO-045.

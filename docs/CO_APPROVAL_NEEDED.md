@@ -608,3 +608,44 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Required:** exact original Part 01 CO-038 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
 - **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+## CO-039 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-039 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-040 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-040 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-041 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-041 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-042 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-042 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-043 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-043 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-044 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-044 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
