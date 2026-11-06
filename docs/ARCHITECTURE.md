@@ -26,7 +26,7 @@ Identity already publishes: `identity.user.registered`, `identity.registration.r
 | `tenancy` | CO-015 to CO-028 | planned |
 | `policy` | CO-029 to CO-044 | planned |
 | `graph` | CO-045 to CO-062 | planned |
-| `audit` | CO-063 to CO-080 | kernel part done |
+| `audit` | CO-063 to CO-080 | CO-063 implemented within repository-documented scope; CO-064/065/076 partial; remaining IDs await exact catalogue wording |
 | `context` | CO-081 to CO-090 | planned |
 | `reliability` | CO-091 to CO-100 | planned |
 | `ai` | AI-001 to AI-150 | planned |
@@ -34,6 +34,6 @@ Identity already publishes: `identity.user.registered`, `identity.registration.r
 
 ## Storage
 
-Every store is an interface (`UserStore`, `SessionStore`, `EventStore`) with two implementations: in-memory (quick experiments) and SQLite (durable, tests and single server). A PostgreSQL implementation, the production target, will plug into the same interfaces. The test suite runs against both existing ones so they cannot drift apart, and will run against Postgres too.
+Every store is an interface (`UserStore`, `SessionStore`, `EventStore`) with in-memory, SQLite and PostgreSQL implementations. SQLite is the local development/test backend; PostgreSQL is the production target. The PostgreSQL event-store suite can use a SQLite-backed stand-in when `FORGE_TEST_POSTGRES_URL` is absent, so a passing stand-in run is not native PostgreSQL proof.
 
-Changes that must not be half-done go through a unit of work (`IdentityUnitOfWork`): the data change and its audit event commit in one transaction (CO-065, transactional outbox). See `docs/DATABASE.md`.
+Changes that must not be half-done go through a unit of work (`IdentityUnitOfWork`): selected identity data changes and their audit events commit in one transaction (CO-065). Subscriber notification is currently best-effort and in-process; a durable outbox, consumer offsets and retry/dead-letter lifecycle are not implemented pending the owner's delivery-contract decision. See `docs/DATABASE.md`.

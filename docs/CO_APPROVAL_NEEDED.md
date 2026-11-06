@@ -778,3 +778,29 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Required:** exact original Part 01 CO-062 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
 - **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-063–CO-080 individual approval and validation register update (2026-11-06)
+
+| Feature | State | Exact owner / external input still required | Why it remains open |
+| --- | --- | --- | --- |
+| CO-063 | Repository-documented implementation present; formal acceptance NOT GRANTED | Exact original Part 01 CO-063 wording and owner acceptance | Envelope contract and focused tests are evidenced, but original catalogue criteria are unavailable. No provider credential is needed for local envelope construction. |
+| CO-064 | PARTIAL / native PostgreSQL validation outstanding | Isolated throwaway PostgreSQL service, `FORGE_TEST_POSTGRES_URL` Actions secret and correct `FORGE_TEST_POSTGRES_SSL` mode | SQLite-backed stand-in is not proof of PostgreSQL advisory-lock, trigger, transaction or concurrent-writer behavior. Use a test database, not production data. |
+| CO-065 | PARTIAL / durable subscriber delivery NOT APPROVED | Delivery guarantee, outbox ownership, per-consumer offsets, retry/backoff, dead-letter behavior, retention and replay/recovery rules | Selected source writes and audit appends are coupled, but notification is best-effort in-process. Do not silently choose delivery semantics. |
+| CO-066 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-066 | Section heading does not establish individual behavior. |
+| CO-067 | PARTIAL / scope NOT APPROVED | Exact original wording; decision on global versus module-scoped registry, compatibility rules and version/deprecation lifecycle | Current registry is identity-only. |
+| CO-068 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-068 | No individual contract is available; no behavior is inferred. |
+| CO-069 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-069 | No individual contract is available; no behavior is inferred. |
+| CO-070 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-070 | No individual contract is available; no behavior is inferred. |
+| CO-071 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-071 | No individual contract is available; no behavior is inferred. |
+| CO-072 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-072 | No individual contract is available; no behavior is inferred. |
+| CO-073 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-073 | No individual contract is available; no behavior is inferred. |
+| CO-074 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-074 | No individual contract is available; no behavior is inferred. |
+| CO-075 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-075 | No individual contract is available; no behavior is inferred. |
+| CO-076 | PARTIAL / independent anchor not deployed | Independent anchor destination; credential owner if external storage is selected; retention, availability, checkpoint cadence and recovery procedure | A pure verifier can compare a supplied checkpoint but cannot preserve it outside the event database. |
+| CO-077 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-077 | No individual contract is available; no behavior is inferred. |
+| CO-078 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-078 | No individual contract is available; no behavior is inferred. |
+| CO-079 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-079 | No individual contract is available; no behavior is inferred. |
+| CO-080 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-080 | No individual contract is available; no behavior is inferred. |
+
+No new credentials, external accounts or positive owner approvals were supplied by this audit. These records remain open and must not be silently closed when work advances.
