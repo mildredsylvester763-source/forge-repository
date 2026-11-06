@@ -907,3 +907,26 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - IP address and user-agent retention/privacy duration should be reconciled with the owner's data policy. The API currently exposes these values only to the authenticated session owner.
 - Administrator-wide session management, device naming/location enrichment and bulk UX are not claimed unless required by the exact catalogue entry.
 - CO-006 does not close separate CO-007/CO-009 native token semantics or CO-005 MFA policy.
+
+
+## CO-007 implementation continuation checkpoint (2026-11-06 10:08 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before CO-007 audit, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `55e0bbafee31663c993393ad4547507a39a92626`; Mistral was 443 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main has the cookie-based session foundation but no Mistral `request-auth.ts`, native sign-in/sign-out routes or `test/co-007-native-token.test.ts`.
+- Classification: **IMPLEMENTED against repository-documented behavior; catalogue acceptance unverified** because exact Part 01 CO-007 text is unavailable.
+
+### Evidence and security behavior
+- `src/modules/identity/request-auth.ts` parses opaque 256-bit bearer sessions and makes a malformed Authorization header fail closed rather than falling back to a browser cookie.
+- `src/modules/identity/routes.ts` implements native sign-in (token returned in body, no cookie) and native sign-out (server-side revocation). Protected routes and CO-006 session manager use the same session credential resolver.
+- `src/modules/identity/sessions.ts` stores only SHA-256 session references and enforces idle/absolute expiry and server-side revocation.
+- `test/co-007-native-token.test.ts` covers no-cookie token issuance, bearer-protected access/session management, bearer sign-out and malformed-header no-fallback behavior.
+- Focused workflow [42192318904](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42192318904): isolated CO typecheck **passed**; **121 tests passed, 0 failed** across the CO slice.
+- No new source changes were required for CO-007 during this audit; its current backend behavior already matched the repository's explicit documented contract.
+
+### Remaining owner validation
+- Exact Part 01 acceptance text; approved native token audience and whether the existing opaque session model satisfies all intended native clients.
+- Owner decision on refresh-token issuance versus reauthentication, device enrollment/attestation and native-device lifecycle.
+- Real Android Keystore/iOS Keychain secure-storage and HTTPS transport validation in native clients. These are client integration checks, not reasons to invent JWT/refresh-token code.
+- CO-009 desktop-specific semantics remain separate.
