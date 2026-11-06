@@ -247,6 +247,16 @@ test('SQLite store persists immutable versions and append-only rollback snapshot
   assert.equal(rollback.rollbackOfVersion, 1);
   assert.equal((await store.getLatestVersion('ws-a', 'web-build'))?.definitionHash, v1.definitionHash);
   assert.deepEqual((await store.listVersions('ws-a', 'web-build')).map((item) => item.version), [1, 2, 3]);
+  assert.throws(
+    () => db.prepare('UPDATE build_pipelines SET current_version = 1 WHERE workspace_id = ? AND pipeline_id = ?').run('ws-a', 'web-build'),
+    /monotonic/,
+    'the pipeline head must not move backwards',
+  );
+  assert.throws(
+    () => db.prepare('UPDATE build_pipelines SET current_version = 4 WHERE workspace_id = ? AND pipeline_id = ?').run('ws-a', 'web-build'),
+    /existing version/,
+    'the pipeline head must reference a persisted version',
+  );
   assert.throws(() => db.prepare('UPDATE build_pipeline_versions SET created_by = ? WHERE pipeline_id = ?').run('attacker', 'web-build'));
   assert.throws(() => db.prepare('DELETE FROM build_pipeline_versions WHERE pipeline_id = ?').run('web-build'));
   db.close();
