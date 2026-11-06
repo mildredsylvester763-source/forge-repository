@@ -29,6 +29,8 @@
     "test/passkey-routes.test.ts",
     "test/config.test.ts",
     "test/oidc-authorization.test.ts",
-    "test/totp.test.ts"
+    "test/totp.test.ts",
+    "src/modules/identity/oidc-token.ts",
+    "test/oidc-token.test.ts"
   ]
 }
