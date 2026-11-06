@@ -1066,3 +1066,12 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Mistral's `tenant_id` on `agent_credentials` only binds an agent credential; it does not provide row isolation for business data. Identity stores have no tenant membership join. Kernel contains no tenant context/query guard.
 - The owner has not approved app-only scoping versus PostgreSQL RLS, nor supplied database role/connection strategy. No tenant policy was guessed or implemented.
 - Evidence and required owner decision recorded in `docs/features/CO-017.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Proceed to CO-018.
+
+
+## CO-018 audit checkpoint (2026-11-06 10:19 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c4658e82e1fbda7bedb49b371f2956bf8b7dde95`; 494 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Neither branch has a general application-level encryption/key-management module.
+- Mistral TOTP uses AES-256-GCM for that one secret with an injected key, but there is no production KMS/key source, general envelope service, key rotation or encrypted backup path. `src/kernel/backup.ts` verifies checksums/integrity; it does not encrypt backup artifacts.
+- Repository documentation explicitly requires owner approval of KMS/owner-managed key source, rotation, recovery, service access and backup boundary before custom encryption is designed. No encryption code was guessed or added.
+- Evidence and required decisions recorded in `docs/features/CO-018.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Continue to CO-019.
