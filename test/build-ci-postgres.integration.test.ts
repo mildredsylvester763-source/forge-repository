@@ -231,6 +231,14 @@ test('PostgreSQL Build & CI migrations, versioning and idempotent trigger receip
     });
     assert.deepEqual([version1.version, version2.version, rollback.version], [1, 2, 3]);
     assert.equal(rollback.definitionHash, version1.definitionHash);
+    await assert.rejects(() => testPool.pool.query(
+      'UPDATE build_pipelines SET current_version = 1 WHERE workspace_id = $1 AND pipeline_id = $2',
+      ['pg-workspace', 'postgres-build'],
+    ), /monotonic/, 'PostgreSQL must reject a backward pipeline head update');
+    await assert.rejects(() => testPool.pool.query(
+      'UPDATE build_pipelines SET current_version = 4 WHERE workspace_id = $1 AND pipeline_id = $2',
+      ['pg-workspace', 'postgres-build'],
+    ), /existing version/, 'PostgreSQL must reject a head that points to a missing version');
 
     const integrityVersion = await service.createPipeline({
       workspaceId: 'pg-integrity-workspace',
