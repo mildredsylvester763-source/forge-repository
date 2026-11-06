@@ -74,9 +74,13 @@ Security and product boundaries:
 - Consumers import a pinned release into a new pipeline ID. Publishing a newer release never silently changes an imported pipeline.
 
 Still missing within BD-001:
-- Runtime task-registry resolution and compatibility checks; task names currently receive schema/syntax validation but are not yet resolved against Mistral's task registry.
-- Structured definition/template diff, compatibility metadata and guided upgrade flow.
+- Runtime task-registry resolution and compatibility checks. The GPT repository has no task-runtime/registry module or trusted registry adapter, so task names currently receive schema/syntax validation only. Do not introduce a placeholder registry or claim save-time/runtime compatibility checks until the runtime owner supplies the actual registry contract.
+- A safe, explicit template-upgrade workflow. Consumers currently import pinned immutable releases; upgrading an existing customized pipeline needs an approved conflict policy before implementation.
+- Compatibility metadata for task/schema versions, pending the registry contract.
 - A public/community catalogue or organisation-wide sharing policy; these require a separate visibility/moderation decision and are not enabled by default.
+
+Implemented since the initial design:
+- Value-free structural comparison for saved pipeline versions and template releases, plus an authenticated saved-version diff route. Unsaved candidate dry-runs also return baseline/candidate hashes and a value-free diff when a baseline exists.
 
 ## BD-016 — Triggers: push, PR, schedule, event, manual, API
 
@@ -110,8 +114,10 @@ Schedules: due → occurrence claimed → evaluated → queued/no-match; missed 
 - Do not execute untrusted PR code with privileged secrets or deployment permissions.
 
 ### Current FORGE status
-Implemented: trigger type definitions and matching; per-trigger enable/disable; schedule identity; numeric five-field cron with IANA timezone; branch/path filtering; idempotent queued-run persistence; authenticated manual/API trigger route; GitHub HMAC-SHA256 and GitLab Standard Webhooks signature verification over raw request bytes; provider event normalization; trusted connection/repository binding; durable deduplicated webhook receipts; leased webhook processing with bounded retry; and a DB-backed schedule dispatcher with per-workspace scan cursors, version-bound occurrence IDs, leased claims, retry/recovery and authorization-controlled queued-run creation. The scheduler explicitly skips nonexistent spring-forward wall times and emits both UTC instants for repeated fall-back wall times. A durable cursor supports catch-up after downtime in bounded scan batches.
-Still missing: production secret/integration resolver wiring; autonomous worker hosting/polling; event-bus integration; operational dead-letter/replay and monitoring controls; per-pipeline concurrency groups/overlap serialization; and execution of registered pipeline tasks. Webhook HTTP 202 still confirms verified durable receipt only, not a queued run or execution. The schedule dispatcher creates queued run records only; it is not a task executor.
+
+Implemented: trigger type definitions and matching; per-trigger enable/disable; schedule identity; numeric five-field cron with IANA timezone; branch/path filtering; idempotent queued-run persistence; authenticated manual/API trigger route; GitHub HMAC-SHA256 and GitLab Standard Webhooks signature verification over raw request bytes; provider event normalization; trusted connection/repository binding; durable deduplicated webhook receipts; leased webhook processing with bounded retry; workspace-scoped dead-letter inspection/replay with redacted failure storage and append-only replay audit; provider connection metadata and authenticated create/list/secret-reference rotation/revoke/history operations; and a DB-backed schedule dispatcher with per-workspace scan cursors, version-bound occurrence IDs, leased claims, retry/recovery and authorization-controlled queued-run creation. The optional BuildCiWorkerHost supports bounded polling cycles and a recurring loop when explicitly composed. The scheduler skips nonexistent spring-forward wall times and emits both UTC instants for repeated fall-back wall times. A durable cursor supports bounded catch-up after downtime.
+
+Still missing: a concrete production vault/KMS adapter and external secret provisioning/retirement; approved non-human delivery-service identity lifecycle; production provider resolver/worker composition and trusted workspace inventory; transactional event/outbox publication; operational SLOs, alert routing, retention and on-call/incident ownership; per-pipeline concurrency groups/overlap serialization; and execution of registered pipeline tasks in isolated workers. Webhook HTTP 202 confirms verified durable receipt only, not task execution. The schedule dispatcher creates authorized queued run records only; it is not a task executor.
 
 ## BD-017 — Conditional and path-based pipelines
 
@@ -132,8 +138,10 @@ Users can decide which steps run based on safe event context and changed files, 
 GitLab's `rules` supports `if`, `changes`, and `exists`, evaluated in order; GitHub supports branch/path filters with ordered negative patterns. FORGE's structured AST avoids arbitrary expression evaluation and can expose a reason trace for every selected or skipped step.
 
 ### Current FORGE status
-Implemented: bounded safe AST (`all`, `any`, `not`, `eq`, `in`, `exists`), branch/path filters, ordered negative/re-include patterns, explicit unavailable/incomplete-diff degraded behaviour, provider push-payload completeness checks, bounded paginated GitHub pull-request and GitLab merge-request file adapters, and webhook-processor enrichment before trigger evaluation. The adapter uses a provider-bound transport supplied by the integrations subsystem; credentials and host selection remain outside Build & CI.
-Remaining: production transport provisioning and owner approval of least-privilege provider API permissions; add compatibility coverage for each supported provider deployment configuration before broadening glob syntax.
+
+Implemented: bounded safe AST (`all`, `any`, `not`, `eq`, `in`, `exists`), branch/path filters, ordered negative/re-include patterns, explicit unavailable/incomplete-diff degraded behaviour, provider push-payload completeness checks, bounded paginated GitHub pull-request and GitLab merge-request file adapters, and webhook-processor enrichment before trigger evaluation. GitHub rename responses preserve both `previous_filename` and the current `filename`; invalid previous-path data marks the diff incomplete rather than silently presenting it as complete. The adapter uses a provider-bound transport supplied by the integrations subsystem; credentials and host selection remain outside Build & CI.
+
+Remaining: production transport provisioning and owner approval of least-privilege provider API permissions; compatibility coverage for each supported provider deployment configuration before broadening glob syntax. The accepted glob subset remains intentionally bounded; broader syntax requires an explicit compatibility decision.
 
 ## BD-029 — Dry-run for any pipeline change
 
@@ -151,8 +159,10 @@ Before a pipeline change is saved or run, a user can inspect the expected trigge
 - Dry-run output is reproducible for the same immutable definition digest and event fixture.
 
 ### Current FORGE status
-Implemented: pure dry-run of saved definitions with trigger evaluation, dependency planning and skip reasons. Authenticated route is being added.
-Missing: dry-run of unsaved candidate changes and before/after diff; richer scenario fixtures and API contract tests.
+
+Implemented: pure dry-run of saved definitions and unsaved candidates; baseline/candidate content hashes and value-free structural diffs; bounded 1–20 scenario matrices; trigger evaluation, dependency planning, parallel groups and explicit skip/degraded reasons; and authenticated HTTP routes with authorization, validation and no-persistence tests. Dry-run never executes tasks, resolves secrets, creates runs or saves versions.
+
+Remaining: owner confirmation of report fields and degraded-state language, plus any catalogue-specific acceptance details not represented in the current contract.
 
 ## BD-030 — Pipeline versioning and rollback
 
@@ -170,8 +180,10 @@ Every accepted change is immutable and attributable; users can inspect history a
 - Preserve version references in every run so an execution is reproducible after later edits.
 
 ### Current FORGE status
-Implemented: content-hashed immutable versions and append-only rollback snapshots in SQLite/PostgreSQL adapters.
-Remaining: concurrent version allocation tests, tamper/hash verification on read, version diff API and route-level tests.
+
+Implemented: content-hashed immutable versions and append-only rollback snapshots in SQLite/PostgreSQL; monotonic concurrent version allocation; read-time hash verification and tamper rejection; authenticated history/inspection and value-free structural version diff; rollback as a new version; and real-PostgreSQL concurrency/integrity tests.
+
+Remaining: owner confirmation of required change-note/version metadata and retention expectations, plus the product/security decision on any protected-environment rollback approval gate. No additional approval gate is assumed by implementation.
 
 ## Cross-feature acceptance gate
 
@@ -193,10 +205,10 @@ The following are implementation dependencies or future work, not silently compl
 
 Current provider-ingress implementation was checked against current official provider and security guidance:
 
-- GitHub requires validating the HMAC-SHA256 signature against the unmodified request body, keeping the secret server-side, using the delivery identifier to deduplicate, and recommends responding quickly while processing asynchronously. GitHub redelivery retains the same delivery ID. FORGE verifies the raw body and deduplicates by connection plus provider delivery ID; the durable worker/retry/replay lifecycle is still absent.
+- GitHub requires validating the HMAC-SHA256 signature against the unmodified request body, keeping the secret server-side, using the delivery identifier to deduplicate, and recommends responding quickly while processing asynchronously. GitHub redelivery retains the same delivery ID. FORGE verifies the raw body and deduplicates by connection plus provider delivery ID. The durable receipt queue, lease-based worker processing, bounded retries, and authenticated workspace-scoped dead-letter inspection/replay are implemented; production hosting, alerting, retention, and operational ownership remain open.
 - GitLab CI/CD supports push, merge-request, scheduled and manual pipeline sources, ordered job rules, and dependency-driven execution. FORGE's current safe condition AST and trigger model intentionally avoid arbitrary expression evaluation, but still need a real scheduler and trusted changed-file provider adapter.
 - Buildkite's incoming pipeline triggers accept signed GitHub events and generic webhook requests, expose delivery inspection, and document credential rotation constraints. This reinforces the need for FORGE to provide delivery observability and a rotation/revocation path through the integration/secret subsystem rather than storing signing secrets in Build & CI.
-- OWASP webhook guidance recommends constant-time HMAC verification, one secret per webhook, timestamp freshness where the provider supports it, event-ID deduplication, idempotent processing, payload limits, rate limiting, structured logs without full bodies/secrets, and asynchronous queueing. The current ingress covers raw-body signature verification, repository binding, bounded body size, deduplication and durable receipt insertion; freshness/replay controls for provider-specific timestamped signatures, throttling, operational logs/alerts, worker processing and retry/dead-letter controls remain verification or implementation work.
+- OWASP webhook guidance recommends constant-time HMAC verification, one secret per webhook, timestamp freshness where the provider supports it, event-ID deduplication, idempotent processing, payload limits, rate limiting, structured logs without full bodies/secrets, and asynchronous queueing. The current ingress covers raw-body signature verification, repository binding, bounded body size, deduplication and durable receipt insertion; freshness/replay controls for provider-specific timestamped signatures, throttling, structured operational logs/alerts, production worker hosting, SLOs, retention, and incident ownership remain verification or implementation work. Worker processing, bounded retry, and dead-letter replay controls now exist in the module and are covered by tests.
 
 This is a product/security benchmark, not evidence that all listed controls are implemented. Do not mark BD-016 accepted until the outstanding controls are mapped to catalogue scope, implemented where required, and tested.
 
