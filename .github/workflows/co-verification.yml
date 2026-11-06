@@ -12,6 +12,8 @@ on:
       - 'test/co-076-anchor-verification.test.ts'
       - 'test/co-065-atomic-signout.test.ts'
       - 'test/co-065-postgres-uow.test.ts'
+      - 'test/postgres.test.ts'
+      - 'test/pg-helpers.ts'
       - 'test/sqlite-pool.ts'
       - 'test/co-091-readiness.test.ts'
       - 'test/co-030-route-auth.test.ts'
@@ -37,7 +39,6 @@ on:
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-007-native-token.test.ts'
-      - 'test/co-012-anomaly.test.ts'
       - '.github/workflows/co-verification.yml'
   pull_request:
     branches:
@@ -49,9 +50,23 @@ permissions:
 jobs:
   co-focused:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: forge_test
+          POSTGRES_PASSWORD: forge_test_password
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge_test -d forge_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      FORGE_TEST_POSTGRES_URL: ${{ secrets.FORGE_TEST_POSTGRES_URL }}
-      FORGE_TEST_POSTGRES_SSL: ${{ vars.FORGE_TEST_POSTGRES_SSL || 'off' }}
+      FORGE_TEST_POSTGRES_URL: postgres://forge_test:forge_test_password@localhost:5432/forge_test
+      FORGE_TEST_POSTGRES_SSL: off
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,7 +75,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Typecheck the isolated CO kernel and identity slice
         run: npx tsc -p tsconfig.co.json --noEmit
-      - name: Run independent CO kernel and identity regressions
+      - name: Run CO kernel, identity, and native PostgreSQL regressions
         run: |
           node --test \
             test/co-063-canonical-payload.test.ts \
@@ -89,4 +104,4 @@ jobs:
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
-            test/co-012-anomaly.test.ts
+            test/postgres.test.ts
