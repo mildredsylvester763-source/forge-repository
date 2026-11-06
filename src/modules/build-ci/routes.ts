@@ -49,8 +49,11 @@ function webhookProvider(value: unknown): 'github' | 'gitlab' {
 }
 function providerSecretReference(value: unknown, workspaceId: string): string {
   const reference = textField(value, 'secretRef', 512);
-  if (!isWorkspaceScopedProviderSecretReference(reference, workspaceId)) {
+  if (!isWorkspaceScopedProviderSecretReference(reference)) {
     throw new AppError(400, 'invalid_request', 'secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference.');
+  }
+  if (!isWorkspaceScopedProviderSecretReference(reference, workspaceId)) {
+    throw new AppError(400, 'invalid_request', 'secretRef belongs to a different workspace.');
   }
   return reference;
 }
