@@ -140,7 +140,7 @@ Body:
 }
 ```
 
-The server assigns the event source (`forge.manual` or `forge.api`) and event ID. It does not trust a caller-supplied provider source. Supply an `Idempotency-Key` header to make client retries return the same queued run. Without that header, the server generates a fresh event ID.
+The server assigns the event source (`forge.manual` or `forge.api`) and event ID. It does not trust a caller-supplied provider source. Manual/API callers may select branch context, but cannot submit `changedFiles`: changed-file lists are provider-owned evidence, and accepting a caller-supplied empty list could falsely suppress a required path-filtered pipeline. Without a trusted provider diff, path filters use the explicit fail-open/degraded behaviour. Supply an `Idempotency-Key` header to make client retries return the same queued run. Without that header, the server generates a fresh event ID.
 
 Returns 202 when a run is durably queued, or 200 when no trigger matched. A queued record is not proof that a worker has executed the pipeline; task execution is not yet integrated.
 
