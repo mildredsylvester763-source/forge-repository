@@ -57,12 +57,16 @@ function header(headers: Readonly<Record<string, string | undefined>>, name: str
   return key ? headers[key] : undefined;
 }
 
-function validPath(value: unknown): string | null {
+/** Shared repository-relative path validation for push payloads and PR/MR file APIs. */
+export function isValidRepositoryPath(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 1024 ||
-      value.startsWith('/') || value.includes('\\') || /[\r\n\0]/.test(value)) return null;
+      value.startsWith('/') || value.includes('\\') || /[\r\n\0]/.test(value)) return false;
   const segments = value.split('/');
-  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) return null;
-  return value;
+  return !segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..');
+}
+
+function validPath(value: unknown): string | null {
+  return isValidRepositoryPath(value) ? value : null;
 }
 
 function githubNextPage(link: string | undefined, resultCount: number, currentPage: number): number | null | 'invalid' {
