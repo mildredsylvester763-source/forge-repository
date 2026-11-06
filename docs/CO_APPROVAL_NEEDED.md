@@ -457,3 +457,10 @@ These owner decisions do not block independent CO work. No agent credential is i
 
 - **Required:** exact Part 01 CO-016 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. Do not infer invitations, membership or role behavior from the workspace/tenancy section heading.
+
+
+## CO-017 tenant isolation owner decision follow-up (2026-11-06)
+
+- **Required:** explicit approval of application-enforced scoping alone versus PostgreSQL RLS as a second isolation boundary; if RLS is selected, database roles, connection-pool/session context strategy and policy rollout must be specified.
+- **Also required:** tenant/membership source and exact CO-017 acceptance wording.
+- **State:** NOT APPROVED / OWNER-BLOCKED. Agent credential tenant binding is not counted as general tenant isolation. No RLS policy or tenant access helper is guessed.
