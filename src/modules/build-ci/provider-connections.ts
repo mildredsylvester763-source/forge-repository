@@ -65,8 +65,11 @@ export function isValidProviderRepository(value: unknown, provider: WebhookProvi
 }
 
 function validateSecretRef(value: string, workspaceId?: string): void {
-  if (!isWorkspaceScopedProviderSecretReference(value, workspaceId)) {
+  if (!isWorkspaceScopedProviderSecretReference(value)) {
     throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
+  }
+  if (workspaceId !== undefined && !isWorkspaceScopedProviderSecretReference(value, workspaceId)) {
+    throw new TypeError('secretRef belongs to a different workspace');
   }
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
