@@ -279,6 +279,25 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         BEGIN SELECT RAISE(ABORT, 'provider connection events are append-only'); END;
     `,
   },
+
+  {
+    version: 10,
+    name: 'monotonic_pipeline_head_version',
+    sql: `
+      CREATE TRIGGER build_pipelines_current_version_monotonic
+      BEFORE UPDATE OF current_version ON build_pipelines
+      WHEN NEW.current_version < OLD.current_version OR
+        (NEW.current_version > 0 AND NOT EXISTS (
+          SELECT 1 FROM build_pipeline_versions
+          WHERE workspace_id = NEW.workspace_id
+            AND pipeline_id = NEW.pipeline_id
+            AND version = NEW.current_version
+        ))
+      BEGIN
+        SELECT RAISE(ABORT, 'pipeline current_version must be monotonic and reference an existing version');
+      END;
+    `,
+  },
 ];export const buildCiPostgresMigrations: readonly Migration[] = [
   {
     version: 1,
@@ -589,6 +608,31 @@ export const buildCiSqliteMigrations: readonly Migration[] = [
         ADD COLUMN event_order BIGINT GENERATED ALWAYS AS IDENTITY;
       CREATE UNIQUE INDEX build_ci_provider_connection_events_order_idx
         ON build_ci_provider_connection_events (provider, connection_id, event_order);
+    `,
+  },
+  {
+    version: 11,
+    name: 'monotonic_pipeline_head_version',
+    sql: `
+      CREATE FUNCTION build_pipelines_validate_current_version() RETURNS trigger LANGUAGE plpgsql AS $
+      BEGIN
+        IF NEW.current_version < OLD.current_version THEN
+          RAISE EXCEPTION 'pipeline current_version must be monotonic';
+        END IF;
+        IF NEW.current_version > 0 AND NOT EXISTS (
+          SELECT 1 FROM build_pipeline_versions
+          WHERE workspace_id = NEW.workspace_id
+            AND pipeline_id = NEW.pipeline_id
+            AND version = NEW.current_version
+        ) THEN
+          RAISE EXCEPTION 'pipeline current_version must reference an existing version';
+        END IF;
+        RETURN NEW;
+      END;
+      $;
+      CREATE TRIGGER build_pipelines_current_version_monotonic
+        BEFORE UPDATE OF current_version ON build_pipelines
+        FOR EACH ROW EXECUTE FUNCTION build_pipelines_validate_current_version();
     `,
   },
 ]; 
