@@ -166,6 +166,9 @@ export class IdentityActionTokenService {
   }
 
   async issue(userId: string, purpose: IdentityActionPurpose, userVersion: number): Promise<{ token: string; expiresAt: number }> {
+    if (purpose !== 'email_verification' && purpose !== 'password_recovery') {
+      throw new TypeError('Identity action token purpose is invalid');
+    }
     const now = this.clock();
     const token = randomBytes(32).toString('base64url');
     const ttl = purpose === 'email_verification'
