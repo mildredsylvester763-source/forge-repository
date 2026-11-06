@@ -649,3 +649,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Required:** exact original Part 01 CO-044 title, description and acceptance criteria.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
 - **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+### Shared CO authorization foundation — verification update (2026-11-06)
+
+- Focused CI run `42195566818` passed `npx tsc -p tsconfig.co.json --noEmit` and all **144 tests** after adding the generic kernel decision boundary and eight policy-effect regressions.
+- Full CI run `42195566857` remains blocked before tests by out-of-scope AI-only syntax errors in `src/modules/ai-training/sqlite-stores.ts` (TS1005, lines 503–657). No AI/TQ source was changed.
+- The generic primitive remains unwired until the owner approves the role/resource/tenant model and policy precedence.

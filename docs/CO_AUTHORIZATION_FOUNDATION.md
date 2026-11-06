@@ -25,8 +25,8 @@ This inventory records existing authentication wiring only. The listed AI/TQ mod
 
 - `test/authorization.test.ts` covers no-match deny, explicit deny, explicit allow, unanimous allow, conflicting effects, invalid effects, absent/unresolved decisions and malformed allow-shaped values.
 - Local isolated command: `node --experimental-strip-types --test test/authorization.test.ts` — **8 passed, 0 failed**.
-- Local isolated type-check: `tsc -p tsconfig.json --noEmit` — passed.
-- The test is added to `tsconfig.co.json` and the CO-focused GitHub Actions workflow for repository-level verification after commit.
+- Local isolated type-check: `tsc -p tsconfig.json --noEmit` — passed. Repository focused type-check also passed in run `42195566818`.
+- Repository CO-focused workflow run `42195566818` on `9039d5fe672089f9b13f6a4eebc57afc4fa47c3f` passed `npx tsc -p tsconfig.co.json --noEmit` and the focused test command reported **144 passed, 0 failed**.
 - No database schema or migration is required for this pure decision boundary.
 
 ## Owner decisions still required

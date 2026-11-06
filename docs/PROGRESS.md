@@ -1283,3 +1283,9 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Exact Part 01 CO-044 title, description and acceptance criteria are unavailable.
 - Neither branch contains a CO-044 specification, dedicated feature module, test or migration. The shared kernel authorization primitive is generic groundwork only and does not satisfy this feature's unknown acceptance criteria.
 - No feature-specific code or migration was added. Required owner input: exact Part 01 CO-044 wording and approved policy semantics. Evidence is recorded in `docs/features/CO-044.md`. Continue to CO-045.
+
+### Shared CO authorization foundation — post-commit verification (2026-11-06)
+
+- Focused workflow run `42195566818` on `9039d5fe672089f9b13f6a4eebc57afc4fa47c3f`: `npx tsc -p tsconfig.co.json --noEmit` passed; `node --test` passed **144 tests, 0 failed**, including the eight new authorization tests.
+- Full CI run `42195566857`: `npm run typecheck` failed on the existing out-of-scope `src/modules/ai-training/sqlite-stores.ts` TS1005 parse errors at lines 503–657; the full test step was skipped. No AI/TQ files were changed.
+- The generic kernel primitive is verified as a fail-closed decision boundary only. It is not wired to routes and does not resolve owner-dependent roles, tenant/resource scope or policy precedence.
