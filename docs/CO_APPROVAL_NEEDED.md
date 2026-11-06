@@ -333,3 +333,19 @@ The user has stated that provider credentials and deployment values will be supp
 | Key rotation/incident response | Credential rotation owner and incident-response procedure | Provider secrets and signing keys rotate independently | No provider credentials are stored in source; JWKS is retrieved per callback and token verification pins to provider key ID/algorithm |
 
 These are activation or owner-policy dependencies, not reasons to stop provider-neutral implementation. Do not fabricate provider credentials or silently choose account-linking semantics.
+
+
+## CO-004 Enterprise SSO customer inputs and owner approvals (2026-11-06)
+
+| Item | Required external input / approval | Why it is needed | Current implementation state |
+| --- | --- | --- | --- |
+| Customer IdP identity | IdP entity ID / issuer and customer-specific SSO endpoint | Each customer controls its own identity provider and endpoint | Provider-neutral SAML service accepts exact issuer and entry-point values; no tenant values invented |
+| IdP signing trust | Customer IdP signing certificate(s), plus rollover certificates when the IdP rotates | SAML assertions must be verified against the customer's trusted signing keys | SAML engine requires IdP certificate material and verifies signed Response and Assertion |
+| FORGE SP registration | Owner-approved SP entity ID, production ACS/callback URL, exact domain and HTTPS/DNS ownership | The customer's IdP must register the real FORGE service-provider endpoint | SP metadata generation and callback configuration are implemented; production domain remains unset |
+| SP request signing | Customer requirement for signed AuthnRequests; if required, matching SP private key/public certificate generated and stored through approved key custody | Some IdPs require signed AuthnRequests; private signing material must never be invented or committed | SHA-256 request signing supported and requires both key and certificate |
+| Assertion policy | Owner/security approval of accepted signature algorithms, assertion-age window, clock skew, NameID format and attribute set | These are security and interoperability policy choices | Strict signed response/assertion, InResponseTo and replay defaults are implemented provisionally |
+| Identity/tenant mapping | Attribute mapping, tenant resolution, group/role mapping, provisioning/deprovisioning, account linking and SSO-only policy | Mapping an IdP subject to a FORGE user/tenant changes account access and authorization | Not implemented; do not auto-create users or grant roles from unapproved attributes |
+| PostgreSQL activation | Real PostgreSQL integration service and credentials for migration/cache concurrency testing | Current focused tests exercise SQLite, not native PostgreSQL | PostgreSQL migration and cache adapter are implemented but not live-validated |
+| Additional SAML protocols | Owner decision whether Single Logout, encrypted assertions, metadata auto-import and certificate rotation orchestration are in CO-004 scope | These expand protocol and key lifecycle behavior; exact Part 01 criteria are unavailable | Not claimed as implemented |
+
+These are customer activation and owner-policy dependencies. They do not block provider-neutral SAML backend implementation or other independent CO features.
