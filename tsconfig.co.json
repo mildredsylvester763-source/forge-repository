@@ -32,6 +32,7 @@
     "test/totp.test.ts",
     "src/modules/identity/oidc-token.ts",
     "test/oidc-token.test.ts",
-    "test/saml-service.test.ts"
+    "test/saml-service.test.ts",
+    "test/totp-service.test.ts"
   ]
 }
