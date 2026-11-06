@@ -86,6 +86,30 @@ describe('CO-008 one-time identity action tokens', () => {
     }
   });
 
+
+  it('allows exactly one concurrent consumer for a one-time action token', async () => {
+    const db = openDatabase(':memory:');
+    const now = 1_800_000_000_000;
+    try {
+      migrate(db, 'kernel', kernelMigrations);
+      migrate(db, 'identity', identityMigrations);
+      insertUser(db, 'user-action-race', now);
+      const service = new IdentityActionTokenService({
+        store: new SqliteIdentityActionTokenStore(db),
+        clock: () => now,
+        config: { emailVerificationTtlMs: 86_400_000, passwordRecoveryTtlMs: 900_000 },
+      });
+      const issued = await service.issue('user-action-race', 'email_verification', 1);
+      const results = await Promise.all([
+        service.consume(issued.token, 'email_verification', 1),
+        service.consume(issued.token, 'email_verification', 1),
+      ]);
+      assert.equal(results.filter(Boolean).length, 1);
+    } finally {
+      db.close();
+    }
+  });
+
   it('rejects unbounded token lifetimes', () => {
     const db = openDatabase(':memory:');
     try {
