@@ -349,3 +349,17 @@ These are activation or owner-policy dependencies, not reasons to stop provider-
 | Additional SAML protocols | Owner decision whether Single Logout, encrypted assertions, metadata auto-import and certificate rotation orchestration are in CO-004 scope | These expand protocol and key lifecycle behavior; exact Part 01 criteria are unavailable | Not claimed as implemented |
 
 These are customer activation and owner-policy dependencies. They do not block provider-neutral SAML backend implementation or other independent CO features.
+
+
+## CO-005 TOTP persistence and MFA policy update (2026-11-06)
+
+| Item | Owner input / validation required | Why | Current implementation |
+| --- | --- | --- | --- |
+| MFA enforcement policy | Decide optional, mandatory, tenant-enforced, privileged-user-only or step-up-only | Login and session flows cannot safely assume every account must enroll | TOTP enrollment and verification service exists but no login route or global enforcement is enabled |
+| TOTP parameters | Approve algorithm, digit count, period, accepted clock-drift window and enrollment confirmation policy | These affect security, compatibility and recovery | All parameters are explicit constructor inputs; no product-wide defaults are silently enabled |
+| Encryption key custody | Approved 32-byte key source (KMS or owner-managed secret), access policy, rotation and backup/recovery procedure | The AES-GCM key must remain outside the database and source repository | AES-256-GCM encryption is implemented with user-bound AAD; key is injected at service construction and not wired to production config |
+| Recovery and backup codes | Count/format, hashing, one-time consumption, lost-device flow and assisted reset authority | Recovery can bypass MFA and needs explicit security ownership | No recovery codes or support reset path is implemented |
+| Notifications | Email/SMS provider and credentials only if the accepted recovery/notification design requires them | Provider accounts are deployment inputs, not backend logic | No provider credentials or delivery service assumed |
+| PostgreSQL verification | Real PostgreSQL integration service, credentials and concurrency test | SQLite tests do not prove Postgres transaction semantics | Postgres store and migration are implemented but not live-tested |
+
+These decisions do not block independent CO backend work. The user has stated that provider credentials and production deployment values will be supplied after the application/backend is built.
