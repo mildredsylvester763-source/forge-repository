@@ -785,3 +785,26 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - No local test or typecheck command was run in this environment. Report only the GitHub workflow evidence above.
 - The original Part 01 text for CO-002–CO-100 is still unavailable in this repository snapshot. Individual status classifications remain evidence-based but cannot be called catalogue-accepted until the original wording is reconciled.
 - Continue ordered implementation on the next run. Prioritize any newly supplied exact CO catalogue text, then the next safe independent implementation. Do not stop on owner-blocked dependencies; carry them forward in `docs/CO_APPROVAL_NEEDED.md`.
+
+
+## CO implementation continuation checkpoint (2026-11-06 09:42 Africa/Lagos)
+
+### Branch and scope verification
+- Repository: `mildredsylvester763-source/forge-repository`; destination branch `mistral`; comparison branch `main`.
+- Observed Mistral head before this checkpoint: `684230ba7ff9c3910c85c1bf21457d54faf4f4c6`.
+- Observed main head: `ec6716fb5ba6c42e940b748581990df9194a2a2b`.
+- Comparison: Mistral is 389 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`. No main write, merge, reset or force-push.
+- Work remained inside CO-002 identity/passkey files and tests. No AI or TQ source was changed.
+
+### CO-002 evidence and classification
+- Classification: **PARTIAL — backend implementation and focused verification are present; catalogue acceptance and production activation remain unverified**. The exact Part 01 CO-002 acceptance text was not located in the inspected repository documentation or supplied in the current conversation, so this is not labelled catalogue-complete.
+- Evidence: `docs/features/CO-002.md`; `src/modules/identity/passkey-service.ts`; `src/modules/identity/passkey-store.ts`; `src/modules/identity/webauthn.ts`; `src/modules/identity/passkey-routes.ts`; `src/modules/identity/migrations.ts`; `src/modules/identity/postgres-migrations.ts`; `test/webauthn.test.ts`; `test/passkey-store.test.ts`; `test/passkey-service.test.ts`; `test/passkey-routes.test.ts`; `test/identity-service.test.ts`.
+- Hardening completed in this run: registration options now exclude credentials already registered to that user; excluded credential IDs/transports are bounded and validated. SQLite and PostgreSQL counter updates reject a backup-state assertion for a credential that is not backup-eligible. Added regression tests for exclusion-list behavior and SQLite backup-eligibility enforcement.
+- Known implementation commits in this continuation: `4482e11e57c150794308dc6bbabaa90f1151f48d`, `fdd659203dd7b21515ae1918f731d264cb894e8f`, `dfbdec2a38831255d0247b633dbd9f964a13c858`, `3f5184e0fba8b18ae5644425617397e5532298d0`, `684230ba7ff9c3910c85a5c684f7d8d5d0c204e3` (note: final SHA is the latest test-file commit, not the source implementation commit).
+- Focused workflow [42189718374](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42189718374): isolated CO typecheck **passed**; **99 tests passed, 0 failed**. This is the current verified CO test result. It does not prove a live PostgreSQL integration run.
+- Full CI [42189718459](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42189718459): failed at the repository-wide TypeScript check before tests. Logged syntax errors are in AI-only `src/modules/ai-training/sqlite-stores.ts` (e.g. TS1005 around lines 503–657). The failure is outside CO scope; AI/TQ files were not modified to repair it.
+- CO-002 production/owner dependencies remain in `docs/CO_APPROVAL_NEEDED.md`: exact catalogue wording; production RP ID and exact allowed origins; RP display-name and attestation/authenticator/algorithm/backup-credential policy approval; real PostgreSQL CI/migration proof; shared rate-limit storage for multi-replica enforcement; and native-client secure credential storage/HTTPS integration validation. These do **not** block further provider-neutral backend implementation.
+
+### Next ordered work
+- Continue to CO-003 after this CO-002 verification checkpoint. Before each feature, compare `main` and `mistral`, inspect both feature implementations and tests, classify, then implement safe independent work.
+- Keep social-provider client IDs/secrets as deployment inputs only. Build and test provider-neutral OAuth/OIDC state, nonce, PKCE, callback, issuer/audience/signature validation and account-linking logic where repository requirements support it; do not invent supported providers or account-linking semantics when exact feature criteria are absent.
