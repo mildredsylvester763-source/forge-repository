@@ -1131,3 +1131,11 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Progress/approval registers explicitly state no CO-026 implementation evidence and no exact title/acceptance criteria.
 - Both branches lack a dedicated workspace/tenant module; no CO-026 source/test/migration exists. AI workspace retrieval is excluded.
 - No code/tests added. Exact wording required; evidence recorded in `docs/features/CO-026.md`.
+
+
+## CO-027 audit checkpoint (2026-11-06 10:27 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c08efb25e61f089893f65a70daf10b7bfcb1cd1b`; 519 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Progress/approval registers explicitly state no CO-027 implementation evidence and no exact title/acceptance criteria.
+- Both branches lack a dedicated workspace/tenant module; no CO-027 source/test/migration exists. AI workspace retrieval is excluded.
+- No code/tests added. Exact wording required; evidence recorded in `docs/features/CO-027.md`.
