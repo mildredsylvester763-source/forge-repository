@@ -1,3 +1,4 @@
+import { NamespacedSamlCacheProvider } from './saml-cache.ts';
 import {
   InMemoryCacheProvider,
   SAML,
@@ -97,6 +98,10 @@ export class SamlService {
     validateSamlProviderConfig(config);
     this.providerId = config.providerId;
     this.publicCert = config.spPublicCert ?? null;
+    if (typeof options.cacheProvider.consumeAsync !== 'function' || typeof options.cacheProvider.saveIfAbsentAsync !== 'function') {
+      throw new TypeError('SAML cache provider must support atomic consumeAsync and saveIfAbsentAsync');
+    }
+    const scopedCache = new NamespacedSamlCacheProvider(config.providerId, options.cacheProvider);
     const samlConfig: SamlConfig = {
       issuer: config.issuer,
       callbackUrl: config.callbackUrl,
@@ -111,7 +116,7 @@ export class SamlService {
       wantAuthnResponseSigned: true,
       acceptedClockSkewMs: config.acceptedClockSkewMs ?? 0,
       maxAssertionAgeMs: config.maxAssertionAgeMs ?? 300_000,
-      cacheProvider: options.cacheProvider,
+      cacheProvider: scopedCache,
       ...(config.spPrivateKey && config.spPublicCert ? {
         privateKey: config.spPrivateKey,
         publicCert: config.spPublicCert,
