@@ -44,30 +44,40 @@ function required(value: string, field: string, max: number): void {
 function timestamp(value: string, field: string): void {
   if (!Number.isFinite(Date.parse(value))) throw new TypeError(field + ' must be a valid timestamp');
 }
-function validateSecretRef(value: string, workspaceId?: string): void {
-  required(value, 'secretRef', 512);
+export function isWorkspaceScopedProviderSecretReference(value: unknown, workspaceId?: string): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 512) return false;
   const match = /^(?:secret|vault|kms):\/\/forge\/(?:workspaces\/)?([^/]+)\/(.+)$/.exec(value);
   const namespace = match?.[1];
   const path = match?.[2];
-  if (!match || !namespace || !/^[A-Za-z0-9._-]{1,128}$/.test(namespace) ||
-      namespace === '.' || namespace === '..' || !path) {
-    throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
-  }
+  if (!namespace || !/^[A-Za-z0-9._-]{1,128}$/.test(namespace) ||
+      namespace === '.' || namespace === '..' || !path) return false;
   const segments = path.split('/');
   if (segments.length > 16 || !segments.every((segment) =>
-    /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(segment))) {
+    /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(segment))) return false;
+  return workspaceId === undefined || namespace === workspaceId;
+}
+
+export function isValidProviderRepository(value: unknown, provider: WebhookProvider): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256 || /[\r\n\0]/.test(value)) return false;
+  const parts = value.split('/');
+  if ((provider === 'github' && parts.length !== 2) || (provider === 'gitlab' && parts.length < 2)) return false;
+  return parts.every((part) => /^[A-Za-z0-9_.-]{1,100}$/.test(part) && part !== '.' && part !== '..');
+}
+
+function validateSecretRef(value: string, workspaceId?: string): void {
+  if (!isWorkspaceScopedProviderSecretReference(value, workspaceId)) {
     throw new TypeError('secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference');
-  }
-  if (workspaceId !== undefined && namespace !== workspaceId) {
-    throw new TypeError('secretRef belongs to a different workspace');
   }
 }
 function validateCreate(input: CreateProviderConnectionInput): void {
   required(input.connectionId, 'connectionId', 128); required(input.workspaceId, 'workspaceId', 128);
   required(input.actorId, 'actorId', 128); if (input.createdBy !== undefined) required(input.createdBy, 'createdBy', 128);
   required(input.repository, 'repository', 256);
-  validateSecretRef(input.secretRef, input.workspaceId);
   if (input.provider !== 'github' && input.provider !== 'gitlab') throw new TypeError('provider is invalid');
+  if (!isValidProviderRepository(input.repository, input.provider)) {
+    throw new TypeError(input.provider === 'github' ? 'GitHub repository must be owner/repo.' : 'GitLab repository must be group[/subgroup]/project.');
+  }
+  validateSecretRef(input.secretRef, input.workspaceId);
   if (input.createdAt !== undefined) timestamp(input.createdAt, 'createdAt');
 }
 function fromRow(row: ConnectionRow): ProviderConnectionRecord {
