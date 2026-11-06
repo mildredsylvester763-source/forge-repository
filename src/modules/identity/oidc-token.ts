@@ -251,10 +251,9 @@ export async function exchangeOidcAuthorizationCode(
   if (input.clientSecret) body.set('client_secret', input.clientSecret);
   const response = await fetcher(input.tokenEndpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'Cache-Control': 'no-store' },
     body,
     redirect: 'error',
-    cache: 'no-store',
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) return fail('OIDC token endpoint rejected the authorization code (HTTP ' + response.status + ')');
@@ -279,7 +278,7 @@ export async function fetchOidcJwks(
   validEndpoint(jwksUri, environment);
   const response = await fetcher(jwksUri, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
     redirect: 'error',
     cache: 'no-store',
     signal: AbortSignal.timeout(10_000),
