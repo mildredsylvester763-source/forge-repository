@@ -17,6 +17,7 @@
     "backup:verify": "node dist/cli.js verify"
   },
   "dependencies": {
+    "@node-saml/node-saml": "5.2.0",
     "pg": "^8.13.0"
   },
   "devDependencies": {
