@@ -129,6 +129,16 @@ describe('CO-002 WebAuthn protocol core', () => {
     assert.equal(create.authenticatorSelection.userVerification, 'required');
     assert.equal(create.user.id, Buffer.from(userId).toString('base64url'));
     assert.deepEqual(create.pubKeyCredParams.map((x) => x.alg), [-7, -8]);
+    const excluded = createPasskeyRegistrationOptions({
+      challenge, userId, userName: 'owner@example.test', displayName: 'Owner', rpId, rpName: 'FORGE',
+      excludeCredentials: [{ id: credentialIdText, transports: ['internal', 'usb'] }],
+    });
+    assert.deepEqual(excluded.excludeCredentials, [{ type: 'public-key', id: credentialIdText, transports: ['internal', 'usb'] }]);
+    assert.throws(() => createPasskeyRegistrationOptions({
+      challenge, userId, userName: 'owner@example.test', displayName: 'Owner', rpId, rpName: 'FORGE',
+      excludeCredentials: Array.from({ length: 101 }, () => ({ id: credentialIdText })),
+    }), (error: unknown) => error instanceof WebAuthnError && error.code === 'invalid_excluded_credentials');
+
     const get = createPasskeyAuthenticationOptions({ challenge, rpId });
     assert.equal(get.userVerification, 'required');
     assert.equal(Object.hasOwn(get, 'allowCredentials'), false);
