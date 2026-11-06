@@ -64,7 +64,7 @@ The repository currently contains docs/features/CO-001.md but no individual feat
 
 ## Permissions and policy audit note (2026-11-05)
 
-- CO-030 is partial: identity session validation exists for `GET /v1/auth/me`, but this is not proof of resource-level or tenant-level authorization.
+- CO-030 is partial: server-side identity-session validation and cookie/bearer route guards exist, but they do not establish resource-level or tenant-level authorization.
 - CO-029 and CO-031–CO-044 have no dedicated CO permissions/policy implementation evidence in either branch. The AI web-search domain-policy engine is not CO and is not counted.
 - Exact feature-level catalogue wording and the owner's role, permission, delegation and policy-precedence decisions are required before adding authorization rules.
 
@@ -245,7 +245,7 @@ The existing CO-017 and CO-018 owner decisions remain **NOT APPROVED**. Supplyin
 - Exact feature-level Part 01 acceptance wording is required for every ID in this range; no role names or feature titles are inferred from the section heading.
 - Product/security owner must define the canonical roles, permission vocabulary, resource/action scope, role inheritance, delegation, assignment authority, policy precedence, deny/allow conflict handling and administrator override boundaries.
 - Tenant ownership and membership rules must be established alongside CO-015–CO-028. Permission checks cannot be implemented safely by guessing tenant semantics.
-- CO-030 currently has only identity session authentication evidence (`IdentityService.authenticate()` and `GET /v1/auth/me`). This does not grant resource- or tenant-level access. It remains PARTIAL.
+- CO-030 has server-side session authentication evidence across protected identity/passkey/application routes. This does not grant resource- or tenant-level access; it remains PARTIAL until the exact catalogue criteria and separate authorization boundaries are established.
 - Approval state: **NOT GRANTED**. Independent work on unrelated Core features may continue; do not add default-admin or permissive fallback roles.
 
 
@@ -532,3 +532,11 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not define CO-029's individual behavior.
 - **Security decisions:** the role/permission vocabulary, resource/action scope, inheritance, delegation, assignment authority and policy precedence must be owner-approved before authorization rules are introduced.
 - **Safe continuation:** audit CO-030 using its existing documented session-authentication behavior; do not infer that it supplies tenant/resource authorization.
+
+## CO-030 server-side session enforcement follow-up (2026-11-06)
+
+- **Known title:** Server-side session enforcement.
+- **State:** PARTIAL. IdentityService.authenticate() validates active server-side sessions and is wired into protected identity/passkey/application route handlers. Cookie and bearer extraction fail closed.
+- **Verification:** CO-030 route coverage was expanded for valid cookie, valid bearer and malformed Authorization behavior. A local isolated harness passed 4/4 tests and its focused type-check passed; the full CO-focused workflow must confirm the expanded test after commit.
+- **Remaining boundary:** session authentication is not tenant/resource authorization. CO-017 and CO-029–CO-044 owner decisions remain unresolved, and the exact original Part 01 CO-030 acceptance text is still required before claiming completion.
+- **Scope protection:** no AI or TQ source files were modified.

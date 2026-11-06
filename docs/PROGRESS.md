@@ -150,7 +150,7 @@ The full app spans up to about 30 files of features. Part 01 is only one of them
 - CO-091: healthRoutes() is extracted to src/kernel/health.ts. /healthz remains storage-independent; /readyz reports 503 not_ready when EventStore.head() cannot respond and 200 with auditSeq on success. This proves only the event-store/database dependency, not every external dependency or operational SLO.
 - CO-093: src/kernel/rate-limit.ts provides an in-memory sliding-window limiter; production multi-instance atomic/shared enforcement is not evidenced. Treat as partial, not complete.
 - CO-096: src/kernel/backup.ts provides verified SQLite snapshots (checksum, SQLite integrity and event-chain checks). This does not establish automated off-site PostgreSQL backup/restore.
-- CO-030: `IdentityService.authenticate()` backs the protected identity session endpoint (`GET /v1/auth/me`). A focused CO regression now checks that missing and invalid session cookies return the standard 401. This establishes the identity session check only; it does not prove a complete tenant/resource authorization model or the unavailable original CO-030 acceptance wording.
+- CO-030: `IdentityService.authenticate()` validates active server-side sessions and guards `GET /v1/auth/me`, protected passkey operations and existing application route handlers. Mistral's `sessionCredential()` supports cookie and bearer credentials and fails closed on malformed Authorization. This is session authentication only; tenant/resource authorization and the exact original acceptance wording remain unverified.
 
 ### CO-063/064/065/076 implementation review
 - Compared main and mistral: src/kernel/events.ts, src/kernel/canonical.ts, src/kernel/postgres-events.ts and src/kernel/sqlite-events.ts have identical blob SHAs on both branches at the time of review. Existing event foundation is inherited, not a Mistral-only addition.
@@ -368,7 +368,7 @@ See docs/CO_APPROVAL_NEEDED.md for the durable decision/dependency register.
 - Compared `main` and `mistral` before this audit. Neither source tree contains a CO authorization/permissions/roles/policy module. The only matching Mistral path outside identity is `src/modules/web-search/engine/domain-policy.ts`, which belongs to the AI web-search feature range and is excluded from CO. `src/modules/identity/routes.ts` and `src/kernel/http.ts` are byte-identical across branches.
 - Individual evidence-based classifications:
   - CO-029: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
-  - CO-030: PARTIAL. `IdentityService.authenticate()` is used by `GET /v1/auth/me` and the focused regression checks missing/invalid identity session cookies. This is identity-session authentication only; no CO resource/tenant authorization policy module or reusable policy guard is evidenced.
+  - CO-030: PARTIAL. `IdentityService.authenticate()` is used by the protected identity/passkey routes and the existing application route modules. The focused CO regression now covers missing/invalid credentials, valid cookie and bearer credentials, and malformed Authorization fallback rejection. This remains session authentication, not tenant/resource authorization.
   - CO-031: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-032: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
   - CO-033: MISSING implementation evidence; individual feature name/acceptance criteria unavailable.
@@ -627,7 +627,7 @@ Compared Mistral and main before classifying the permission surface. No dedicate
 | Feature | Classification | Evidence / limitation |
 | --- | --- | --- |
 | CO-029 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated authorization or permission implementation evidence in either branch; exact feature title/criteria unavailable. |
-| CO-030 — authenticated session check | **PARTIAL** | `src/modules/identity/identity-service.ts` implements `authenticate()`; `src/modules/identity/routes.ts` uses it for `GET /v1/auth/me`. This validates an identity session, not resource ownership, tenant membership or action-level permission decisions. |
+| CO-030 — server-side session enforcement | **PARTIAL** | `IdentityService.authenticate()` validates active sessions and is used by protected identity/passkey/application route handlers. Cookie and bearer extraction fail closed. No tenant membership, resource ownership or action-level permission policy is established; exact Part 01 acceptance wording remains unavailable. |
 | CO-031 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
 | CO-032 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
 | CO-033 | **MISSING / ACCEPTANCE UNVERIFIED** | No dedicated permission/policy implementation evidence; exact feature title/criteria unavailable. |
@@ -1153,3 +1153,11 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Classification: **MISSING / OWNER-BLOCKED**. Exact CO-029 feature wording and acceptance criteria are unavailable.
 - Neither branch contains a CO-029 specification, dedicated permissions/policy module, test or migration. Identity session authentication is not resource/tenant authorization; AI policy engines are excluded.
 - No code or migration was added. Required owner input: exact Part 01 CO-029 wording and any feature-specific authorization decisions. Evidence is recorded in `docs/features/CO-029.md` and this progress entry. Continue to CO-030.
+
+## CO-030 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `c42669876697f6fc5c7b91851e3902f7cee9ac0d`; Mistral 524 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **PARTIAL**. Mistral implements server-side identity-session validation, cookie/bearer credential extraction, protected `/me` and passkey routes, and existing application route guards. The CO regression was expanded to cover valid cookie/bearer credentials and malformed Authorization fallback rejection.
+- The route/auth test was executed in an isolated local harness: 4 passed, 0 failed. Its isolated TypeScript slice check passed. The latest full CO-focused CI baseline remains run `42193333427` (133 passed, 0 failed) on the unchanged source tree; the expanded test awaits its post-commit CI run.
+- No tenant/resource authorization policy, membership model or role/action vocabulary is established. Exact Part 01 CO-030 acceptance wording is unavailable; CO-017 and CO-029–CO-044 owner decisions remain separate.
+- No AI/TQ files were changed. Evidence is recorded in `docs/features/CO-030.md` and this progress entry. Continue to CO-031.
