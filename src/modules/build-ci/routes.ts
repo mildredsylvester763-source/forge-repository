@@ -10,6 +10,7 @@ import { WebhookIngressError, WebhookIngressService } from './webhook-ingress.ts
 import { WebhookPayloadError } from './webhooks.ts';
 import type { WebhookDeliveryOperations } from './webhook-operations.ts';
 import type { ProviderConnectionOperations } from './provider-connection-operations.ts';
+import { isValidProviderRepository, isWorkspaceScopedProviderSecretReference } from './provider-connections.ts';
 
 interface CookieConfig { name: string; }
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -48,18 +49,14 @@ function webhookProvider(value: unknown): 'github' | 'gitlab' {
 }
 function providerSecretReference(value: unknown, workspaceId: string): string {
   const reference = textField(value, 'secretRef', 512);
-  const match = new RegExp('^(secret|vault|kms):[/][/]forge[/](?:workspaces[/])?([A-Za-z0-9._-]{1,128})[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}(?:[/][A-Za-z0-9_-][A-Za-z0-9._-]{0,127}){0,15}$').exec(reference);
-  if (!match || match[2] === '.' || match[2] === '..') {
+  if (!isWorkspaceScopedProviderSecretReference(reference, workspaceId)) {
     throw new AppError(400, 'invalid_request', 'secretRef must use a valid workspace-scoped secret://forge/, vault://forge/ or kms://forge/ reference.');
   }
-  if (match[2] !== workspaceId) throw new AppError(400, 'invalid_request', 'secretRef belongs to a different workspace.');
   return reference;
 }
 function providerRepository(value: unknown, provider: 'github' | 'gitlab'): string {
   const repository = textField(value, 'repository', 256);
-  const parts = repository.split('/');
-  if ((provider === 'github' && parts.length !== 2) || (provider === 'gitlab' && parts.length < 2) ||
-      parts.some((part) => !/^[A-Za-z0-9_.-]{1,100}$/.test(part) || part === '.' || part === '..')) {
+  if (!isValidProviderRepository(repository, provider)) {
     throw new AppError(400, 'invalid_request', provider === 'github'
       ? 'GitHub repository must be owner/repo.'
       : 'GitLab repository must be group/subgroup/project.');
