@@ -280,3 +280,24 @@ test('webhook delivery claims use leases, bounded retries, and reject stale work
     db.close();
   }
 });
+
+
+test('push webhook normalizers reject unsafe repository paths and mark the path list incomplete', () => {
+  const commits = [{
+    added: ['src/safe.ts', '../outside.ts', '/etc/passwd', 'src/../secrets.env', 'src\\\\windows-path.ts', 'src//empty-segment.ts', 'src/./dot-segment.ts'],
+    modified: ['src/also-safe.ts'],
+    removed: [],
+  }];
+  const github = normalizeGitHubWebhook(Buffer.from(JSON.stringify({
+    repository: { full_name: 'team/api' }, ref: 'refs/heads/main', commits,
+  })), { 'x-github-event': 'push', 'x-github-delivery': 'unsafe-github-paths' });
+  assert.deepEqual(github.event.changedFiles, ['src/safe.ts', 'src/also-safe.ts']);
+  assert.equal(github.event.changedFilesComplete, false);
+
+  const gitlab = normalizeGitLabWebhook(Buffer.from(JSON.stringify({
+    project: { path_with_namespace: 'team/api' }, ref: 'refs/heads/main',
+    total_commits_count: 1, commits,
+  })), { 'x-gitlab-event': 'Push Hook', 'webhook-id': 'unsafe-gitlab-paths' });
+  assert.deepEqual(gitlab.event.changedFiles, ['src/safe.ts', 'src/also-safe.ts']);
+  assert.equal(gitlab.event.changedFilesComplete, false);
+});
