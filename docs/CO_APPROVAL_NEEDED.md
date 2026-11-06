@@ -363,3 +363,14 @@ These are customer activation and owner-policy dependencies. They do not block p
 | PostgreSQL verification | Real PostgreSQL integration service, credentials and concurrency test | SQLite tests do not prove Postgres transaction semantics | Postgres store and migration are implemented but not live-tested |
 
 These decisions do not block independent CO backend work. The user has stated that provider credentials and production deployment values will be supplied after the application/backend is built.
+
+
+## CO-006 session-manager validation follow-up (2026-11-06)
+
+| Item | Required owner validation | Why | Current state |
+| --- | --- | --- | --- |
+| Exact catalogue acceptance | Supply the exact Part 01 CO-006 wording | The repository's current route contract may not cover every catalogue UX/behavior requirement | Session list/revoke routes and ownership/audit behavior are implemented and focused-tested; catalogue acceptance remains unverified |
+| Session metadata privacy | Confirm retention period and whether users may see IP address and user-agent for all active sessions | IP/user-agent are personal/operational metadata | Visible only to the authenticated account owner; no extra enrichment or long-term retention behavior is inferred |
+| Administrator session control | Confirm whether tenant/security administrators require revoke-all or audit-view controls | Administrative authority changes account access | Not implemented; owner decision required before adding admin powers |
+
+The concurrent idle-touch/revocation race has been fixed and covered by a regression test. These owner questions do not block independent CO implementation.
