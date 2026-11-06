@@ -1,15 +1,62 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { createBackup, verifyBackup } from '../src/kernel/backup.ts';
+import { createBackup, pruneBackups, startBackupSchedule, verifyBackup } from '../src/kernel/backup.ts';
 import { kernelMigrations } from '../src/kernel/migrations.ts';
 import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
+import { silentLogger } from '../src/kernel/logger.ts';
 
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+
+  it('streams the checksum of a multi-megabyte snapshot', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forge-backup-large-test-'));
+    roots.push(root);
+    const db = openDatabase(join(root, 'live.sqlite'));
+    migrate(db, 'kernel', kernelMigrations);
+    db.exec('CREATE TABLE backup_payloads (data BLOB NOT NULL)');
+    db.prepare('INSERT INTO backup_payloads (data) VALUES (?)').run(Buffer.alloc(8 * 1024 * 1024, 0x5a));
+    const result = createBackup(db, join(root, 'backups'), new Date('2026-11-05T09:00:00.000Z'));
+    db.close();
+
+    assert.ok(result.bytes >= 8 * 1024 * 1024);
+    assert.deepEqual(verifyBackup(result.path), { ok: true, events: 0, sha256: result.sha256 });
+  });
+
+  it('rejects invalid retention without deleting existing backups', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forge-backup-retention-test-'));
+    roots.push(root);
+    const path = join(root, 'forge-20261105T080000000Z.sqlite');
+    writeFileSync(path, 'existing backup');
+    writeFileSync(path + '.sha256', 'existing checksum');
+
+    assert.throws(() => pruneBackups(root, 0), RangeError);
+    assert.throws(() => pruneBackups(root, -1), RangeError);
+    assert.throws(() => pruneBackups(root, 1.5), RangeError);
+    assert.equal(existsSync(path), true);
+    assert.equal(existsSync(path + '.sha256'), true);
+  });
+
+  it('rejects an invalid schedule before taking its immediate first backup', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forge-backup-schedule-test-'));
+    roots.push(root);
+    const db = openDatabase(join(root, 'live.sqlite'));
+    migrate(db, 'kernel', kernelMigrations);
+
+    assert.throws(() => startBackupSchedule({
+      db,
+      dir: join(root, 'backups'),
+      intervalHours: 0,
+      keep: 1,
+      logger: silentLogger,
+    }), RangeError);
+    assert.equal(existsSync(join(root, 'backups')), false);
+    db.close();
+  });
+
 });
 
 function makeBackup() {

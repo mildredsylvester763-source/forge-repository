@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Logger } from './logger.ts';
 import { openDatabase, type Database } from './sqlite.ts';
@@ -17,7 +17,19 @@ export type BackupCheck = { ok: true; events: number; sha256: string } | { ok: f
 const BACKUP_NAME = /^forge-\d{8}T\d{9}Z\.sqlite$/;
 
 function sha256File(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  const fd = openSync(path, 'r');
+  try {
+    const hash = createHash('sha256');
+    const chunk = Buffer.allocUnsafe(1024 * 1024);
+    for (;;) {
+      const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      hash.update(chunk.subarray(0, bytesRead));
+    }
+    return hash.digest('hex');
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -117,6 +129,7 @@ export function createBackup(db: Database, dir: string, now: Date): BackupResult
 
 /** Keep the newest `keep` backups, delete the rest (and their checksum files). Returns what was removed. */
 export function pruneBackups(dir: string, keep: number): string[] {
+  if (!Number.isSafeInteger(keep) || keep < 1) throw new RangeError('backup keep must be a positive safe integer');
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter((f) => BACKUP_NAME.test(f)).sort();
   const doomed = files.slice(0, Math.max(0, files.length - keep));
@@ -137,6 +150,12 @@ export interface BackupScheduleOptions {
 
 /** Takes a backup now and then every interval. Failures are logged loudly, never swallowed. */
 export function startBackupSchedule(options: BackupScheduleOptions): () => void {
+  if (!Number.isSafeInteger(options.intervalHours) || options.intervalHours < 1) {
+    throw new RangeError('backup intervalHours must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(options.keep) || options.keep < 1) {
+    throw new RangeError('backup keep must be a positive safe integer');
+  }
   const run = (): void => {
     try {
       const result = createBackup(options.db, options.dir, new Date());

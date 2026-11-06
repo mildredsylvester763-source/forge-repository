@@ -804,3 +804,15 @@ These owner decisions do not block independent CO work. No agent credential is i
 | CO-080 | NOT SUPPLIED / OWNER-BLOCKED | Exact original Part 01 title, description and acceptance criteria for CO-080 | No individual contract is available; no behavior is inferred. |
 
 No new credentials, external accounts or positive owner approvals were supplied by this audit. These records remain open and must not be silently closed when work advances.
+
+
+## CO-091–CO-096 continuation update (2026-11-06)
+
+- **CO-091:** PARTIAL. Existing liveness/readiness tests are in the focused workflow. Comprehensive readiness still needs the owner-approved dependency list and SLO/latency/error thresholds.
+- **CO-092:** NOT SUPPLIED / OWNER-BLOCKED. Exact individual Part 01 title, description and acceptance criteria required.
+- **CO-093:** PARTIAL. Process-local throttling exists. Before distributed activation, owner must select shared PostgreSQL or Redis, supply connection/service configuration if needed, and approve per-action abuse budgets. No backend choice was made in this run.
+- **CO-094:** NOT SUPPLIED / OWNER-BLOCKED. Exact individual Part 01 title, description and acceptance criteria required.
+- **CO-095:** NOT SUPPLIED / OWNER-BLOCKED. Exact individual Part 01 title, description and acceptance criteria required.
+- **CO-096:** SQLite backup hardening is implemented in this continuation (streamed checksum reads; strict retention and schedule input validation). PostgreSQL/off-site R2 backup remains open. Required deployment inputs remain Cloudflare account ID, R2 bucket, access key ID/secret, PostgreSQL backup source/credentials, and owner-approved retention, RPO/RTO and restore drill. No credential was fabricated and no production backup was activated.
+
+The CO-096 local helper checks passed before the commit; the focused GitHub workflow is the repository-level verification for the changed backup source/test paths. Do not close the PostgreSQL/R2 items on the strength of SQLite tests.
