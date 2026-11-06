@@ -560,3 +560,51 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Not implemented:** role vocabulary, permission assignment, resource/action matching, tenant membership, ownership, inheritance, delegation, policy storage, audit model, precedence or route activation.
 - **Owner input still required:** exact Part 01 wording for CO-029–CO-044 and approval of the complete authorization model. Do not wire the generic primitive to product routes until those decisions are made.
 - **Scope:** route inventory was read-only; no AI/TQ source was modified.
+
+## CO-032 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-032 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-033 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-033 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-034 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-034 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-035 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-035 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-036 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-036 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-037 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-037 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
+
+
+## CO-038 feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-038 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not establish this ID's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, tenant boundaries, inheritance, delegation, assignment authority and precedence must be owner-approved before feature-specific implementation.
