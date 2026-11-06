@@ -426,3 +426,10 @@ These inputs do not block independent backend work. Provider credentials and sen
 | PostgreSQL validation | Real Postgres integration service and concurrency test | SQLite test success does not prove Postgres behavior | Postgres adapter/migration implemented but not live-tested |
 
 These owner decisions do not block independent CO work. No agent credential is issued to a real agent or used to authorize application routes until the principal/scope model is approved.
+
+
+## CO-012 anomaly detection policy follow-up (2026-11-06)
+
+- The observe-only detector is implemented and now avoids false positives when the active-session baseline lacks usable metadata.
+- Still requires owner approval for exact catalogue acceptance, any risk score/threshold, alert recipient, challenge/lockout/revocation response and any historical IP/user-agent retention.
+- Current behavior is advisory only; no automated account-access decision is made. No extra telemetry retention or geolocation is inferred.
