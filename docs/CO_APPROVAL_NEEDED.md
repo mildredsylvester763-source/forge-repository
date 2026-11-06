@@ -655,3 +655,44 @@ These owner decisions do not block independent CO work. No agent credential is i
 - Focused CI run `42195566818` passed `npx tsc -p tsconfig.co.json --noEmit` and all **144 tests** after adding the generic kernel decision boundary and eight policy-effect regressions.
 - Full CI run `42195566857` remains blocked before tests by out-of-scope AI-only syntax errors in `src/modules/ai-training/sqlite-stores.ts` (TS1005, lines 503–657). No AI/TQ source was changed.
 - The generic primitive remains unwired until the owner approves the role/resource/tenant model and policy precedence.
+
+## CO-045 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-045 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-046 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-046 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-047 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-047 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-048 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-048 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-049 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-049 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
+
+
+## CO-050 graph feature-definition follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-050 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Project intelligence graph section heading does not define this ID's individual graph contract.
+- **Owner decisions:** node/edge types, stable identifiers, provenance/source of truth, versioning, duplicate resolution, visibility and inheritance from tenant/project permissions, mutation, deletion, retention and archival semantics must be approved before schema/query code is added.
