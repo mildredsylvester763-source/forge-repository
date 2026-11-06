@@ -99,7 +99,13 @@ function pathsFromCommits(value: unknown, expectedCommitCount?: unknown, provide
       if (!Array.isArray(list)) { complete = false; continue; }
       for (const entry of list) {
         const path = text(entry, 1024);
-        if (!path) { complete = false; continue; }
+        // Repository paths are untrusted webhook data. Reject absolute paths,
+        // traversal segments and platform separators before any path filtering.
+        if (!path || path.startsWith('/') || path.includes('\\\\') || /[\\r\\n\\0]/.test(path) ||
+            path.split('/').some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
+          complete = false;
+          continue;
+        }
         paths.add(path);
         if (paths.size >= 5000) {
           complete = false;
