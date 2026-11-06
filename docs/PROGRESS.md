@@ -1023,3 +1023,12 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 ### Remaining owner decisions
 - Exact Part 01 CO-012 acceptance wording; whether any risk score, threshold, challenge, alert recipient, lockout or revocation is required.
 - Approval of retention for historical device/IP/UA telemetry and data-minimization policy. Current detector uses only active-session metadata and does not persist a behavioral history.
+
+
+## CO-013 audit checkpoint (2026-11-06 10:14 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `50494fa7e9c94158aa9a615f833921414f27776a`; 479 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. The exact CO-013 feature name and acceptance criteria are not present.
+- Mistral's identity module contains multiple capabilities, but no source/test/migration is attributable to CO-013 by the available documentation. No neighboring capability was guessed or relabelled.
+- No code or tests were added. Evidence and owner request are recorded in `docs/features/CO-013.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`.
+- Required owner input: exact Part 01 CO-013 title, description and acceptance criteria. Continue to CO-014.
