@@ -464,3 +464,9 @@ These owner decisions do not block independent CO work. No agent credential is i
 - **Required:** explicit approval of application-enforced scoping alone versus PostgreSQL RLS as a second isolation boundary; if RLS is selected, database roles, connection-pool/session context strategy and policy rollout must be specified.
 - **Also required:** tenant/membership source and exact CO-017 acceptance wording.
 - **State:** NOT APPROVED / OWNER-BLOCKED. Agent credential tenant binding is not counted as general tenant isolation. No RLS policy or tenant access helper is guessed.
+
+
+## CO-018 encryption-at-rest owner boundary follow-up (2026-11-06)
+
+- **Required:** approve KMS versus owner-managed key source; service identity/access; key IDs and rotation/re-encryption; database/file encryption scope; backup encryption; restore/key-loss recovery; and exact Part 01 acceptance wording.
+- **State:** NOT APPROVED / OWNER-BLOCKED. Existing TOTP-specific AES-GCM with an injected key is not a general encryption-at-rest system. No custom key/envelope design is added until the owner boundary is supplied.
