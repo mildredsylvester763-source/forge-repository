@@ -1075,3 +1075,11 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Mistral TOTP uses AES-256-GCM for that one secret with an injected key, but there is no production KMS/key source, general envelope service, key rotation or encrypted backup path. `src/kernel/backup.ts` verifies checksums/integrity; it does not encrypt backup artifacts.
 - Repository documentation explicitly requires owner approval of KMS/owner-managed key source, rotation, recovery, service access and backup boundary before custom encryption is designed. No encryption code was guessed or added.
 - Evidence and required decisions recorded in `docs/features/CO-018.md`, `docs/PROGRESS.md` and `docs/CO_APPROVAL_NEEDED.md`. Continue to CO-019.
+
+
+## CO-020 audit checkpoint (2026-11-06 10:20 Africa/Lagos)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `1774bc37e4d160bd0b08631af7da9ff26bcf49dc`; 498 commits ahead, 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Repository progress and approval registers explicitly say no CO-020 implementation evidence and no exact title/acceptance criteria.
+- Both branches lack a dedicated workspace/tenant module; no CO-020 source/test/migration exists. AI `workspace-retrieval` is not counted.
+- No code/tests added. Exact wording required; evidence recorded in `docs/features/CO-020.md`.
