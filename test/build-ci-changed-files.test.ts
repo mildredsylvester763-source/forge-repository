@@ -158,3 +158,38 @@ test('provider adapter reports incomplete data when pagination exceeds its confi
   assert.equal(result.complete, false);
   assert.equal(result.reason, 'provider_limit');
 });
+
+test('GitHub rename responses include both the previous and current paths', async () => {
+  const transport: ProviderApiTransport = {
+    get: async () => ({
+      status: 200,
+      headers: {},
+      body: [{
+        filename: 'src/new-name.ts',
+        previous_filename: 'legacy/old-name.ts',
+        status: 'renamed',
+      }],
+    }),
+  };
+  const result = await makeResolver(transport).resolve(githubInput);
+  assert.deepEqual(result.paths, ['legacy/old-name.ts', 'src/new-name.ts']);
+  assert.equal(result.complete, true);
+});
+
+test('malformed GitHub previous filename marks the diff incomplete without discarding the valid current path', async () => {
+  const transport: ProviderApiTransport = {
+    get: async () => ({
+      status: 200,
+      headers: {},
+      body: [{
+        filename: 'src/new-name.ts',
+        previous_filename: '../outside.ts',
+        status: 'renamed',
+      }],
+    }),
+  };
+  const result = await makeResolver(transport).resolve(githubInput);
+  assert.deepEqual(result.paths, ['src/new-name.ts']);
+  assert.equal(result.complete, false);
+  assert.equal(result.reason, 'incomplete_diff');
+});
