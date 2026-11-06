@@ -27,6 +27,7 @@ on:
       - 'test/config.test.ts'
       - 'test/oidc-authorization.test.ts'
       - 'test/oidc-token.test.ts'
+      - 'test/saml-service.test.ts'
       - 'test/totp.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
@@ -73,6 +74,7 @@ jobs:
             test/config.test.ts \
             test/oidc-authorization.test.ts \
             test/oidc-token.test.ts \
+            test/saml-service.test.ts \
             test/totp.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
