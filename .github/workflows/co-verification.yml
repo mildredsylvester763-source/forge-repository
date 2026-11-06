@@ -32,6 +32,7 @@ on:
       - 'test/totp-service.test.ts'
       - 'test/action-tokens.test.ts'
       - 'test/agent-credentials.test.ts'
+      - 'test/co-012-anomaly.test.ts'
       - 'test/identity-service.test.ts'
       - 'test/co-006-session-manager.test.ts'
       - 'test/co-007-native-token.test.ts'
@@ -82,6 +83,7 @@ jobs:
             test/totp-service.test.ts \
             test/action-tokens.test.ts \
             test/agent-credentials.test.ts \
+            test/co-012-anomaly.test.ts \
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
