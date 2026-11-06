@@ -546,3 +546,10 @@ These owner decisions do not block independent CO work. No agent credential is i
 - Focused CI run `42194856313` passed the isolated CO type-check and all **136 tests** after the cookie/bearer route-test expansion.
 - Full CI run `42194856335` failed before tests on TypeScript syntax errors in out-of-scope `src/modules/ai-training/sqlite-stores.ts` (TS1005, lines 503–657). No AI/TQ changes are authorized under this task.
 - CO-030 remains PARTIAL because session authentication does not establish tenant/resource authorization and the exact Part 01 acceptance wording is unavailable.
+
+## CO-031 feature-definition and authorization follow-up (2026-11-06)
+
+- **Required:** exact original Part 01 CO-031 title, description and acceptance criteria.
+- **State:** NOT SUPPLIED / OWNER-BLOCKED. The Permissions and policy section heading does not define CO-031's individual behavior.
+- **Security decisions:** canonical roles, permission vocabulary, resource/action scope, inheritance, delegation, assignment authority and policy precedence must be approved before implementation.
+- **Safe continuation:** audit CO-032 independently; do not infer authorization behavior from identity-session authentication or AI policy engines.

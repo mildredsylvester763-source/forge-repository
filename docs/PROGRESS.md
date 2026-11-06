@@ -1166,3 +1166,10 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 
 - Focused workflow run `42194856313` on `e392e5738c9782dcb11dfd8255c3e14fde6ef462`: `npx tsc -p tsconfig.co.json --noEmit` passed; `node --test` passed **136 tests, 0 failed**. This includes the expanded CO-030 cookie/bearer route regressions.
 - Full CI run `42194856335`: `npm run typecheck` failed on out-of-scope AI-only `src/modules/ai-training/sqlite-stores.ts` with TS1005 syntax errors at lines 503–657; the full test step was skipped. No AI/TQ files were changed to repair it.
+
+## CO-031 audit checkpoint (2026-11-06)
+
+- Branch comparison: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral `5dad37eeabf4bb3dedfdfb7eba2bb0de013c949c`; Mistral 526 commits ahead and 1 behind; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Classification: **MISSING / OWNER-BLOCKED**. Exact CO-031 title, description and acceptance criteria are unavailable.
+- Neither branch contains a CO-031 specification, dedicated CO permissions/policy module, test or migration. Identity session authentication is not resource/action authorization; AI policy engines are excluded.
+- No code or migration was added. Required owner input: exact Part 01 CO-031 wording and the applicable role/permission semantics. Evidence is recorded in `docs/features/CO-031.md` and this progress entry. Continue to CO-032.
