@@ -114,4 +114,24 @@ export const identityMigrations: readonly Migration[] = [
       CREATE INDEX identity_action_tokens_expiry_idx ON identity_action_tokens (expires_at);
     `,
   },
+  {
+    version: 6,
+    name: 'scoped_agent_credentials',
+    sql: `
+      CREATE TABLE agent_credentials (
+        credential_id TEXT PRIMARY KEY CHECK (length(credential_id) = 32),
+        agent_id      TEXT NOT NULL CHECK (length(agent_id) BETWEEN 1 AND 128),
+        tenant_id     TEXT NOT NULL CHECK (length(tenant_id) BETWEEN 1 AND 128),
+        token_hash    TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
+        token_prefix  TEXT NOT NULL CHECK (length(token_prefix) BETWEEN 8 AND 32),
+        scopes_json   TEXT NOT NULL,
+        created_at    INTEGER NOT NULL,
+        expires_at    INTEGER NOT NULL CHECK (expires_at > created_at),
+        revoked_at    INTEGER,
+        last_used_at  INTEGER
+      ) STRICT;
+      CREATE INDEX agent_credentials_agent_idx ON agent_credentials (tenant_id, agent_id, revoked_at);
+      CREATE INDEX agent_credentials_expiry_idx ON agent_credentials (expires_at);
+    `,
+  },
 ];
