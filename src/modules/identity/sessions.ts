@@ -48,7 +48,7 @@ export class InMemorySessionStore implements SessionStore {
 
   async touch(idHash: string, now: number): Promise<SessionRecord | null> {
     const current = this.records.get(idHash);
-    if (!current) return null;
+    if (!current || current.revokedAt !== null || current.expiresAt <= now) return null;
     const next = { ...current, lastSeenAt: now };
     this.records.set(idHash, next);
     return next;
@@ -152,7 +152,13 @@ export class SessionService {
     if (record.revokedAt !== null) return null;
     if (now >= record.expiresAt) return null;
     if (record.lastSeenAt > now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
-    if (now - record.lastSeenAt > TOUCH_INTERVAL_MS) record = (await this.store.touch(idHash, now)) ?? record;
+    if (now - record.lastSeenAt > TOUCH_INTERVAL_MS) {
+      const touched = await this.store.touch(idHash, now);
+      // A null touch means the record was concurrently revoked, expired or removed.
+      // Never fall back to the stale pre-touch record: that would resurrect its authority.
+      if (!touched || touched.revokedAt !== null || touched.expiresAt <= now) return null;
+      record = touched;
+    }
     return record;
   }
 
