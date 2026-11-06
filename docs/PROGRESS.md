@@ -999,3 +999,27 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Agent principal types/registry, creator/owner and credential rotation authority, tenant binding source, scopes, delegation/impersonation, audience, workload identity and audit event policy.
 - No routes or application authorization integration are enabled until the principal and scope model is approved.
 - PostgreSQL adapter/migration have not been live-tested.
+
+
+## CO-012 anomaly detector continuation checkpoint (2026-11-06 10:13 Africa/Lagos)
+
+### Branch comparison and classification
+- Repository: `mildredsylvester763-source/forge-repository`; destination `mistral`; comparison `main`.
+- Before this CO-012 pass, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `18fb57d0dc00eb1dfbb74d32327e78f5dc458808`; Mistral was 472 commits ahead and 1 behind, merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main had no `identity-anomaly.ts` or anomaly event; Mistral had the observe-only detector, password/passkey sign-in integration and `identity.sign_in.anomaly_observed` event.
+- Classification: **PARTIAL**. Observe-only current-session signals exist; historical behavioral models, alerts, scores and automatic response remain unimplemented and owner-policy dependent.
+
+### Defect found and fixed
+- The detector previously treated any non-empty active-session list as a valid baseline. If those sessions had empty/invalid IP and user-agent metadata, it could report false new-IP/new-agent/new-device signals.
+- IPs are now syntax-validated with `node:net.isIP`; user-agent values are bounded. Each dimension is compared only if both the current request and baseline contain usable metadata for that dimension. No usable baseline returns `insufficient_metadata`.
+- A missing dimension no longer manufactures a device signal or suppresses comparison of the other usable dimension. No raw client metadata is added to assessment/event payloads.
+
+### Verification
+- Added baseline-quality and dimension-specific regressions to `test/co-012-anomaly.test.ts`.
+- Focused workflow [42193333427](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42193333427): isolated CO typecheck **passed**; **133 tests passed, 0 failed**.
+- Relevant commits: `ac55c958f7617fce6e8095b6cca97a1a46620020` (baseline-quality detector fix), `111424ffb679b97aad81379501103b4a319ed02e` (baseline-quality tests), `7b26ab5a1b5a9f57bdd2adfb693760e4bb7efe4a` (focused typecheck inclusion), `c730570e2783e35932fa5412fc2f73fe1d29fe75` (workflow inclusion).
+- Full CI remains failing outside CO in AI-only `src/modules/ai-training/sqlite-stores.ts`; no AI/TQ files were changed.
+
+### Remaining owner decisions
+- Exact Part 01 CO-012 acceptance wording; whether any risk score, threshold, challenge, alert recipient, lockout or revocation is required.
+- Approval of retention for historical device/IP/UA telemetry and data-minimization policy. Current detector uses only active-session metadata and does not persist a behavioral history.
