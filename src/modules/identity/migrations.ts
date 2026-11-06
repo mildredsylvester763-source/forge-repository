@@ -77,4 +77,25 @@ export const identityMigrations: readonly Migration[] = [
       CREATE INDEX saml_cache_expiry_idx ON saml_cache (expires_at);
     `,
   },
+  {
+    version: 4,
+    name: 'encrypted_totp_factors_and_replay_steps',
+    sql: `
+      CREATE TABLE totp_factors (
+        user_id             TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        secret_ciphertext  TEXT NOT NULL,
+        secret_iv          TEXT NOT NULL CHECK (length(secret_iv) = 16),
+        secret_tag         TEXT NOT NULL CHECK (length(secret_tag) = 22),
+        algorithm          TEXT NOT NULL CHECK (algorithm IN ('sha1', 'sha256', 'sha512')),
+        digits             INTEGER NOT NULL CHECK (digits IN (6, 8)),
+        period_seconds     INTEGER NOT NULL CHECK (period_seconds BETWEEN 15 AND 120),
+        status             TEXT NOT NULL CHECK (status IN ('pending', 'active')),
+        created_at         INTEGER NOT NULL,
+        expires_at         INTEGER NOT NULL CHECK (expires_at > created_at),
+        confirmed_at       INTEGER,
+        last_accepted_step INTEGER NOT NULL DEFAULT -1 CHECK (last_accepted_step >= -1),
+        CHECK ((status = 'pending' AND confirmed_at IS NULL) OR (status = 'active' AND confirmed_at IS NOT NULL))
+      ) STRICT;
+    `,
+  },
 ];
