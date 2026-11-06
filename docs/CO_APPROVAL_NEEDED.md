@@ -410,3 +410,19 @@ These inputs do not block independent backend work. Provider credentials and sen
 - **Required:** exact Part 01 CO-010 feature title, description and acceptance criteria.
 - **Why:** neither main nor Mistral contains a source/test/migration attributable to this unnamed feature. Mistral's anomaly detector is explicitly CO-012 and must not be misattributed.
 - **State:** NOT SUPPLIED / OWNER-BLOCKED. No code was guessed or changed. Continue independent CO work.
+
+
+## CO-011 agent identity implementation and owner approvals (2026-11-06)
+
+| Item | Required owner input / approval | Why | Current implementation |
+| --- | --- | --- | --- |
+| Agent principal model | Exact agent types, ownership relation, tenant/workspace mapping and creation authority | An audit actor label does not define an authenticated principal | Opaque credential service accepts trusted agent/tenant IDs; no principal registry is invented |
+| Credential authority | Who may create, rotate, revoke or revoke-all credentials; approval/delegation chain | Credential issuance grants machine access | Credential lifecycle methods exist; no public route or issuer authority is enabled |
+| Scope vocabulary | Approved scope names and permission semantics per agent type | Default scopes could overgrant access | Service requires an explicit allowlist and non-empty requested scopes |
+| Delegation/impersonation | Whether agents may act for users, tenants or other agents and how delegation is bounded | Delegation changes authorization and audit semantics | No delegation or impersonation behavior is implemented |
+| Audience/workload identity | Intended service audience, workload identity or external agent provider model | Prevents a token minted for one service being reused elsewhere | Tenant-bound opaque credential only; no audience claim or external identity provider |
+| Credential lifecycle policy | TTL, rotation overlap, revocation propagation and compromise handling | These are product/security choices | Explicit TTL, atomic rotation and server-side revocation implemented; exact limits remain owner-configured |
+| Audit integration | Required events and retention for agent credential issue/use/revoke | Machine actions need attributable audit records | Last-used timestamp is tracked; no new credential audit event contract is enabled |
+| PostgreSQL validation | Real Postgres integration service and concurrency test | SQLite test success does not prove Postgres behavior | Postgres adapter/migration implemented but not live-tested |
+
+These owner decisions do not block independent CO work. No agent credential is issued to a real agent or used to authorize application routes until the principal/scope model is approved.
