@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import { kernelMigrations } from '../src/kernel/migrations.ts';
 import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
 import { identityMigrations } from '../src/modules/identity/migrations.ts';
-import { SqliteSamlCacheProvider } from '../src/modules/identity/saml-cache.ts';
+import { NamespacedSamlCacheProvider, SqliteSamlCacheProvider } from '../src/modules/identity/saml-cache.ts';
+import type { CacheProvider } from '@node-saml/node-saml';
 import {
   createInMemorySamlCacheProvider,
   SamlService,
@@ -93,6 +94,33 @@ describe('CO-004 enterprise SAML service-provider foundation', () => {
     } finally {
       db.close();
     }
+  });
+
+
+  it('namespaces shared SAML cache keys by provider and requires atomic cache capabilities', async () => {
+    const seen: string[] = [];
+    const inner = {
+      saveAsync: async (key: string, value: string) => { seen.push('save:' + key); return { value, createdAt: 1 }; },
+      getAsync: async (key: string) => { seen.push('get:' + key); return null; },
+      removeAsync: async (key: string | null) => { seen.push('remove:' + key); return null; },
+      consumeAsync: async (key: string) => { seen.push('consume:' + key); return null; },
+      saveIfAbsentAsync: async (key: string) => { seen.push('once:' + key); return true; },
+    } satisfies CacheProvider;
+    const scoped = new NamespacedSamlCacheProvider('customer-idp', inner);
+    await scoped.saveAsync('request-1', 'value');
+    await scoped.consumeAsync('request-1');
+    await scoped.saveIfAbsentAsync('assertion-1', 'value', 10_000);
+    assert.deepEqual(seen, [
+      'save:saml:customer-idp:request-1',
+      'consume:saml:customer-idp:request-1',
+      'once:saml:customer-idp:assertion-1',
+    ]);
+    const weakCache = {
+      saveAsync: async () => null,
+      getAsync: async () => null,
+      removeAsync: async () => null,
+    } as unknown as CacheProvider;
+    assert.throws(() => new SamlService({ config, cacheProvider: weakCache }), /must support atomic/);
   });
 
   it('bounds SAML request, assertion-age and clock-skew windows', () => {
