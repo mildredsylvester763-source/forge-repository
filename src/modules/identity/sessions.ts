@@ -62,11 +62,13 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   async revokeAllForUser(userId: string, reason: string, now: number): Promise<number> {
+    const idHashes = this.byUser.get(userId);
+    if (!idHashes) return 0;
     let count = 0;
-    for (const idHash of this.byUser.get(userId) ?? []) {
+    for (const idHash of [...idHashes]) {
       const rec = this.records.get(idHash);
       if (rec && rec.revokedAt === null) {
-        await this.revoke(idHash, reason, now);
+        this.records.set(idHash, { ...rec, revokedAt: now, revokedReason: reason });
         count += 1;
       }
     }
