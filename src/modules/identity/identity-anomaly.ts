@@ -41,8 +41,8 @@ export function assessSignInAnomaly(
 ): SignInAnomalyAssessment {
   if (activeSessions.length === 0) return { baseline: 'none', signals: [] };
 
-  const currentIp = normalizedIp(current.ip);
-  const currentUserAgent = normalizedUserAgent(current.userAgent);
+  const currentIp = normalizedIp(current.ip || '');
+  const currentUserAgent = normalizedUserAgent(current.userAgent || '');
   const baseline = activeSessions.map((session) => ({
     ip: normalizedIp(session.ip),
     userAgent: normalizedUserAgent(session.userAgent),

@@ -138,7 +138,7 @@ export class SessionService {
       lastSeenAt: now,
       expiresAt: now + this.config.absoluteTimeoutMs,
       ip: meta.ip,
-      userAgent: meta.userAgent,
+      userAgent: meta.userAgent || 'unknown',
       revokedAt: null,
       revokedReason: null,
     };
