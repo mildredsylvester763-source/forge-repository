@@ -3,7 +3,7 @@ import { encodeBase32, generateTotpSecret, totpProvisioningUri, verifyTotpCode, 
 import type { TotpFactorRecord, TotpFactorStore } from './totp-store.ts';
 
 export class TotpFactorError extends Error {
-  readonly code: 'factor_exists' | 'factor_missing' | 'factor_not_active' | 'secret_unavailable';
+  readonly code: 'factor_exists' | 'factor_missing' | 'factor_not_active' | 'secret_unavailable' | 'too_many_attempts';
 
   constructor(code: TotpFactorError['code'], message: string) {
     super(message);
@@ -11,6 +11,17 @@ export class TotpFactorError extends Error {
     this.code = code;
   }
 }
+
+interface TotpThrottleState {
+  count: number;
+  lockedUntil: number;
+}
+
+const DEFAULT_TOTP_THROTTLE = {
+  maxAttempts: 10,
+  lockoutMs: 300_000, // 5 minutes
+  ttlMs: 3_600_000, // 1 hour
+};
 
 export interface TotpEnrollmentStart {
   readonly secret: string;
@@ -34,6 +45,10 @@ export class TotpFactorService {
   private readonly options: TotpOptions;
   private readonly windowSteps: number;
   private readonly enrollmentTtlMs: number;
+  private readonly maxTotpAttempts: number;
+  private readonly totpLockoutMs: number;
+  private readonly totpTtlMs: number;
+  private readonly throttleState = new Map<string, TotpThrottleState>();
 
   constructor(options: {
     store: TotpFactorStore;
@@ -43,6 +58,9 @@ export class TotpFactorService {
     totp: TotpOptions;
     windowSteps: number;
     enrollmentTtlMs?: number;
+    maxTotpAttempts?: number;
+    totpLockoutMs?: number;
+    totpTtlMs?: number;
   }) {
     if (options.encryptionKey.length !== 32) throw new TypeError('TOTP encryption key must be exactly 32 bytes');
     if (typeof options.issuer !== 'string' || !options.issuer.trim() || options.issuer.length > 128) {
@@ -55,6 +73,9 @@ export class TotpFactorService {
     if (!Number.isSafeInteger(this.enrollmentTtlMs) || this.enrollmentTtlMs < 60_000 || this.enrollmentTtlMs > 1_800_000) {
       throw new TypeError('TOTP enrollment lifetime must be between 1 and 30 minutes');
     }
+    this.maxTotpAttempts = options.maxTotpAttempts ?? DEFAULT_TOTP_THROTTLE.maxAttempts;
+    this.totpLockoutMs = options.totpLockoutMs ?? DEFAULT_TOTP_THROTTLE.lockoutMs;
+    this.totpTtlMs = options.totpTtlMs ?? DEFAULT_TOTP_THROTTLE.ttlMs;
     this.store = options.store;
     this.key = Buffer.from(options.encryptionKey);
     this.clock = options.clock;
@@ -96,6 +117,37 @@ export class TotpFactorService {
     }
   }
 
+  private checkTotpThrottle(userId: string): { locked: boolean; retryAfterMs: number } {
+    const now = this.clock();
+    const state = this.throttleState.get(userId);
+    if (state) {
+      if (now - state.lockedUntil > this.totpTtlMs) {
+        this.throttleState.delete(userId);
+        return { locked: false, retryAfterMs: 0 };
+      }
+      if (state.lockedUntil > now) return { locked: true, retryAfterMs: state.lockedUntil - now };
+      return { locked: false, retryAfterMs: 0 };
+    }
+    return { locked: false, retryAfterMs: 0 };
+  }
+
+  private recordTotpFailure(userId: string): void {
+    const now = this.clock();
+    const previous = this.throttleState.get(userId);
+    const stale = previous && now - previous.lockedUntil > this.totpTtlMs;
+    const count = (previous && !stale ? previous.count : 0) + 1;
+    let lockedUntil = 0;
+    if (count >= this.maxTotpAttempts) {
+      lockedUntil = now + this.totpLockoutMs;
+    }
+    this.throttleState.delete(userId);
+    this.throttleState.set(userId, { count, lockedUntil });
+  }
+
+  private recordTotpSuccess(userId: string): void {
+    this.throttleState.delete(userId);
+  }
+
   async beginEnrollment(userId: string, accountName: string): Promise<TotpEnrollmentStart> {
     validateUserId(userId);
     const now = this.clock();
@@ -124,6 +176,10 @@ export class TotpFactorService {
 
   async confirmEnrollment(userId: string, candidate: string): Promise<boolean> {
     validateUserId(userId);
+    const throttle = this.checkTotpThrottle(userId);
+    if (throttle.locked) {
+      throw new TotpFactorError('too_many_attempts', `Too many TOTP attempts. Try again in ${Math.ceil(throttle.retryAfterMs / 1000)} seconds.`);
+    }
     const record = await this.store.findForUser(userId);
     if (!record || record.status !== 'pending') return false;
     const now = this.clock();
@@ -133,23 +189,53 @@ export class TotpFactorService {
     }
     const secret = this.decrypt(record);
     const match = verifyTotpCode(secret, candidate, now, record.options, this.windowSteps);
-    if (!match) return false;
+    if (!match) {
+      this.recordTotpFailure(userId);
+      return false;
+    }
+    this.recordTotpSuccess(userId);
     return this.store.activatePending(userId, record.createdAt, match.matchedStep, now);
   }
 
   async verifyAndConsume(userId: string, candidate: string): Promise<boolean> {
     validateUserId(userId);
+    const throttle = this.checkTotpThrottle(userId);
+    if (throttle.locked) {
+      throw new TotpFactorError('too_many_attempts', `Too many TOTP attempts. Try again in ${Math.ceil(throttle.retryAfterMs / 1000)} seconds.`);
+    }
     const record = await this.store.findForUser(userId);
     if (!record || record.status !== 'active') return false;
     const secret = this.decrypt(record);
     const match = verifyTotpCode(secret, candidate, this.clock(), record.options, this.windowSteps);
-    if (!match || match.matchedStep <= record.lastAcceptedStep) return false;
+    if (!match || match.matchedStep <= record.lastAcceptedStep) {
+      this.recordTotpFailure(userId);
+      return false;
+    }
+    this.recordTotpSuccess(userId);
     return this.store.consumeStep(userId, record.lastAcceptedStep, match.matchedStep, this.clock());
   }
 
   async disable(userId: string, candidate: string): Promise<boolean> {
-    if (!await this.verifyAndConsume(userId, candidate)) return false;
-    return this.store.deleteActive(userId);
+    validateUserId(userId);
+    const throttle = this.checkTotpThrottle(userId);
+    if (throttle.locked) {
+      throw new TotpFactorError('too_many_attempts', `Too many TOTP attempts. Try again in ${Math.ceil(throttle.retryAfterMs / 1000)} seconds.`);
+    }
+    const record = await this.store.findForUser(userId);
+    if (!record || record.status !== 'active') return false;
+    const secret = this.decrypt(record);
+    const match = verifyTotpCode(secret, candidate, this.clock(), record.options, this.windowSteps);
+    if (!match || match.matchedStep <= record.lastAcceptedStep) {
+      this.recordTotpFailure(userId);
+      return false;
+    }
+    // Delete the factor first - if this fails, we haven't consumed the code
+    const deleted = await this.store.deleteActive(userId);
+    if (!deleted) return false;
+    // Now consume the step to prevent replay
+    await this.store.consumeStep(userId, record.lastAcceptedStep, match.matchedStep, this.clock());
+    this.recordTotpSuccess(userId);
+    return true;
   }
 
   async cancelEnrollment(userId: string): Promise<boolean> {
