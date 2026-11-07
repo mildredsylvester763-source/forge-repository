@@ -31,7 +31,7 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
 
     '/v1/auth/sign-in': {
       POST: async (ctx): Promise<HttpResult> => {
-        const body = parseFields(await ctx.json(), { email: { max: 320 }, password: { max: 1024 } });
+        const body = parseFields(await ctx.json(), { email: { max: 320 }, password: { max: 1024 }, deviceToken: { max: 1024, optional: true } });
         const result = await identity.signIn(body, meta(ctx));
         const maxAgeSec = (result.sessionExpiresAt - clock()) / 1000;
         return {
@@ -44,7 +44,7 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
 
     '/v1/auth/native/sign-in': {
       POST: async (ctx): Promise<HttpResult> => {
-        const body = parseFields(await ctx.json(), { email: { max: 320 }, password: { max: 1024 } });
+        const body = parseFields(await ctx.json(), { email: { max: 320 }, password: { max: 1024 }, deviceToken: { max: 1024, optional: true } });
         const result = await identity.signIn(body, meta(ctx));
         return {
           status: 200,

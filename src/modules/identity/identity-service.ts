@@ -214,7 +214,7 @@ export class IdentityService {
     return toPublicUser(user);
   }
 
-  async signIn(input: { email: string; password: string }, meta: RequestMeta): Promise<SignInResult> {
+  async signIn(input: { email: string; password: string; deviceToken?: string }, meta: RequestMeta): Promise<SignInResult> {
     const anon: Actor = { kind: 'anonymous', id: meta.ip };
 
     const ipGate = this.d.throttle.checkIp('signin', meta.ip);
@@ -245,6 +245,24 @@ export class IdentityService {
       const reason = !user ? 'unknown_account' : !passwordOk ? 'bad_password' : 'account_disabled';
       await this.emitBestEffort(IdentityEvents.SignInFailed, anon, subject, { reason }, meta);
       throw INVALID_CREDENTIALS();
+    }
+
+    // Check if device is trusted for MFA bypass
+    let deviceTrusted = false;
+    if (this.d.trustedDevices && user && input.deviceToken) {
+      deviceTrusted = await this.d.trustedDevices.isTrusted(user.id, input.deviceToken);
+    }
+
+    // Check if user has MFA enabled
+    let mfaRequired = false;
+    if (this.d.totp) {
+      const totpStatus = await this.d.totp.status(user.id);
+      mfaRequired = totpStatus === 'active';
+    }
+
+    // If MFA is required and device is not trusted, require MFA
+    if (mfaRequired && !deviceTrusted) {
+      throw new AppError(403, 'mfa_required', 'Multi-factor authentication is required.');
     }
 
     this.d.throttle.recordSuccess(fingerprint);
