@@ -3,6 +3,10 @@ export { generateTotpSecret, encodeBase32, decodeBase32, generateTotpCode, verif
 export type { TotpAlgorithm, TotpOptions, TotpMatch } from './totp.ts';
 export { OidcAuthorizationService, InMemoryOidcTransactionStore, validateOidcProviderConfig } from './oidc-authorization.ts';
 export type { OidcProviderConfig, OidcTransactionRecord, OidcTransactionStore, OidcConsumedTransaction, OidcAuthorizationStart } from './oidc-authorization.ts';
+export { OidcAuthenticationService, OidcAuthenticationError } from './oidc-authentication.ts';
+export type { OidcRuntimeProviderConfig, VerifiedOidcIdentity } from './oidc-authentication.ts';
+export { exchangeOidcAuthorizationCode, fetchOidcJwks, verifyOidcIdToken } from './oidc-token.ts';
+export type { OidcTokenResponse, OidcJwks, OidcIdTokenClaims, OidcIdTokenVerifyOptions } from './oidc-token.ts';
 export { IdentityService, toPublicUser } from './identity-service.ts';
 export type { IdentityDeps, PublicUser, PublicSession, RevokeSessionResult, RequestMeta, SignInResult, PublicTrustedDevice, TrustDeviceResult, TrustDeviceInput } from './identity-service.ts';
 export { IdentityEvents, IDENTITY_EVENT_VERSION } from './events.ts';
