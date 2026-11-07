@@ -2,7 +2,7 @@
 
 **This is not an engineering approval queue.** Internal FORGE architecture, schemas, migrations, APIs, algorithms, security controls, tests, retry policies, recovery procedures, and provider-neutral adapters are to be designed and implemented in the repository without waiting for owner approval.
 
-Last reviewed: 2026-11-06
+Last reviewed: 2026-11-07
 Repository: mildredsylvester763-source/forge-repository
 Implementation branch: mistral
 
@@ -83,3 +83,15 @@ The CO verification workflow now provisions a disposable PostgreSQL service insi
 The original owner-supplied Part 01 catalogue remains the acceptance authority. The exact original individual wording for many CO IDs is not currently present in the repository documentation or the retrieved audit dossier. Do not fabricate catalogue titles or claim guessed requirements as verbatim. Continue to implement every independently documented CO behavior and reusable Core foundation; record only the precise acceptance gap where the original text is unavailable.
 
 AI and TQ are outside this implementation register and must not be modified during CO work.
+
+
+## Original Part 01 acceptance inputs still missing (2026-11-07)
+
+These are missing source-material inputs for accurate catalogue reconciliation, not permission gates for unrelated engineering work. Do not invent feature titles or requirements.
+
+- **CO-097:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED because no safe feature-specific implementation can be attributed to this ID.
+- **CO-098:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED for the same reason.
+- **CO-099:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED for the same reason.
+- **CO-100:** supply the exact original Part 01 wording for formal acceptance reconciliation. This does **not** block implementation of the conservative baseline already specified under Engineering defaults: deterministic operation IDs, per-entity versions, tombstones, causal metadata, idempotent replay and explicit conflict records, preserving both conflicting edits rather than silently overwriting user data. No additional owner design approval or external credential is required to build and test that provider-neutral baseline.
+
+The CO-097–CO-100 branch evidence and current verification boundary are recorded in `docs/PROGRESS.md` under the 2026-11-07 sequential follow-up audit.
