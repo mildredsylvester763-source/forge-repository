@@ -13,6 +13,8 @@ import type { SessionService } from './sessions.ts';
 import type { LoginThrottle } from './throttle.ts';
 import type { IdentityUnitOfWork } from './unit-of-work.ts';
 import { EmailTakenError, type UserRecord, type UserStore } from './user-store.ts';
+import type { TrustedDeviceService } from './trusted-devices.ts';
+import type { TrustedDeviceRecord } from './trusted-devices.ts';
 
 export interface RequestMeta {
   ip: string;
@@ -40,6 +42,7 @@ export interface IdentityDeps {
   auditKey: Buffer;
   breachMode: 'fail-closed' | 'fail-open';
   checkBreachOnSignIn: boolean;
+  trustedDevices?: TrustedDeviceService;
 }
 
 export interface SignInResult {
@@ -62,6 +65,24 @@ export interface PublicSession {
 export interface RevokeSessionResult {
   revoked: boolean;
   revokedCurrentSession: boolean;
+}
+
+export interface PublicTrustedDevice {
+  id: string;
+  label: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+}
+
+export interface TrustDeviceResult {
+  deviceId: string;
+  deviceToken: string;
+}
+
+export interface TrustDeviceInput {
+  label?: string | null;
+  password?: string;
 }
 
 export const toPublicUser = (u: UserRecord): PublicUser => ({
@@ -339,6 +360,94 @@ export class IdentityService {
       revoked: revoked !== null,
       revokedCurrentSession: revoked !== null && target.idHash === current.idHash,
     };
+  }
+
+  /** Trust a device for future MFA bypass. Requires password verification. */
+  async trustDevice(token: string | undefined, input: TrustDeviceInput, meta: RequestMeta): Promise<TrustDeviceResult | null> {
+    if (!this.d.trustedDevices) {
+      throw new AppError(501, 'not_implemented', 'Trusted devices are not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    // Require password verification before trusting a device
+    if (input.password) {
+      const passwordOk = await this.d.hasher.verify(input.password, owner.passwordHash);
+      if (!passwordOk) {
+        await this.emitBestEffort(
+          IdentityEvents.DeviceTrustFailed,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          { reason: 'bad_password' },
+          meta,
+        );
+        throw new AppError(401, 'invalid_credentials', 'Invalid password.');
+      }
+    } else {
+      // If no password provided, require MFA to be enabled and verified
+      // This will be implemented when MFA integration is added
+      throw new AppError(400, 'password_required', 'Password is required to trust a device.');
+    }
+
+    const now = this.d.clock();
+    const result = await this.d.trustedDevices.trustDevice(owner.id, input.label ?? null, now);
+    if (!result) {
+      throw new AppError(429, 'device_limit_reached', 'Maximum number of trusted devices reached.');
+    }
+
+    await this.emitBestEffort(
+      IdentityEvents.DeviceTrusted,
+      { kind: 'user', id: owner.id },
+      { type: 'device', id: result.deviceId },
+      { label: input.label ?? null },
+      meta,
+    );
+
+    return result;
+  }
+
+  /** List all trusted devices for the authenticated account. */
+  async listTrustedDevices(token: string | undefined): Promise<PublicTrustedDevice[]> {
+    if (!this.d.trustedDevices) {
+      throw new AppError(501, 'not_implemented', 'Trusted devices are not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const devices = await this.d.trustedDevices.listDevices(owner.id);
+    return devices.map((device) => ({
+      id: device.id,
+      label: device.label,
+      createdAt: new Date(device.createdAt).toISOString(),
+      lastUsedAt: device.lastUsedAt ? new Date(device.lastUsedAt).toISOString() : null,
+      expiresAt: new Date(device.expiresAt).toISOString(),
+    }));
+  }
+
+  /** Revoke a trusted device. */
+  async revokeTrustedDevice(token: string | undefined, deviceId: string): Promise<boolean> {
+    if (!this.d.trustedDevices) {
+      throw new AppError(501, 'not_implemented', 'Trusted devices are not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    return this.d.trustedDevices.revokeDevice(owner.id, deviceId);
+  }
+
+  /** Check if a device token is trusted for the given user. */
+  async isDeviceTrusted(userId: string, deviceToken: string): Promise<boolean> {
+    if (!this.d.trustedDevices) return false;
+    return this.d.trustedDevices.isTrusted(userId, deviceToken);
   }
 
   /** Complete a passkey-authenticated sign-in without running password-only checks. */

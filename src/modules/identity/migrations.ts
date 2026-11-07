@@ -134,4 +134,21 @@ export const identityMigrations: readonly Migration[] = [
       CREATE INDEX agent_credentials_expiry_idx ON agent_credentials (expires_at);
     `,
   },
+  {
+    version: 7,
+    name: 'trusted_devices',
+    sql: `
+      CREATE TABLE trusted_devices (
+        id                 TEXT PRIMARY KEY,
+        user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        device_token_hash  TEXT NOT NULL CHECK (length(device_token_hash) = 64),
+        label              TEXT,
+        created_at         INTEGER NOT NULL,
+        last_used_at       INTEGER,
+        expires_at         INTEGER NOT NULL CHECK (expires_at > created_at)
+      ) STRICT;
+      CREATE INDEX trusted_devices_user_idx ON trusted_devices (user_id, expires_at);
+      CREATE INDEX trusted_devices_token_idx ON trusted_devices (device_token_hash);
+    `,
+  },
 ];

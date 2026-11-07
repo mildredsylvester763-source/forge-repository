@@ -97,6 +97,30 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
       },
     },
 
+    '/v1/auth/devices/trust': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { label: { max: 100, optional: true }, password: { max: 1024, optional: true } });
+        const result = await identity.trustDevice(sessionCredential(ctx, cookie.name), body, meta(ctx));
+        if (!result) throw new AppError(429, 'device_limit_reached', 'Maximum number of trusted devices reached.');
+        return { status: 201, body: { deviceId: result.deviceId, deviceToken: result.deviceToken } };
+      },
+    },
+
+    '/v1/auth/devices': {
+      GET: async (ctx): Promise<HttpResult> => {
+        const devices = await identity.listTrustedDevices(sessionCredential(ctx, cookie.name));
+        return { status: 200, body: { devices } };
+      },
+    },
+
+    '/v1/auth/devices/revoke': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { deviceId: { max: 64 } });
+        const revoked = await identity.revokeTrustedDevice(sessionCredential(ctx, cookie.name), body.deviceId);
+        return { status: 200, body: { revoked } };
+      },
+    },
+
     '/v1/auth/me': {
       GET: async (ctx): Promise<HttpResult> => {
         const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));

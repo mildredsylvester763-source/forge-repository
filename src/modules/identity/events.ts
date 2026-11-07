@@ -17,6 +17,9 @@ export const IdentityEvents = {
   PasskeyRegistered: 'identity.passkey.registered',
   PasskeyRemoved: 'identity.passkey.removed',
   PasskeyAuthenticated: 'identity.passkey.authenticated',
+  DeviceTrusted: 'identity.device.trusted',
+  DeviceTrustFailed: 'identity.device.trust_failed',
+  DeviceRevoked: 'identity.device.revoked',
 } as const;
 
 export type IdentityEventType = (typeof IdentityEvents)[keyof typeof IdentityEvents];
