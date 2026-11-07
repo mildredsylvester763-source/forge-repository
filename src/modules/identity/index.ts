@@ -55,6 +55,10 @@ export type { TrustedDeviceStore, TrustedDeviceRecord, TrustedDeviceConfig } fro
 export { InMemoryRecoveryCodesStore, SqliteRecoveryCodesStore, PostgresRecoveryCodesStore, RecoveryCodesService, generateRecoveryCode, hashRecoveryCode, verifyRecoveryCodeHash } from './recovery-codes.ts';
 export type { RecoveryCodesStore, RecoveryCodeRecord, RecoveryCodesConfig, RecoveryCodesServiceConfig } from './recovery-codes.ts';
 export { LoginThrottle, DEFAULT_THROTTLE } from './throttle.ts';
+export { TotpFactorService, TotpFactorError } from './totp-service.ts';
+export type { TotpEnrollmentStart } from './totp-service.ts';
+export { InMemoryTotpFactorStore, SqliteTotpFactorStore, PostgresTotpFactorStore } from './totp-store.ts';
+export type { TotpFactorStore, TotpFactorRecord } from './totp-store.ts';
 export type { ThrottleConfig } from './throttle.ts';
 export { identityMigrations } from './migrations.ts';
 export { InMemoryIdentityUnitOfWork } from './unit-of-work.ts';

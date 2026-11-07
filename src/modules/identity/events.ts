@@ -20,6 +20,13 @@ export const IdentityEvents = {
   DeviceTrusted: 'identity.device.trusted',
   DeviceTrustFailed: 'identity.device.trust_failed',
   DeviceRevoked: 'identity.device.revoked',
+  TotpEnrollmentStarted: 'identity.totp.enrollment_started',
+  TotpEnrollmentConfirmed: 'identity.totp.enrollment_confirmed',
+  TotpEnrollmentCancelled: 'identity.totp.enrollment_cancelled',
+  TotpDisabled: 'identity.totp.disabled',
+  TotpVerificationSucceeded: 'identity.totp.verification_succeeded',
+  TotpVerificationFailed: 'identity.totp.verification_failed',
+  TotpThrottled: 'identity.totp.throttled',
 } as const;
 
 export type IdentityEventType = (typeof IdentityEvents)[keyof typeof IdentityEvents];

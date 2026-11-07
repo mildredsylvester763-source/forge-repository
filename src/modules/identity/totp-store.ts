@@ -84,6 +84,64 @@ function toRecord(row: TotpRow): TotpFactorRecord {
   };
 }
 
+export class InMemoryTotpFactorStore implements TotpFactorStore {
+  private readonly store = new Map<string, TotpFactorRecord>();
+
+  async createPending(record: TotpFactorRecord): Promise<boolean> {
+    validateRecord(record);
+    if (this.store.has(record.userId)) return false;
+    this.store.set(record.userId, record);
+    return true;
+  }
+
+  async findForUser(userId: string): Promise<TotpFactorRecord | null> {
+    validateUserId(userId);
+    return this.store.get(userId) ?? null;
+  }
+
+  async deleteExpiredPending(userId: string, now: number): Promise<boolean> {
+    validateUserId(userId);
+    const record = this.store.get(userId);
+    if (!record || record.status !== 'pending' || record.expiresAt > now) return false;
+    this.store.delete(userId);
+    return true;
+  }
+
+  async activatePending(userId: string, createdAt: number, matchedStep: number, now: number): Promise<boolean> {
+    validateUserId(userId);
+    const record = this.store.get(userId);
+    if (!record || record.status !== 'pending' || record.createdAt !== createdAt || record.expiresAt <= now) return false;
+    record.status = 'active';
+    record.confirmedAt = now;
+    record.lastAcceptedStep = matchedStep;
+    return true;
+  }
+
+  async consumeStep(userId: string, expectedStep: number, matchedStep: number, _now: number): Promise<boolean> {
+    validateUserId(userId);
+    const record = this.store.get(userId);
+    if (!record || record.status !== 'active' || record.lastAcceptedStep !== expectedStep || matchedStep <= expectedStep) return false;
+    record.lastAcceptedStep = matchedStep;
+    return true;
+  }
+
+  async deletePending(userId: string): Promise<boolean> {
+    validateUserId(userId);
+    const record = this.store.get(userId);
+    if (!record || record.status !== 'pending') return false;
+    this.store.delete(userId);
+    return true;
+  }
+
+  async deleteActive(userId: string): Promise<boolean> {
+    validateUserId(userId);
+    const record = this.store.get(userId);
+    if (!record || record.status !== 'active') return false;
+    this.store.delete(userId);
+    return true;
+  }
+}
+
 export class SqliteTotpFactorStore implements TotpFactorStore {
   private readonly db: Database;
   constructor(db: Database) { this.db = db; }

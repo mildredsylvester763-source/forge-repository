@@ -127,6 +127,52 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
         return { status: 200, body: { user: auth.user } };
       },
+
+    '/v1/auth/totp/enroll': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { displayName: { max: 80, optional: true } });
+        const result = await identity.beginTotpEnrollment(sessionCredential(ctx, cookie.name), body, meta(ctx));
+        return { status: 200, body: { secret: result.secret, provisioningUri: result.provisioningUri, expiresAt: result.expiresAt } };
+      },
+    },
+
+    '/v1/auth/totp/enroll/confirm': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { code: { max: 10 } });
+        const result = await identity.confirmTotpEnrollment(sessionCredential(ctx, cookie.name), body, meta(ctx));
+        return { status: 200, body: { verified: result.verified } };
+      },
+    },
+
+    '/v1/auth/totp/enroll/cancel': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const cancelled = await identity.cancelTotpEnrollment(sessionCredential(ctx, cookie.name), meta(ctx));
+        return { status: 200, body: { cancelled } };
+      },
+    },
+
+    '/v1/auth/totp/verify': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { code: { max: 10 } });
+        const result = await identity.verifyTotpCode(sessionCredential(ctx, cookie.name), body, meta(ctx));
+        return { status: 200, body: { verified: result.verified } };
+      },
+    },
+
+    '/v1/auth/totp/disable': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const body = parseFields(await ctx.json(), { code: { max: 10 } });
+        const result = await identity.disableTotp(sessionCredential(ctx, cookie.name), body, meta(ctx));
+        return { status: 200, body: { disabled: result.disabled } };
+      },
+    },
+
+    '/v1/auth/totp/status': {
+      GET: async (ctx): Promise<HttpResult> => {
+        const status = await identity.getTotpStatus(sessionCredential(ctx, cookie.name));
+        return { status: 200, body: { status: status.status } };
+      },
+    },
     },
   };
 }

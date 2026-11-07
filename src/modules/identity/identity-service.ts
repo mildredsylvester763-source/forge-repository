@@ -15,6 +15,8 @@ import type { IdentityUnitOfWork } from './unit-of-work.ts';
 import { EmailTakenError, type UserRecord, type UserStore } from './user-store.ts';
 import type { TrustedDeviceService } from './trusted-devices.ts';
 import type { TrustedDeviceRecord } from './trusted-devices.ts';
+import type { TotpFactorService, TotpEnrollmentStart } from './totp-service.ts';
+import { TotpFactorError } from './totp-service.ts';
 
 export interface RequestMeta {
   ip: string;
@@ -43,6 +45,7 @@ export interface IdentityDeps {
   breachMode: 'fail-closed' | 'fail-open';
   checkBreachOnSignIn: boolean;
   trustedDevices?: TrustedDeviceService;
+  totp?: TotpFactorService;
 }
 
 export interface SignInResult {
@@ -83,6 +86,32 @@ export interface TrustDeviceResult {
 export interface TrustDeviceInput {
   label?: string | null;
   password?: string;
+}
+
+export interface TotpEnrollmentInput {
+  displayName?: string;
+}
+
+export interface TotpEnrollmentResult {
+  secret: string;
+  provisioningUri: string;
+  expiresAt: string;
+}
+
+export interface TotpVerificationInput {
+  code: string;
+}
+
+export interface TotpVerificationResult {
+  verified: boolean;
+}
+
+export interface TotpDisableInput {
+  code: string;
+}
+
+export interface TotpDisableResult {
+  disabled: boolean;
 }
 
 export const toPublicUser = (u: UserRecord): PublicUser => ({
@@ -511,6 +540,181 @@ export class IdentityService {
     return { user: toPublicUser(user), sessionToken: token, sessionExpiresAt: session.expiresAt, passwordChangeRequired };
   }
 
+  /** Begin TOTP enrollment for the authenticated account. */
+  async beginTotpEnrollment(token: string | undefined, input: TotpEnrollmentInput, meta: RequestMeta): Promise<TotpEnrollmentResult> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    // Use display name for authenticator app label instead of user ID
+    const displayName = input.displayName ?? owner.displayName ?? owner.email.split('@')[0] ?? owner.id;
+
+    const result = await this.d.totp.beginEnrollment(owner.id, displayName);
+    await this.emitBestEffort(
+      IdentityEvents.TotpEnrollmentStarted,
+      { kind: 'user', id: owner.id },
+      { type: 'user', id: owner.id },
+      {},
+      meta,
+    );
+
+    return {
+      secret: result.secret,
+      provisioningUri: result.provisioningUri,
+      expiresAt: result.expiresAt,
+    };
+  }
+
+  /** Confirm TOTP enrollment with a code. */
+  async confirmTotpEnrollment(token: string | undefined, input: TotpVerificationInput): Promise<TotpVerificationResult> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    try {
+      const verified = await this.d.totp.confirmEnrollment(owner.id, input.code);
+      if (verified) {
+        await this.emitBestEffort(
+          IdentityEvents.TotpEnrollmentConfirmed,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          {},
+          meta,
+        );
+      }
+      return { verified };
+    } catch (err) {
+      if (err instanceof TotpFactorError && err.code === 'too_many_attempts') {
+        await this.emitBestEffort(
+          IdentityEvents.TotpThrottled,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          { retryAfterMs: err.message.match(/\d+/)?.[0] ?? '0' },
+          meta,
+        );
+      }
+      throw err;
+    }
+  }
+
+  /** Cancel TOTP enrollment. */
+  async cancelTotpEnrollment(token: string | undefined, meta: RequestMeta): Promise<boolean> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const cancelled = await this.d.totp.cancelEnrollment(owner.id);
+    if (cancelled) {
+      await this.emitBestEffort(
+        IdentityEvents.TotpEnrollmentCancelled,
+        { kind: 'user', id: owner.id },
+        { type: 'user', id: owner.id },
+        {},
+        meta,
+      );
+    }
+    return cancelled;
+  }
+
+  /** Verify a TOTP code. */
+  async verifyTotpCode(token: string | undefined, input: TotpVerificationInput, meta: RequestMeta): Promise<TotpVerificationResult> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    try {
+      const verified = await this.d.totp.verifyAndConsume(owner.id, input.code);
+      if (verified) {
+        await this.emitBestEffort(
+          IdentityEvents.TotpVerificationSucceeded,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          {},
+          meta,
+        );
+      } else {
+        await this.emitBestEffort(
+          IdentityEvents.TotpVerificationFailed,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          { reason: 'invalid_code' },
+          meta,
+        );
+      }
+      return { verified };
+    } catch (err) {
+      if (err instanceof TotpFactorError && err.code === 'too_many_attempts') {
+        await this.emitBestEffort(
+          IdentityEvents.TotpThrottled,
+          { kind: 'user', id: owner.id },
+          { type: 'user', id: owner.id },
+          { retryAfterMs: err.message.match(/\d+/)?.[0] ?? '0' },
+          meta,
+        );
+      }
+      throw err;
+    }
+  }
+
+  /** Disable TOTP for the authenticated account. */
+  async disableTotp(token: string | undefined, input: TotpDisableInput, meta: RequestMeta): Promise<TotpDisableResult> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const disabled = await this.d.totp.disable(owner.id, input.code);
+    if (disabled) {
+      await this.emitBestEffort(
+        IdentityEvents.TotpDisabled,
+        { kind: 'user', id: owner.id },
+        { type: 'user', id: owner.id },
+        {},
+        meta,
+      );
+    }
+    return { disabled };
+  }
+
+  /** Get TOTP status for the authenticated account. */
+  async getTotpStatus(token: string | undefined): Promise<{ status: 'disabled' | 'pending' | 'active' }> {
+    if (!this.d.totp) {
+      throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
+    }
+
+    const current = await this.d.sessions.validate(token);
+    if (!current) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+    const owner = await this.d.users.findById(current.userId);
+    if (!owner || owner.status !== 'active') throw new AppError(401, 'unauthenticated', 'Sign in required.');
+
+    const status = await this.d.totp.status(owner.id);
+    return { status };
+  }
+
   /** Server-side session check used by every protected route (CO-030). Returns null for any failure. */
   async authenticate(token: string | undefined): Promise<{ user: PublicUser; sessionExpiresAt: number } | null> {
     const session = await this.d.sessions.validate(token);
@@ -520,3 +724,6 @@ export class IdentityService {
     return { user: toPublicUser(user), sessionExpiresAt: session.expiresAt };
   }
 }
+
+export { TotpFactorService, TotpFactorError } from './totp-service.ts';
+export type { TotpEnrollmentStart } from './totp-service.ts';
