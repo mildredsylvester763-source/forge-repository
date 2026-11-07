@@ -52,6 +52,8 @@ export { InMemorySessionStore, SessionService } from './sessions.ts';
 export type { SessionStore, SessionRecord, SessionConfig } from './sessions.ts';
 export { InMemoryTrustedDeviceStore, SqliteTrustedDeviceStore, PostgresTrustedDeviceStore, TrustedDeviceService, hashDeviceToken, generateDeviceToken } from './trusted-devices.ts';
 export type { TrustedDeviceStore, TrustedDeviceRecord, TrustedDeviceConfig } from './trusted-devices.ts';
+export { InMemoryRecoveryCodesStore, SqliteRecoveryCodesStore, PostgresRecoveryCodesStore, RecoveryCodesService, generateRecoveryCode, hashRecoveryCode, verifyRecoveryCodeHash } from './recovery-codes.ts';
+export type { RecoveryCodesStore, RecoveryCodeRecord, RecoveryCodesConfig, RecoveryCodesServiceConfig } from './recovery-codes.ts';
 export { LoginThrottle, DEFAULT_THROTTLE } from './throttle.ts';
 export type { ThrottleConfig } from './throttle.ts';
 export { identityMigrations } from './migrations.ts';

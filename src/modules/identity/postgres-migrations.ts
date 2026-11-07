@@ -151,4 +151,18 @@ export const pgIdentityMigrations: readonly Migration[] = [
       CREATE INDEX trusted_devices_token_idx ON trusted_devices (device_token_hash);
     `,
   },
+  {
+    version: 8,
+    name: 'recovery_codes',
+    sql: `
+      CREATE TABLE recovery_codes (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        code_hash  TEXT NOT NULL CHECK (length(code_hash) = 64),
+        used_at    BIGINT,
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX recovery_codes_user_idx ON recovery_codes (user_id, used_at);
+    `,
+  },
 ];
