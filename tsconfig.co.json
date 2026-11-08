@@ -37,6 +37,8 @@
     "test/saml-service.test.ts",
     "test/totp-service.test.ts",
     "test/action-tokens.test.ts",
-    "test/agent-credentials.test.ts"
+    "test/agent-credentials.test.ts",
+    "test/co-100-offline-sync.test.ts",
+    "test/co-100-offline-sync-postgres.test.ts"
   ]
 }
