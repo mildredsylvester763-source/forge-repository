@@ -1609,3 +1609,25 @@ Sylvester's directive executed in full: before any new feature batch, every alre
 - **94d1bd5 — enforcement wired + tests** (17 files). config: prices moved to config only (FORGE_PLUS_USD_PER_MONTH 9.99, PRO 24.99, STUDIO 59.99, TEAM 39/seat min 3, ENTERPRISE_FROM 1000) via a money() parser; app: storage userPlans in all three backends, plans migrations, PlansService, routes table gated through applyRouteGates; main: pg plans migration. Functional suites upgraded: their shared signedInUser helper now provisions the plan each suite's routes need (orchestrator/task-runtime/test-quality/test-generation pro, web-search team, search-integrity plus, ai-training + lifecycle enterprise, live-testing pro with the creative engine pass). New test suites: test/plans-engines.test.ts (pins the ladder, catalog counts, spot gates, engine-pass rule, all 268 route pins) and test/plans.test.ts (plans routes, check verdicts, 402 shape, Team ladder on AI-061 with Studio passing, Enterprise over Team on AI-051, engine pass on TQ-027, free/internal untouched, per-user isolation, setPlan validation, audit event). New doc: docs/plans-gates.md.
 - **8059e71 — test fix**: byok gate test read the 402 body once (undici forbids double json()).
 - **CI: green.** Full suite passes with the gate law live on every route. co-verification untouched by this work (paths filter not matched).
+
+
+## Feature batch 2: AI-009 preference + AI-010 codedata (2026-11-08, green at 24a153d)
+
+Batch 2 shipped both training-data test layers plus feature docs on top of the existing engines:
+
+- test/training-data-engines.test.ts: new describes for the preference engine (AI-009: signal vocabulary, pinned
+  ids and fingerprints, caller-owned store, refusal order, full-triple identity, contradictory signals, copy-only
+  reads, 200-iteration fingerprint/id oracle sweep) and the codedata engine (AI-010: kind vocabulary and deploy
+  transition table, pinned ids and fingerprints, fix-needs-test before parent resolution, failing-test identity for
+  fixes only, parent chains, full deploy state machine with all terminal locks and invalid from:to hops, 200-iteration
+  registration sweep and 100-iteration deploy-walk sweep).
+- test/training-data.test.ts: describe title now covers AI-001/002/007/008/009/010; five new unauthenticated paths;
+  three new end-to-end its (consent-gated preference storage incl. revoke closing the gate, codedata register/fix/
+  deploy lifecycle, preference and codedata owner isolation).
+- docs/features/AI-009.md and docs/features/AI-010.md: behaviour, where it lives, limits.
+
+Two of this batch's tests violated the caller-owns-the-array law the engines pin (records were registered but not
+appended before id or duplicate assertions); both engines were verified byte-level against the pinned fingerprints
+and left untouched, the tests were fixed instead (fc679d4, 24a153d). The engines test file also had an unclosed
+labeling describe that silently nested the two new describes; repaired in 24a153d. CI green at 24a153d:
+typecheck pass, npm test pass, zero failing-test annotations.
