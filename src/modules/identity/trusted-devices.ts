@@ -198,7 +198,7 @@ export class SqliteTrustedDeviceStore implements TrustedDeviceStore {
     const result = this.db
       .prepare(`UPDATE trusted_devices SET expires_at = ? WHERE user_id = ?`)
       .run(now, userId);
-    return result.changes;
+    return Number(result.changes);
   }
 
   async countByUser(userId: string): Promise<number> {

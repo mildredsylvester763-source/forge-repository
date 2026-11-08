@@ -111,9 +111,7 @@ export class InMemoryTotpFactorStore implements TotpFactorStore {
     validateUserId(userId);
     const record = this.store.get(userId);
     if (!record || record.status !== 'pending' || record.createdAt !== createdAt || record.expiresAt <= now) return false;
-    record.status = 'active';
-    record.confirmedAt = now;
-    record.lastAcceptedStep = matchedStep;
+    this.store.set(userId, { ...record, status: 'active', confirmedAt: now, lastAcceptedStep: matchedStep });
     return true;
   }
 
@@ -121,7 +119,7 @@ export class InMemoryTotpFactorStore implements TotpFactorStore {
     validateUserId(userId);
     const record = this.store.get(userId);
     if (!record || record.status !== 'active' || record.lastAcceptedStep !== expectedStep || matchedStep <= expectedStep) return false;
-    record.lastAcceptedStep = matchedStep;
+    this.store.set(userId, { ...record, lastAcceptedStep: matchedStep });
     return true;
   }
 

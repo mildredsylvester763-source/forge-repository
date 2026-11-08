@@ -41,7 +41,7 @@ export function generateRecoveryCode(length: number = 10): string {
   let code = '';
   const bytes = randomBytes(length);
   for (let i = 0; i < length; i++) {
-    code += ALPHABET[bytes[i] % ALPHABET.length];
+    code += ALPHABET.charAt((bytes[i] ?? 0) % ALPHABET.length);
   }
   return code;
 }
@@ -63,7 +63,7 @@ function timingSafeEqualBuffer(a: Buffer, b: Buffer): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
   for (let i = 0; i < a.length; i++) {
-    result |= a[i] ^ b[i];
+    result |= (a[i] ?? 0) ^ (b[i] ?? 0);
   }
   return result === 0;
 }
@@ -71,11 +71,8 @@ function timingSafeEqualBuffer(a: Buffer, b: Buffer): boolean {
 export class InMemoryRecoveryCodesStore implements RecoveryCodesStore {
   private readonly records = new Map<string, RecoveryCodeRecord>();
   private readonly byUser = new Map<string, Map<string, RecoveryCodeRecord>>();
-  private readonly clock: Clock;
 
-  constructor(clock: Clock = () => Date.now()) {
-    this.clock = clock;
-  }
+  constructor(_clock: Clock = () => Date.now()) {}
 
   async insert(record: RecoveryCodeRecord): Promise<void> {
     this.records.set(record.id, record);
@@ -131,11 +128,9 @@ export class InMemoryRecoveryCodesStore implements RecoveryCodesStore {
 
 export class SqliteRecoveryCodesStore implements RecoveryCodesStore {
   private readonly db: Database;
-  private readonly clock: Clock;
 
-  constructor(db: Database, clock: Clock = () => Date.now()) {
+  constructor(db: Database, _clock: Clock = () => Date.now()) {
     this.db = db;
-    this.clock = clock;
   }
 
   async insert(record: RecoveryCodeRecord): Promise<void> {
@@ -168,7 +163,7 @@ export class SqliteRecoveryCodesStore implements RecoveryCodesStore {
 
   async deleteAllForUser(userId: string): Promise<number> {
     const result = this.db.prepare(`DELETE FROM recovery_codes WHERE user_id = ?`).run(userId);
-    return result.changes;
+    return Number(result.changes);
   }
 
   async countUnusedByUser(userId: string): Promise<number> {
@@ -181,11 +176,9 @@ export class SqliteRecoveryCodesStore implements RecoveryCodesStore {
 
 export class PostgresRecoveryCodesStore implements RecoveryCodesStore {
   private readonly pool: SqlPool;
-  private readonly clock: Clock;
 
-  constructor(pool: SqlPool, clock: Clock = () => Date.now()) {
+  constructor(pool: SqlPool, _clock: Clock = () => Date.now()) {
     this.pool = pool;
-    this.clock = clock;
   }
 
   async insert(record: RecoveryCodeRecord): Promise<void> {
