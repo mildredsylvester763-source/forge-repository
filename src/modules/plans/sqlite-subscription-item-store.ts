@@ -35,13 +35,11 @@ const toRecord = (row: SubscriptionItemRow): SubscriptionItem => ({
 });
 
 export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
-  private readonly db: Database;
   private readonly insert;
   private readonly byId;
   private readonly byUser;
 
   constructor(db: Database) {
-    this.db = db;
     this.insert = db.prepare(`
       INSERT INTO subscription_items (
         id, user_id, item_type, product_id, status, provider,
