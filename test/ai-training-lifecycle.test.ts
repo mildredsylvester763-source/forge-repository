@@ -1003,7 +1003,7 @@ describe('model lifecycle (FORGE AI-033..056) functional', () => {
 
       const bRoute = await h.post('/v1/ai-training/gateway/route', { promptTokens: 100, outputTokens: 100 }, { cookie: cookieB });
       assert.equal(bRoute.status, 400);
-      assert.equal(await errorCode(bRoute), 'gateway-no-active-providers');
+      assert.equal(await errorCode(bRoute), 'gateway-no-providers');
 
       const bProviders = await h.post('/v1/ai-training/gateway/providers/list', {}, { cookie: cookieB });
       assert.equal(bProviders.status, 200);
