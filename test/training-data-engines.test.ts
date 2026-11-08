@@ -1540,7 +1540,7 @@ describe('tokenizer engine (FORGE AI-012)', () => {
     assert.equal(refusal(decodeIndices([-1], tok)), 'tokenizer-unknown-token:-1');
   });
 
-  it('registers tokenizers with deterministic ids, duplicate manifests and copy-only reads', () => {
+  it('registers tokenizers with deterministic ids, duplicate manifests and record-copy reads', () => {
     const registry: TokenizerRecord[] = [];
     const first = unwrap(registerTokenizer({ corpus: 'abab', vocabSize: 3, now: NOW }, registry));
     assert.equal(first.tokId, 'tok_1');
@@ -1564,12 +1564,15 @@ describe('tokenizer engine (FORGE AI-012)', () => {
     assert.equal(refusal(registerTokenizer({ corpus: 'abc', vocabSize: 3, now: NaN }, registry)), 'tokenizer-no-now');
     assert.equal(refusal(registerTokenizer({ corpus: 'abc', vocabSize: 3, now: NOW }, undefined as unknown as TokenizerRecord[])), 'tokenizer-no-registry');
     assert.equal(registry.length, 2);
-    // reads are by id, named when unknown, and always copies
+    // reads are by id, named when unknown, and return a record copy: edits never leak back
     assert.equal(refusal(tokenizerById('', registry)), 'tokenizer-no-input');
     assert.equal(refusal(tokenizerById('tok_99', registry)), 'tokenizer-unknown-tokenizer:tok_99');
     const found = unwrap(tokenizerById('tok_1', registry));
-    found.vocab.push('mutant');
-    assert.equal(registry[0]?.vocab.length, 3);
+    found.tokId = 'mutated';
+    found.createdAt = 0;
+    assert.equal(registry[0]?.tokId, 'tok_1');
+    assert.equal(registry[0]?.createdAt, NOW);
+    assert.deepEqual(registry[0]?.merges, ['ab']);
   });
 
   it('sweeps random corpora against the alphabet, fingerprint, round-trip and determinism oracles', () => {
