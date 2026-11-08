@@ -17,25 +17,6 @@ function mulberry32(seed: number) {
   };
 }
 
-import { describe, it } from 'node:test';
-import { strict as assert } from 'node:assert';
-import { PROMOTION_LADDER, PROMOTION_MIN_BETA_EVAL, PROMOTION_MIN_STABLE_SAFETY, buildModelCard, promoteModel, registerModelVersion } from '../src/modules/ai-training/engine/model-registry-engine.ts';
-import { DEFAULT_CONFIDENCE_THRESHOLD, MIN_CALIBRATION_SAMPLES, MIN_REPLICAS, OFFLINE_RUNTIMES, QUANT_METHODS, ROUTE_COST_TOKEN_CHUNK, SCALE_DOWN_STEP, DEFAULT_TARGET_UTILIZATION, buildOnDeviceBundle, buildQuantizationPlan, planServingScale, routeModel } from '../src/modules/ai-training/engine/model-serving-engine.ts';
-import { DEFAULT_AGREEMENT_THRESHOLD, DEFAULT_LATENCY_BUDGET_MS, DEFAULT_MAX_CACHE_ENTRIES, MIN_SHADOW_SAMPLES, PREFIX_INPUT_COST_FACTOR, STREAM_MAX_CHUNKS, admitCacheEntry, aggregateServingMetrics, applyStreamEvent, evaluateShadow, lookupResponseCache, planRollback, planStreamResume, type ShadowPair, type StreamEvent } from '../src/modules/ai-training/engine/model-operations-engine.ts';
-import { CLASSIFICATION_ORDER, GATEWAY_UNHEALTHY_THRESHOLD, aggregateProviderUsage, byokFingerprint, enforceDataPolicy, planFailoverChain, planGatewayRoute, recordProviderHealth, validateByokKey } from '../src/modules/ai-training/engine/model-gateway-engine.ts';
-import { CAPABILITY_KINDS, DEFAULT_RETENTION_DAYS, LOG_MAX_ENTRIES, RETENTION_MODES, TOOLCALL_PROVIDERS, admitGatewayLog, canonicalizeArgs, matchModelCapabilities, normalizeToolCall, planLogRetention, planZeroRetentionRoute, redactGatewayLog, registerCapabilityMatrix, registerOutputSchema, validateStructuredOutput } from '../src/modules/ai-training/engine/model-gateway-ops-engine.ts';
-import { EXPORTABLE_STAGES, PACKAGE_FORMAT, buildOnPremPackage, pinModel, releaseInstances, reserveInstances, resolvePinnedModel, unpinModel, verifyReimport } from '../src/modules/ai-training/engine/model-access-engine.ts';
-
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return function () {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 
 describe('model registry, cards and staged promotion (FORGE AI-033..035)', () => {
   it('pins the promotion ladder, gate floors and registration fingerprints', () => {
