@@ -140,7 +140,11 @@ import {
   plansRoutes,
   PostgresPlanStore,
   SqlitePlanStore,
+  InMemorySubscriptionItemStore,
+  PostgresSubscriptionItemStore,
+  SqliteSubscriptionItemStore,
   type PlanStore,
+  type SubscriptionItemStore,
 } from './modules/plans/index.ts';
 
 export interface AppOverrides {
@@ -168,6 +172,7 @@ export interface ForgeApp {
   aiTraining: AiTrainingService;
   trainingData: TrainingDataService;
   plans: PlansService;
+  subscriptionItems: SubscriptionItemStore;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -193,6 +198,7 @@ interface Storage {
   aiTraining: AiTrainingStore;
   trainingData: TrainingDataStore;
   userPlans: PlanStore;
+  subscriptionItems: SubscriptionItemStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -214,7 +220,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
     const userPlans = new PostgresPlanStore(pool);
-    return { db: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const subscriptionItems = new PostgresSubscriptionItemStore(pool);
+    return { db: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, subscriptionItems, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -247,7 +254,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
     const userPlans = new SqlitePlanStore(db);
-    return { db, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const subscriptionItems = new SqliteSubscriptionItemStore(db);
+    return { db, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, subscriptionItems, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -264,7 +272,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const aiTraining = new InMemoryAiTrainingStore();
   const trainingData = new InMemoryTrainingDataStore();
   const userPlans = new InMemoryPlanStore();
-  return { db: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const subscriptionItems = new InMemorySubscriptionItemStore();
+  return { db: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, subscriptionItems, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -364,5 +373,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, logger, db: storage.db, close };
+  return { handler, events, identity, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, subscriptionItems: storage.subscriptionItems, logger, db: storage.db, close };
 }
