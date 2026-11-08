@@ -860,6 +860,8 @@ describe('labeling engine (FORGE AI-008)', () => {
       assert.equal(result.labelers, ballots.length);
     }
   });
+});
+
 describe('preference engine (FORGE AI-009)', () => {
   function prefInput(overrides: Partial<StorePreferenceInput> = {}): StorePreferenceInput {
     return { user: 'u1', item: 'item-1', signal: 'like', consent: { granted: true }, now: NOW, ...overrides };
@@ -1117,10 +1119,11 @@ describe('codedata engine (FORGE AI-010)', () => {
     // but for any other kind the field is not identity and not stored at all
     const review = unwrap(registerCodeData(codeInput({ kind: 'review', contentHash: 'h3', failingTestId: 'ft-9' }), registry));
     assert.equal(review.failingTestId, null);
+    pushCode(review, registry);
     const reviewAgain = unwrap(registerCodeData(codeInput({ kind: 'review', contentHash: 'h3' }), registry));
     assert.ok(reviewAgain.duplicate);
     assert.equal(reviewAgain.codeId, review.codeId);
-    assert.equal(registry.length, 3);
+    assert.equal(registry.length, 4);
   });
 
   it('chains children onto existing parents only, so every chain is well formed', () => {
@@ -1252,6 +1255,4 @@ describe('codedata engine (FORGE AI-010)', () => {
       }
     }
   });
-});
-
 });
