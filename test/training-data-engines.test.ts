@@ -533,7 +533,7 @@ describe('consent engine (FORGE AI-002)', () => {
     const firstAfter = state.grants.find((g) => g.grantId === first.grantId);
     assert.equal(firstAfter?.supersededAt, NOW + 2000);
     // revoke the live grant: the superseded one must not come back
-    unwrap(revokeConsent({ workspace: 'ws-1', user: 'subject-1', dataType: 'preference', now: NOW + 4000 }, state));
+    unwrap(revokeConsent({ workspace: 'ws-1', user: 'subject-1', dataType: 'preference', now: NOW + 2500 }, state));
     const check = unwrap(checkConsent({ workspace: 'ws-1', user: 'subject-1', dataType: 'preference', now: NOW + 5000 }, state));
     assert.equal(check.state, 'denied');
     assert.equal(check.grantId, null);
