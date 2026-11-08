@@ -1284,3 +1284,375 @@ export class AiTrainingService {
     if (!result.ok) throw refusal(result.reason);
     return result.value;
   }
+
+  async planGatewayRoute(userId: string, body: unknown): Promise<{ primaryId: string; chain: string[]; estimatedCostUsd: number; refusedInactive: string[] }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runPlanGatewayRoute({
+      providers: await this.storedProviders(userId),
+      promptTokens: typeof dto.promptTokens === 'number' ? dto.promptTokens : Number.NaN,
+      outputTokens: typeof dto.outputTokens === 'number' ? dto.outputTokens : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async planFailoverChain(userId: string, body: unknown): Promise<{ chain: { providerId: string; attempt: number }[]; unhealthy: string[]; primaryId: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const providers = await this.storedProviders(userId);
+    const health: Record<string, number> = {};
+    for (const p of await this.store.listGatewayProviders(userId, 1000)) {
+      health[p.providerId] = p.consecutiveFailures;
+    }
+    const result = runPlanFailoverChain({
+      providers,
+      health,
+      maxRetriesPerProvider: typeof dto.maxRetriesPerProvider === 'number' ? dto.maxRetriesPerProvider : Number.NaN,
+      promptTokens: typeof dto.promptTokens === 'number' ? dto.promptTokens : Number.NaN,
+      outputTokens: typeof dto.outputTokens === 'number' ? dto.outputTokens : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  /** The BYOK key never leaves this method - only its fingerprint is stored, returned and logged. */
+  async registerByokKey(userId: string, body: unknown): Promise<{ providerId: string; keyFingerprint: string; keyLength: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const providerId = typeof dto.providerId === 'string' ? dto.providerId.trim() : '';
+    const check = runValidateByokKey(typeof dto.key === 'string' ? dto.key : '');
+    if (!check.ok) throw refusal(check.reason);
+    const keyFingerprint = runByokFingerprint(providerId, typeof dto.key === 'string' ? dto.key : '');
+    const saved = await this.store.saveByokKey({ userId, providerId, keyFingerprint, keyLength: check.value.keyLength, now: this.clock() });
+    await this.emit(AiTrainingEvents.ByokKeyRegistered, saved.id, { providerId, keyFingerprint });
+    return { providerId, keyFingerprint, keyLength: check.value.keyLength };
+  }
+
+  async enforceDataPolicy(body: unknown): Promise<{ allowedTags: string[]; maxTag: string | null; providerClearance: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runEnforceDataPolicy({
+      dataTags: (dto.dataTags ?? []) as string[],
+      providerClearance: typeof dto.providerClearance === 'string' ? dto.providerClearance : '',
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  // --- 15. Gateway ops: logs, retention, capabilities, toolcalls, schemas (AI-053..056) ---
+
+  async recordGatewayLog(userId: string, body: unknown): Promise<{ admitted: { id: string; providerId: string; modelId: string; prompt: string; response: string; redactionCount: number; findings: { kind: string; count: number }[]; contentOmitted: boolean; loggedAt: number }; duplicate: boolean }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const retention = runPlanLogRetention({ workspaceRetentionMode: typeof dto.retentionMode === 'string' ? dto.retentionMode : 'standard' });
+    if (!retention.ok) throw refusal(retention.reason);
+    const providerId = typeof dto.providerId === 'string' ? dto.providerId.trim() : '';
+    const entries = (await this.store.listGatewayLogs(userId, providerId, 1000)).map((r) => ({
+      id: r.id,
+      providerId: r.providerId,
+      modelId: r.modelId,
+      prompt: r.prompt,
+      response: r.response,
+      redactionCount: r.redactionCount,
+      findings: r.findings as { kind: string; count: number }[],
+      contentOmitted: r.contentOmitted,
+      loggedAt: r.loggedAt,
+    }));
+    const admission = runAdmitGatewayLog({
+      providerId,
+      modelId: typeof dto.modelId === 'string' ? dto.modelId.trim() : '',
+      prompt: typeof dto.prompt === 'string' ? dto.prompt : '',
+      response: typeof dto.response === 'string' ? dto.response : '',
+      persistContent: retention.value.persistContent,
+      maxEntries: LOG_MAX_ENTRIES,
+      now: this.clock(),
+      entries,
+    });
+    if (!admission.ok) throw refusal(admission.reason);
+    if (!admission.value.duplicate) {
+      const a = admission.value.admitted;
+      await this.store.createGatewayLog({
+        id: a.id,
+        userId,
+        providerId: a.providerId,
+        modelId: a.modelId,
+        prompt: a.prompt,
+        response: a.response,
+        redactionCount: a.redactionCount,
+        findings: a.findings,
+        contentOmitted: a.contentOmitted,
+        loggedAt: a.loggedAt,
+      });
+      await this.emit(AiTrainingEvents.GatewayLogRecorded, a.id, { providerId, redactionCount: a.redactionCount });
+    }
+    return admission.value;
+  }
+
+  async listGatewayLogs(userId: string, body: unknown): Promise<{ data: GatewayLogRecord[]; total: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const providerId = typeof dto.providerId === 'string' ? dto.providerId.trim() : '';
+    const limit = Math.min(200, Math.max(1, Number(dto.limit) || 50));
+    const rows = await this.store.listGatewayLogs(userId, providerId, 1000);
+    return { data: rows.slice(0, limit), total: rows.length };
+  }
+
+  async retentionDecision(body: unknown): Promise<{ mode: string; persistContent: boolean; persistMetadata: boolean }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runPlanLogRetention({ workspaceRetentionMode: typeof dto.retentionMode === 'string' ? dto.retentionMode : '' });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async planRetentionRoute(userId: string, body: unknown): Promise<{ primaryId: string; chain: string[]; estimatedCostUsd: number; providersExcluded: string[] }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runPlanZeroRetentionRoute({
+      providers: await this.storedProviders(userId),
+      workspaceRetentionMode: typeof dto.retentionMode === 'string' ? dto.retentionMode : '',
+      promptTokens: typeof dto.promptTokens === 'number' ? dto.promptTokens : Number.NaN,
+      outputTokens: typeof dto.outputTokens === 'number' ? dto.outputTokens : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  private async storedCapabilities(userId: string): Promise<{ modelId: string; capabilities: string[]; maxContextTokens: number; costPer1kIn: number; costPer1kOut: number; active: boolean; fingerprint: string }[]> {
+    return (await this.store.listCapabilityMatrices(userId, 1000)).map((r) => ({
+      modelId: r.modelId,
+      capabilities: [...r.capabilities],
+      maxContextTokens: r.maxContextTokens,
+      costPer1kIn: r.costPer1kIn,
+      costPer1kOut: r.costPer1kOut,
+      active: r.active,
+      fingerprint: r.fingerprint,
+    }));
+  }
+
+  async upsertCapabilities(userId: string, body: unknown): Promise<{ modelId: string; capabilities: string[]; maxContextTokens: number; costPer1kIn: number; costPer1kOut: number; active: boolean; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runRegisterCapabilityMatrix({
+      modelId: typeof dto.modelId === 'string' ? dto.modelId.trim() : '',
+      capabilities: (dto.capabilities ?? []) as string[],
+      maxContextTokens: typeof dto.maxContextTokens === 'number' ? dto.maxContextTokens : Number.NaN,
+      costPer1kIn: typeof dto.costPer1kIn === 'number' ? dto.costPer1kIn : Number.NaN,
+      costPer1kOut: typeof dto.costPer1kOut === 'number' ? dto.costPer1kOut : Number.NaN,
+      active: dto.active === true,
+      existing: await this.storedCapabilities(userId),
+    });
+    if (!result.ok) throw refusal(result.reason);
+    if (!result.value.duplicate) {
+      const m = result.value.matrix;
+      await this.store.saveCapabilityMatrix({
+        userId,
+        modelId: m.modelId,
+        capabilities: [...m.capabilities],
+        maxContextTokens: m.maxContextTokens,
+        costPer1kIn: m.costPer1kIn,
+        costPer1kOut: m.costPer1kOut,
+        active: m.active,
+        fingerprint: m.fingerprint,
+        now: this.clock(),
+      });
+      await this.emit(AiTrainingEvents.CapabilityMatrixSaved, m.fingerprint, { modelId: m.modelId, fingerprint: m.fingerprint });
+    }
+    return result.value.matrix;
+  }
+
+  async matchCapabilities(userId: string, body: unknown): Promise<{ primaryId: string; chain: string[] }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runMatchModelCapabilities({
+      required: (dto.required ?? []) as string[],
+      models: await this.storedCapabilities(userId),
+      promptTokens: typeof dto.promptTokens === 'number' ? dto.promptTokens : Number.NaN,
+      outputTokens: typeof dto.outputTokens === 'number' ? dto.outputTokens : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async normalizeToolCall(body: unknown): Promise<{ providerId: string; name: string; args: Record<string, unknown>; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runNormalizeToolCall({
+      providerId: typeof dto.providerId === 'string' ? dto.providerId : '',
+      name: typeof dto.name === 'string' ? dto.name : undefined,
+      argumentsJson: typeof dto.argumentsJson === 'string' ? dto.argumentsJson : undefined,
+      args: (dto.args ?? null) as Record<string, unknown> | undefined,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async registerOutputSchema(userId: string, body: unknown): Promise<{ schemaId: string; fields: OutputFieldSpec[]; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const existing = (await this.store.listOutputSchemas(userId, 1000)).map((r) => ({ schemaId: r.schemaId, fields: r.fields as OutputFieldSpec[], fingerprint: r.fingerprint }));
+    const result = runRegisterOutputSchema({
+      schemaId: typeof dto.schemaId === 'string' ? dto.schemaId.trim() : '',
+      fields: (dto.fields ?? []) as OutputFieldSpec[],
+      existing,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    if (!result.value.duplicate) {
+      await this.store.saveOutputSchema({ userId, schemaId: result.value.schema.schemaId, fields: result.value.schema.fields, fingerprint: result.value.schema.fingerprint, now: this.clock() });
+      await this.emit(AiTrainingEvents.OutputSchemaRegistered, result.value.schema.fingerprint, { schemaId: result.value.schema.schemaId });
+    }
+    return result.value.schema;
+  }
+
+  async validateOutput(userId: string, body: unknown): Promise<{ fieldsChecked: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const schemaId = typeof dto.schemaId === 'string' ? dto.schemaId.trim() : '';
+    const schema = await this.store.findOutputSchema(userId, schemaId);
+    if (!schema) throw notFound('schema-not-found:' + schemaId);
+    const result = runValidateStructuredOutput({ fields: schema.fields as OutputFieldSpec[], output: dto.output });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  // --- 16. Access: pinning, reservations, on-prem packages (AI-045..047) ---
+
+  private pinPlanOf(userId: string, pin: ModelPinRecord): PinPlan {
+    return { workspaceId: userId, modelId: pin.modelId, versionId: pin.version, modelTier: pin.modelTier, switchedFrom: pin.switchedFrom, duplicate: false, fingerprint: pin.fingerprint };
+  }
+
+  private reservationPlanOf(userId: string, r: { modelId: string; slots: number; freeAfter: number; fingerprint: string }): ReservationPlan {
+    return { workspaceId: userId, modelId: r.modelId, slots: r.slots, freeAfter: r.freeAfter, duplicate: false, fingerprint: r.fingerprint };
+  }
+
+  async pinVersion(userId: string, body: unknown): Promise<{ workspaceId: string; modelId: string; versionId: number; modelTier: string; switchedFrom: number | null; duplicate: boolean; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const modelTier = typeof dto.modelTier === 'string' ? dto.modelTier : '';
+    const versions = (await this.store.listModelVersions(userId, modelId, 1000)).map((v) => v.version);
+    const existingPin = await this.store.findModelPin(userId, modelId);
+    const result = runPinModel({
+      workspaceId: userId,
+      modelId,
+      versionId: typeof dto.versionId === 'number' ? dto.versionId : undefined,
+      modelTier,
+      planTiers: (dto.planTiers ?? []) as string[],
+      versions,
+      existingPin: existingPin ? this.pinPlanOf(userId, existingPin) : null,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    if (!result.value.duplicate) {
+      await this.store.saveModelPin({
+        userId,
+        modelId,
+        version: result.value.versionId,
+        modelTier,
+        switchedFrom: result.value.switchedFrom,
+        fingerprint: result.value.fingerprint,
+        now: this.clock(),
+      });
+      await this.emit(AiTrainingEvents.ModelPinned, result.value.fingerprint, { modelId, version: result.value.versionId });
+    }
+    return result.value;
+  }
+
+  async unpinVersion(userId: string, body: unknown): Promise<{ workspaceId: string; modelId: string; unpinnedVersionId: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const currentPin = await this.store.findModelPin(userId, modelId);
+    const result = runUnpinModel({ workspaceId: userId, modelId, currentPin: currentPin ? this.pinPlanOf(userId, currentPin) : null });
+    if (!result.ok) throw refusal(result.reason);
+    await this.store.deleteModelPin(userId, modelId);
+    await this.emit(AiTrainingEvents.ModelUnpinned, modelId, { modelId, unpinnedVersionId: result.value.unpinnedVersionId });
+    return result.value;
+  }
+
+  async resolveVersion(userId: string, body: unknown): Promise<{ workspaceId: string; modelId: string; versionId: number; source: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const pin = await this.store.findModelPin(userId, modelId);
+    const result = runResolvePinnedModel({
+      workspaceId: userId,
+      modelId,
+      pins: pin ? [this.pinPlanOf(userId, pin)] : [],
+      fallbackVersionId: typeof dto.fallbackVersionId === 'number' ? dto.fallbackVersionId : undefined,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async reserveSlots(userId: string, body: unknown): Promise<{ workspaceId: string; modelId: string; slots: number; freeAfter: number; duplicate: boolean; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const current = await this.store.findInstanceReservation(userId, modelId);
+    const result = runReserveInstances({
+      workspaceId: userId,
+      modelId,
+      slots: typeof dto.slots === 'number' ? dto.slots : Number.NaN,
+      poolTotal: typeof dto.poolTotal === 'number' ? dto.poolTotal : Number.NaN,
+      reservedByOthers: typeof dto.reservedByOthers === 'number' ? dto.reservedByOthers : undefined,
+      currentReservation: current ? this.reservationPlanOf(userId, current) : null,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    if (!result.value.duplicate) {
+      await this.store.saveInstanceReservation({
+        userId,
+        modelId,
+        slots: result.value.slots,
+        poolTotal: typeof dto.poolTotal === 'number' ? dto.poolTotal : 0,
+        freeAfter: result.value.freeAfter,
+        fingerprint: result.value.fingerprint,
+        now: this.clock(),
+      });
+      await this.emit(AiTrainingEvents.SlotsReserved, result.value.fingerprint, { modelId, slots: result.value.slots });
+    }
+    return result.value;
+  }
+
+  async releaseSlots(userId: string, body: unknown): Promise<{ workspaceId: string; modelId: string; slotsReturned: number; fingerprint: string }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const current = await this.store.findInstanceReservation(userId, modelId);
+    const result = runReleaseInstances({ workspaceId: userId, modelId, currentReservation: current ? this.reservationPlanOf(userId, current) : null });
+    if (!result.ok) throw refusal(result.reason);
+    await this.store.deleteInstanceReservation(userId, modelId);
+    await this.emit(AiTrainingEvents.SlotsReleased, modelId, { modelId, slotsReturned: result.value.slotsReturned });
+    return result.value;
+  }
+
+  async buildPackage(userId: string, body: unknown): Promise<OnPremPackageRecord> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const modelId = typeof dto.modelId === 'string' ? dto.modelId.trim() : '';
+    const versionId = typeof dto.versionId === 'number' ? dto.versionId : 0;
+    const record = await this.store.findModelVersion(userId, modelId, versionId);
+    if (!record) throw notFound('model-version-not-found:' + modelId + ':' + versionId);
+    const hasCard = (await this.store.findModelCard(userId, modelId, versionId)) !== null;
+    const pkg = runBuildOnPremPackage({
+      modelId,
+      versionId,
+      stage: record.stage,
+      weightsFingerprint: record.weightsFingerprint,
+      hasCard,
+      licenseTerms: typeof dto.licenseTerms === 'string' ? dto.licenseTerms : '',
+      quantized: dto.quantized === true,
+    });
+    if (!pkg.ok) throw refusal(pkg.reason);
+    const saved = await this.store.createOnPremPackage({
+      userId,
+      modelId,
+      version: versionId,
+      format: pkg.value.format,
+      weightsFingerprint: pkg.value.weightsFingerprint,
+      quantized: pkg.value.quantized,
+      licenseTerms: pkg.value.licenseTerms,
+      fingerprint: pkg.value.fingerprint,
+      now: this.clock(),
+    });
+    await this.emit(AiTrainingEvents.OnPremPackageBuilt, saved.id, { modelId, version: versionId });
+    return saved;
+  }
+
+  async verifyPackage(userId: string, body: unknown): Promise<{ accepted: boolean; fingerprint: string; modelId: string; versionId: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const fingerprint = typeof dto.fingerprint === 'string' ? dto.fingerprint.trim() : '';
+    const rec = await this.store.findOnPremPackageByFingerprint(userId, fingerprint);
+    if (!rec) throw notFound('package-not-found:' + fingerprint);
+    const result = runVerifyReimport({
+      pkg: { modelId: rec.modelId, versionId: rec.version, format: rec.format, weightsFingerprint: rec.weightsFingerprint, quantized: rec.quantized, licenseTerms: rec.licenseTerms, fingerprint: rec.fingerprint },
+      weightsFingerprint: typeof dto.weightsFingerprint === 'string' ? dto.weightsFingerprint : '',
+      qualityScore: typeof dto.qualityScore === 'number' ? dto.qualityScore : Number.NaN,
+      qualityGate: typeof dto.qualityGate === 'number' ? dto.qualityGate : Number.NaN,
+      licenseAccepted: dto.licenseAccepted === true,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+}

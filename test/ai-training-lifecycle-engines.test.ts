@@ -1106,3 +1106,1114 @@ describe('model operations: cache, streams, metrics, shadow, rollback (FORGE AI-
           ttftMs: rand() < 0.7 ? Math.floor(rand() * 400) : undefined,
         });
       }
+      const latencyBudgetMs = rand() < 0.5 ? undefined : 100 + Math.floor(rand() * 900);
+      const actual = aggregateServingMetrics({ modelId: 'ink-flow', samples, latencyBudgetMs });
+
+      const okSamples = samples.filter((s) => s.ok !== false);
+      const pctl = (p: number): number => {
+        if (okSamples.length === 0) return 0;
+        const sorted = okSamples.map((s) => s.latencyMs).sort((a, b) => a - b);
+        return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)]!;
+      };
+      const totalTokens = samples.reduce((t, s) => t + s.tokens, 0);
+      const totalCost = r6(samples.reduce((t, s) => t + s.costUsd, 0));
+      const ttfts = okSamples.filter((s) => typeof s.ttftMs === 'number').map((s) => s.ttftMs as number);
+      const budget = latencyBudgetMs ?? 2000;
+      const p95 = pctl(0.95);
+      assert.deepEqual(actual, {
+        ok: true,
+        value: {
+          modelId: 'ink-flow',
+          sampleCount: n,
+          errorCount: n - okSamples.length,
+          errorRate: r6((n - okSamples.length) / n),
+          p50LatencyMs: pctl(0.5),
+          p95LatencyMs: p95,
+          p99LatencyMs: pctl(0.99),
+          avgTtftMs: ttfts.length > 0 ? r6(ttfts.reduce((a, b) => a + b, 0) / ttfts.length) : 0,
+          totalTokens,
+          totalCostUsd: totalCost,
+          costPer1kTokens: r6((totalCost / totalTokens) * 1000),
+          latencyBudgetMs: budget,
+          budgetBreached: p95 > budget,
+        },
+      });
+    }
+  });
+});
+
+
+describe('provider gateway: routing, health, BYOK, policy, accounting (FORGE AI-048..052)', () => {
+  it('routes to the cheapest capable active provider with a failover chain', () => {
+    const pCheap = { id: 'p-cheap', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 8000, active: true };
+    const pPricey = { id: 'p-pricey', costPer1kIn: 0.5, costPer1kOut: 1.0, maxTokens: 16000, active: true };
+    const pOff = { id: 'p-off', costPer1kIn: 0.01, costPer1kOut: 0.01, maxTokens: 100000, active: false };
+
+    const route = planGatewayRoute({ providers: [pPricey, pCheap, pOff], promptTokens: 1000, outputTokens: 500 });
+    assert.deepEqual(route, {
+      ok: true,
+      value: { primaryId: 'p-cheap', chain: ['p-cheap', 'p-pricey'], estimatedCostUsd: 0.2, refusedInactive: ['p-off'] },
+    });
+
+    assert.deepEqual(planGatewayRoute({ providers: [pCheap, pPricey], promptTokens: 9000, outputTokens: 8000 }), { ok: false, reason: 'gateway-no-capable-provider:17000' });
+    assert.deepEqual(planGatewayRoute({ providers: [pOff], promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'gateway-no-active-providers' });
+    assert.deepEqual(planGatewayRoute({ providers: [], promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'gateway-no-providers' });
+
+    const tieB = { id: 'p-b', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 4000, active: true };
+    const tieA = { id: 'p-a', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 4000, active: true };
+    const tie = planGatewayRoute({ providers: [tieB, tieA], promptTokens: 100, outputTokens: 100 });
+    if (!tie.ok) throw new Error('tie must route');
+    assert.deepEqual([tie.value.primaryId, tie.value.chain], ['p-a', ['p-a', 'p-b']]);
+  });
+
+  it('tracks three-strike provider health and fails over around the unhealthy', () => {
+    assert.equal(GATEWAY_UNHEALTHY_THRESHOLD, 3);
+
+    const success = recordProviderHealth({ providerId: 'p-cheap', consecutiveFailures: 2, ok: true });
+    assert.deepEqual(success, { ok: true, value: { providerId: 'p-cheap', consecutiveFailures: 0, healthy: true } });
+
+    const fail1 = recordProviderHealth({ providerId: 'p-cheap', consecutiveFailures: 0, ok: false });
+    assert.deepEqual(fail1, { ok: true, value: { providerId: 'p-cheap', consecutiveFailures: 1, healthy: true } });
+    const fail2 = recordProviderHealth({ providerId: 'p-cheap', consecutiveFailures: 1, ok: false });
+    assert.deepEqual(fail2, { ok: true, value: { providerId: 'p-cheap', consecutiveFailures: 2, healthy: true } });
+    const fail3 = recordProviderHealth({ providerId: 'p-cheap', consecutiveFailures: 2, ok: false });
+    assert.deepEqual(fail3, { ok: true, value: { providerId: 'p-cheap', consecutiveFailures: 3, healthy: false } });
+
+    const pCheap = { id: 'p-cheap', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 8000, active: true };
+    const pPricey = { id: 'p-pricey', costPer1kIn: 0.5, costPer1kOut: 1.0, maxTokens: 16000, active: true };
+    const failover = planFailoverChain({ providers: [pCheap, pPricey], health: { 'p-cheap': 3 }, maxRetriesPerProvider: 2, promptTokens: 100, outputTokens: 100 });
+    assert.deepEqual(failover, {
+      ok: true,
+      value: {
+        chain: [{ providerId: 'p-pricey', attempt: 1 }, { providerId: 'p-pricey', attempt: 2 }],
+        unhealthy: ['p-cheap'],
+        primaryId: 'p-pricey',
+      },
+    });
+
+    const floored = planFailoverChain({ providers: [pPricey, pCheap], health: {}, maxRetriesPerProvider: 1.5, promptTokens: 100, outputTokens: 100 });
+    if (!floored.ok) throw new Error('failover must plan');
+    assert.deepEqual(floored.value.chain, [{ providerId: 'p-cheap', attempt: 1 }, { providerId: 'p-pricey', attempt: 1 }]);
+
+    assert.deepEqual(planFailoverChain({ providers: [pCheap], health: { 'p-cheap': 3 }, maxRetriesPerProvider: 2, promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'failover-no-healthy-providers' });
+    assert.deepEqual(planFailoverChain({ providers: [], health: {}, maxRetriesPerProvider: 2, promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'gateway-no-providers' });
+  });
+
+  it('fingerprints BYOK keys without ever storing them', () => {
+    assert.equal(byokFingerprint('openai', 'sk-live-9f2a77'), 'byok_d9df8143');
+    assert.notEqual(byokFingerprint('openai', 'sk-live-9f2a78'), 'byok_d9df8143');
+    assert.notEqual(byokFingerprint('anthropic', 'sk-live-9f2a77'), 'byok_d9df8143');
+    assert.match(byokFingerprint('openai', 'sk-live-9f2a77'), /^byok_[0-9a-f]{8}$/);
+
+    assert.deepEqual(validateByokKey('short'), { ok: false, reason: 'byok-invalid-key' });
+    assert.deepEqual(validateByokKey('1234567'), { ok: false, reason: 'byok-invalid-key' });
+    assert.deepEqual(validateByokKey('  abcd1234  '), { ok: true, value: { keyLength: 8 } });
+    assert.deepEqual(validateByokKey('sk-live-9f2a77'), { ok: true, value: { keyLength: 14 } });
+  });
+
+  it('enforces the classification ladder on data policy', () => {
+    assert.deepEqual([...CLASSIFICATION_ORDER], ['public', 'internal', 'confidential', 'restricted']);
+
+    const allowed = enforceDataPolicy({ dataTags: ['public', 'internal'], providerClearance: 'internal' });
+    assert.deepEqual(allowed, { ok: true, value: { allowedTags: ['public', 'internal'], maxTag: 'internal', providerClearance: 'internal' } });
+
+    const normalized = enforceDataPolicy({ dataTags: [' Public ', 'public'], providerClearance: 'public' });
+    assert.deepEqual(normalized, { ok: true, value: { allowedTags: ['public'], maxTag: 'public', providerClearance: 'public' } });
+
+    const empty = enforceDataPolicy({ dataTags: [], providerClearance: 'restricted' });
+    assert.deepEqual(empty, { ok: true, value: { allowedTags: [], maxTag: null, providerClearance: 'restricted' } });
+
+    assert.deepEqual(enforceDataPolicy({ dataTags: ['confidential'], providerClearance: 'internal' }), { ok: false, reason: 'policy-clearance-exceeded:confidential>internal' });
+    assert.deepEqual(enforceDataPolicy({ dataTags: ['top-secret'], providerClearance: 'internal' }), { ok: false, reason: 'policy-unknown-tag:top-secret' });
+    assert.deepEqual(enforceDataPolicy({ dataTags: ['public'], providerClearance: 'wide-open' }), { ok: false, reason: 'policy-unknown-clearance:wide-open' });
+  });
+
+  it('accounts provider usage with honest sums and error rates', () => {
+    const accounting = aggregateProviderUsage({
+      providerId: 'p-cheap',
+      descriptor: { costPer1kIn: 0.1, costPer1kOut: 0.2 },
+      samples: [
+        { tokensIn: 1000, tokensOut: 100, latencyMs: 100, ok: true },
+        { tokensIn: 2000, tokensOut: 200, latencyMs: 200, ok: true },
+        { tokensIn: 3000, tokensOut: 300, latencyMs: 300, ok: false },
+      ],
+    });
+    assert.deepEqual(accounting, {
+      ok: true,
+      value: { providerId: 'p-cheap', requests: 3, failures: 1, errorRate: 0.333333, tokensIn: 6000, tokensOut: 600, costUsd: 0.72, avgLatencyMs: 200 },
+    });
+
+    assert.deepEqual(aggregateProviderUsage({ providerId: 'p-cheap', descriptor: { costPer1kIn: 0.1, costPer1kOut: 0.2 }, samples: [] }), { ok: false, reason: 'accounting-no-samples' });
+  });
+
+  it('sweeps randomized gateway routes, failovers, policies and usage against independent oracles', () => {
+    const rand = mulberry32(42);
+    const r6 = (x: number): number => Math.round(x * 1e6) / 1e6;
+
+    for (let c = 0; c < 400; c++) {
+      const providers: Array<{ id: string; costPer1kIn: number; costPer1kOut: number; maxTokens: number; active: boolean }> = [];
+      const n = 1 + Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) {
+        providers.push({
+          id: 'p' + i,
+          costPer1kIn: Math.round(rand() * 100) / 100,
+          costPer1kOut: Math.round(rand() * 100) / 100,
+          maxTokens: 1000 * (1 + Math.floor(rand() * 10)),
+          active: rand() < 0.85,
+        });
+      }
+      const promptTokens = Math.floor(rand() * 5000);
+      const outputTokens = Math.floor(rand() * 5000);
+
+      const actual = planGatewayRoute({ providers, promptTokens, outputTokens });
+
+      const active = providers.filter((p) => p.active);
+      let expected: Record<string, unknown>;
+      if (providers.length === 0) {
+        expected = { ok: false, reason: 'gateway-no-providers' };
+      } else if (active.length === 0) {
+        expected = { ok: false, reason: 'gateway-no-active-providers' };
+      } else {
+        const need = promptTokens + outputTokens;
+        const capable = active.filter((p) => p.maxTokens >= need);
+        if (capable.length === 0) {
+          expected = { ok: false, reason: 'gateway-no-capable-provider:' + need };
+        } else {
+          const ranked = capable.slice().sort((a, b) => (a.costPer1kOut !== b.costPer1kOut ? a.costPer1kOut - b.costPer1kOut : a.id < b.id ? -1 : 1));
+          const primary = ranked[0]!;
+          expected = {
+            ok: true,
+            value: {
+              primaryId: primary.id,
+              chain: ranked.map((p) => p.id),
+              estimatedCostUsd: r6((promptTokens / 1000) * primary.costPer1kIn + (outputTokens / 1000) * primary.costPer1kOut),
+              refusedInactive: providers.filter((p) => !p.active).map((p) => p.id),
+            },
+          };
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    for (let c = 0; c < 150; c++) {
+      const providers: Array<{ id: string; costPer1kIn: number; costPer1kOut: number; maxTokens: number; active: boolean }> = [];
+      const n = 1 + Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) {
+        providers.push({
+          id: 'p' + i,
+          costPer1kIn: Math.round(rand() * 100) / 100,
+          costPer1kOut: Math.round(rand() * 100) / 100,
+          maxTokens: 1000 * (1 + Math.floor(rand() * 10)),
+          active: rand() < 0.85,
+        });
+      }
+      const health: Record<string, number> = {};
+      for (const p of providers) health[p.id] = Math.floor(rand() * 5);
+      const maxRetriesPerProvider = 1 + Math.floor(rand() * 3);
+      const promptTokens = Math.floor(rand() * 3000);
+      const outputTokens = Math.floor(rand() * 3000);
+
+      const actual = planFailoverChain({ providers, health, maxRetriesPerProvider, promptTokens, outputTokens });
+
+      const need = promptTokens + outputTokens;
+      const ranked = providers
+        .filter((p) => p.active && p.maxTokens >= need)
+        .slice()
+        .sort((a, b) => (a.costPer1kOut !== b.costPer1kOut ? a.costPer1kOut - b.costPer1kOut : a.id < b.id ? -1 : 1));
+      const unhealthy = ranked.filter((p) => (health[p.id] ?? 0) >= 3).map((p) => p.id);
+      const healthy = ranked.filter((p) => (health[p.id] ?? 0) < 3);
+      let expected: Record<string, unknown>;
+      if (providers.length === 0) {
+        expected = { ok: false, reason: 'gateway-no-providers' };
+      } else if (healthy.length === 0) {
+        expected = { ok: false, reason: 'failover-no-healthy-providers' };
+      } else {
+        const attempts = Math.max(1, Math.floor(maxRetriesPerProvider));
+        const chain: Array<{ providerId: string; attempt: number }> = [];
+        for (const p of healthy) {
+          for (let a = 1; a <= attempts; a++) chain.push({ providerId: p.id, attempt: a });
+        }
+        expected = { ok: true, value: { chain, unhealthy, primaryId: healthy[0]!.id } };
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    const ladder = ['public', 'internal', 'confidential', 'restricted'];
+    for (let c = 0; c < 300; c++) {
+      const dataTags: string[] = [];
+      const n = Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) dataTags.push(rand() < 0.9 ? ladder[Math.floor(rand() * ladder.length)]! : 'bogus');
+      const providerClearance = rand() < 0.9 ? ladder[Math.floor(rand() * ladder.length)]! : 'wide-open';
+
+      const actual = enforceDataPolicy({ dataTags, providerClearance });
+
+      const clearanceIdx = ladder.indexOf(providerClearance);
+      let expected: Record<string, unknown>;
+      if (clearanceIdx < 0) {
+        expected = { ok: false, reason: 'policy-unknown-clearance:' + providerClearance };
+      } else {
+        const tags = Array.from(new Set(dataTags.map((t) => String(t).trim().toLowerCase()).filter(Boolean)));
+        const unknownTag = tags.find((t) => !ladder.includes(t));
+        if (unknownTag !== undefined) {
+          expected = { ok: false, reason: 'policy-unknown-tag:' + unknownTag };
+        } else {
+          let maxIdx = -1;
+          for (const t of tags) maxIdx = Math.max(maxIdx, ladder.indexOf(t));
+          if (tags.length > 0 && maxIdx > clearanceIdx) {
+            expected = { ok: false, reason: 'policy-clearance-exceeded:' + ladder[maxIdx]! + '>' + providerClearance };
+          } else {
+            expected = { ok: true, value: { allowedTags: tags, maxTag: tags.length ? ladder[maxIdx]! : null, providerClearance } };
+          }
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    for (let c = 0; c < 200; c++) {
+      const samples: Array<{ tokensIn: number; tokensOut: number; latencyMs: number; ok: boolean }> = [];
+      const n = Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) {
+        samples.push({ tokensIn: Math.floor(rand() * 5000), tokensOut: Math.floor(rand() * 1000), latencyMs: 1 + Math.floor(rand() * 900), ok: rand() < 0.85 });
+      }
+      const actual = aggregateProviderUsage({ providerId: 'p-cheap', descriptor: { costPer1kIn: 0.13, costPer1kOut: 0.27 }, samples });
+
+      let expected: Record<string, unknown>;
+      if (samples.length === 0) {
+        expected = { ok: false, reason: 'accounting-no-samples' };
+      } else {
+        const tokensIn = samples.reduce((t, s) => t + s.tokensIn, 0);
+        const tokensOut = samples.reduce((t, s) => t + s.tokensOut, 0);
+        const failures = samples.filter((s) => !s.ok).length;
+        const latencySum = samples.reduce((t, s) => t + s.latencyMs, 0);
+        expected = {
+          ok: true,
+          value: {
+            providerId: 'p-cheap',
+            requests: samples.length,
+            failures,
+            errorRate: r6(failures / samples.length),
+            tokensIn,
+            tokensOut,
+            costUsd: r6((tokensIn / 1000) * 0.13 + (tokensOut / 1000) * 0.27),
+            avgLatencyMs: r6(latencySum / samples.length),
+          },
+        };
+      }
+      assert.deepEqual(actual, expected);
+    }
+  });
+});
+
+describe('gateway operations: redaction, retention, capabilities, tool calls, schemas (FORGE AI-053..056)', () => {
+  it('redacts secrets, tokens, emails and phones before storage', () => {
+    const redacted = redactGatewayLog({
+      prompt: 'use sk-AbCdEf123456 then Bearer zzz12345678',
+      response: 'emailed ada@example.com and +234 802 123 4567',
+    });
+    assert.deepEqual(redacted, {
+      ok: true,
+      value: {
+        prompt: 'use [SECRET-KEY] then [TOKEN]',
+        response: 'emailed [EMAIL] and [PHONE]',
+        redactionCount: 4,
+        findings: [
+          { kind: 'secret-key', count: 1 },
+          { kind: 'token', count: 1 },
+          { kind: 'email', count: 1 },
+          { kind: 'phone', count: 1 },
+        ],
+      },
+    });
+
+    const lowerBearer = redactGatewayLog({ prompt: 'bearer abcdef12345 here', response: '' });
+    assert.deepEqual(lowerBearer, { ok: true, value: { prompt: '[TOKEN] here', response: '', redactionCount: 1, findings: [{ kind: 'token', count: 1 }] } });
+
+    assert.deepEqual(redactGatewayLog({ prompt: '   ', response: '  ' }), { ok: false, reason: 'log-empty-entry' });
+  });
+
+  it('admits logs idempotently, omits zero-retention content and refuses caps loudly', () => {
+    assert.equal(LOG_MAX_ENTRIES, 500);
+
+    const first = admitGatewayLog({ providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'hi sk-AAAABBBB123', response: 'ok', now: 5000, entries: [] });
+    if (!first.ok) throw new Error('first admission must succeed');
+    assert.deepEqual(first, {
+      ok: true,
+      value: {
+        admitted: {
+          id: 'log_74886c10',
+          providerId: 'p-cheap',
+          modelId: 'ink-flow',
+          prompt: 'hi [SECRET-KEY]',
+          response: 'ok',
+          redactionCount: 1,
+          findings: [{ kind: 'secret-key', count: 1 }],
+          contentOmitted: false,
+          loggedAt: 5000,
+        },
+        duplicate: false,
+      },
+    });
+
+    const again = admitGatewayLog({ providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'hi sk-AAAABBBB123', response: 'ok', now: 6000, entries: [first.value.admitted] });
+    assert.deepEqual(again, { ok: true, value: { admitted: first.value.admitted, duplicate: true } });
+
+    const omitted = admitGatewayLog({ providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'hi sk-AAAABBBB123', response: 'ok', now: 7000, persistContent: false, entries: [] });
+    if (!omitted.ok) throw new Error('zero-retention admission must succeed');
+    assert.equal(omitted.value.admitted.prompt, '');
+    assert.equal(omitted.value.admitted.response, '');
+    assert.equal(omitted.value.admitted.contentOmitted, true);
+    assert.equal(omitted.value.admitted.redactionCount, 1);
+
+    const existing: Array<{ id: string; providerId: string; modelId: string; prompt: string; response: string; redactionCount: number; findings: Array<{ kind: string; count: number }>; contentOmitted: boolean; loggedAt: number }> = [
+      {
+        id: 'log_other0',
+        providerId: 'p-cheap',
+        modelId: 'ink-flow',
+        prompt: 'old',
+        response: 'old',
+        redactionCount: 0,
+        findings: [],
+        contentOmitted: false,
+        loggedAt: 1,
+      },
+    ];
+    assert.deepEqual(admitGatewayLog({ providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'new', response: 'new', now: 8000, maxEntries: 1, entries: existing }), { ok: false, reason: 'log-over-cap:1' });
+
+    assert.deepEqual(admitGatewayLog({ providerId: '', modelId: 'ink-flow', prompt: 'x', response: 'y', now: 1, entries: [] }), { ok: false, reason: 'log-no-provider' });
+  });
+
+  it('plans retention modes and zero-retention routes conservatively', () => {
+    assert.deepEqual([...RETENTION_MODES], ['standard', 'zero']);
+    assert.equal(DEFAULT_RETENTION_DAYS, 30);
+
+    assert.deepEqual(planLogRetention({ workspaceRetentionMode: 'standard' }), { ok: true, value: { mode: 'standard', persistContent: true, persistMetadata: true } });
+    assert.deepEqual(planLogRetention({ workspaceRetentionMode: 'zero' }), { ok: true, value: { mode: 'zero', persistContent: false, persistMetadata: true } });
+    assert.deepEqual(planLogRetention({ workspaceRetentionMode: 'strict' }), { ok: false, reason: 'retention-unknown-mode:strict' });
+
+    const pZero = { id: 'p-zero', costPer1kIn: 0.2, costPer1kOut: 0.3, maxTokens: 100000, active: true, retentionDays: 0 };
+    const pKeep = { id: 'p-keep', costPer1kIn: 0.1, costPer1kOut: 0.1, maxTokens: 100000, active: true, retentionDays: 30 };
+    const pMystery = { id: 'p-mystery', costPer1kIn: 0.05, costPer1kOut: 0.05, maxTokens: 100000, active: true };
+    const pOff = { id: 'p-off', costPer1kIn: 0.01, costPer1kOut: 0.01, maxTokens: 100000, active: false };
+
+    const zeroRoute = planZeroRetentionRoute({ providers: [pZero, pKeep, pMystery, pOff], workspaceRetentionMode: 'zero', promptTokens: 1000, outputTokens: 500 });
+    assert.deepEqual(zeroRoute, {
+      ok: true,
+      value: { primaryId: 'p-zero', chain: ['p-zero'], estimatedCostUsd: 0.35, providersExcluded: ['p-off', 'p-keep', 'p-mystery'] },
+    });
+
+    const standardRoute = planZeroRetentionRoute({ providers: [pZero, pKeep, pMystery, pOff], workspaceRetentionMode: 'standard', promptTokens: 1000, outputTokens: 500 });
+    assert.deepEqual(standardRoute, {
+      ok: true,
+      value: { primaryId: 'p-mystery', chain: ['p-mystery', 'p-keep', 'p-zero'], estimatedCostUsd: 0.075, providersExcluded: ['p-off'] },
+    });
+
+    assert.deepEqual(planZeroRetentionRoute({ providers: [pZero], workspaceRetentionMode: 'zero', promptTokens: 100000, outputTokens: 50000 }), { ok: false, reason: 'retention-no-capable-provider:150000' });
+    assert.deepEqual(planZeroRetentionRoute({ providers: [pKeep], workspaceRetentionMode: 'zero', promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'retention-no-zero-retention-providers' });
+    assert.deepEqual(planZeroRetentionRoute({ providers: [], workspaceRetentionMode: 'zero', promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'retention-no-providers' });
+    assert.deepEqual(planZeroRetentionRoute({ providers: [pZero], workspaceRetentionMode: 'strict', promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'retention-unknown-mode:strict' });
+  });
+
+  it('registers capability matrices and matches the cheapest capable active model', () => {
+    assert.deepEqual([...CAPABILITY_KINDS], ['code', 'vision', 'audio', 'tools']);
+
+    const registered = registerCapabilityMatrix({ modelId: 'ink-vision', capabilities: ['vision', 'code', 'vision'], maxContextTokens: 8192, costPer1kIn: 0.2, costPer1kOut: 0.4, active: true, existing: [] });
+    if (!registered.ok) throw new Error('capability registration must succeed');
+    assert.deepEqual(registered, {
+      ok: true,
+      value: {
+        matrix: { modelId: 'ink-vision', capabilities: ['code', 'vision'], maxContextTokens: 8192, costPer1kIn: 0.2, costPer1kOut: 0.4, active: true, fingerprint: 'cap_c03b2bd3' },
+        duplicate: false,
+        fingerprint: 'cap_c03b2bd3',
+      },
+    });
+
+    const dup = registerCapabilityMatrix({ modelId: 'ink-vision', capabilities: ['code', 'vision'], maxContextTokens: 8192, costPer1kIn: 0.2, costPer1kOut: 0.4, active: true, existing: [registered.value.matrix] });
+    assert.deepEqual(dup, { ok: true, value: { matrix: registered.value.matrix, duplicate: true, fingerprint: 'cap_c03b2bd3' } });
+
+    assert.deepEqual(registerCapabilityMatrix({ modelId: '', capabilities: ['code'], maxContextTokens: 1, costPer1kIn: 0.1, costPer1kOut: 0.1, active: true, existing: [] }), { ok: false, reason: 'capability-no-model' });
+    assert.deepEqual(registerCapabilityMatrix({ modelId: 'm', capabilities: ['smell'], maxContextTokens: 1, costPer1kIn: 0.1, costPer1kOut: 0.1, active: true, existing: [] }), { ok: false, reason: 'capability-unknown:smell' });
+    assert.deepEqual(registerCapabilityMatrix({ modelId: 'm', capabilities: [], maxContextTokens: 1, costPer1kIn: 0.1, costPer1kOut: 0.1, active: true, existing: [] }), { ok: false, reason: 'capability-empty' });
+
+    const m1 = { modelId: 'm1', capabilities: ['code'], maxContextTokens: 4096, costPer1kIn: 0.1, costPer1kOut: 0.5, active: true, fingerprint: 'cap_m1' };
+    const m2 = { modelId: 'm2', capabilities: ['code', 'tools'], maxContextTokens: 8192, costPer1kIn: 0.2, costPer1kOut: 0.2, active: true, fingerprint: 'cap_m2' };
+    const m3 = { modelId: 'm3', capabilities: ['code', 'tools', 'vision'], maxContextTokens: 16384, costPer1kIn: 0.01, costPer1kOut: 0.01, active: false, fingerprint: 'cap_m3' };
+
+    const code = matchModelCapabilities({ required: ['code'], models: [m1, m2, m3], promptTokens: 2000, outputTokens: 500 });
+    assert.deepEqual(code, { ok: true, value: { primaryId: 'm2', chain: ['m2', 'm1'] } });
+
+    const tools = matchModelCapabilities({ required: ['tools'], models: [m1, m2, m3], promptTokens: 2000, outputTokens: 500 });
+    assert.deepEqual(tools, { ok: true, value: { primaryId: 'm2', chain: ['m2'] } });
+
+    assert.deepEqual(matchModelCapabilities({ required: ['vision'], models: [m1, m2], promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'capability-no-model-supports:vision' });
+    assert.deepEqual(matchModelCapabilities({ required: ['code'], models: [m1, m2], promptTokens: 9000, outputTokens: 0 }), { ok: false, reason: 'capability-no-capable-model:9000' });
+    assert.deepEqual(matchModelCapabilities({ required: ['code'], models: [], promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'capability-no-models' });
+    assert.deepEqual(matchModelCapabilities({ required: ['smell'], models: [m1, m2], promptTokens: 100, outputTokens: 100 }), { ok: false, reason: 'capability-unknown:smell' });
+  });
+
+  it('normalizes tool calls across providers with order-invariant fingerprints', () => {
+    assert.deepEqual([...TOOLCALL_PROVIDERS], ['openai', 'anthropic', 'generic']);
+
+    assert.equal(canonicalizeArgs({ b: 1, a: 'x' }), '"a":"x"|"b":1');
+    assert.equal(canonicalizeArgs({ a: 'x', b: 1 }), '"a":"x"|"b":1');
+    assert.equal(canonicalizeArgs({ l: [1, 'two'] }), '"l":[1,"two"]');
+    assert.equal(canonicalizeArgs({ o: { z: 1 } }), '"o":{"z":1}');
+
+    const openai = normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '{"style":"ink","n":2}' });
+    assert.deepEqual(openai, { ok: true, value: { providerId: 'openai', name: 'draw', args: { style: 'ink', n: 2 }, fingerprint: 'tc_08c167b2' } });
+
+    const reordered = normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '{"n":2,"style":"ink"}' });
+    assert.deepEqual(reordered, openai);
+
+    const anthropic = normalizeToolCall({ providerId: 'anthropic', name: 'draw', args: { n: 2, style: 'ink' } });
+    assert.deepEqual(anthropic, { ok: true, value: { providerId: 'anthropic', name: 'draw', args: { n: 2, style: 'ink' }, fingerprint: 'tc_4356a67e' } });
+
+    const generic = normalizeToolCall({ providerId: 'generic', name: 'draw', args: { n: 2, style: 'ink' } });
+    assert.deepEqual(generic, { ok: true, value: { providerId: 'generic', name: 'draw', args: { n: 2, style: 'ink' }, fingerprint: 'tc_52550fd3' } });
+
+    assert.deepEqual(normalizeToolCall({ providerId: 'bedrock', name: 'draw', args: {} }), { ok: false, reason: 'toolcall-unknown-provider:bedrock' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: '   ', argumentsJson: '{}' }), { ok: false, reason: 'toolcall-missing-name' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw' }), { ok: false, reason: 'toolcall-missing-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '{' }), { ok: false, reason: 'toolcall-invalid-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '[1,2]' }), { ok: false, reason: 'toolcall-invalid-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '"str"' }), { ok: false, reason: 'toolcall-invalid-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'anthropic', name: 'draw' }), { ok: false, reason: 'toolcall-missing-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'anthropic', name: 'draw', args: [1, 2] }), { ok: false, reason: 'toolcall-missing-arguments' });
+  });
+
+  it('registers output schemas and validates structured outputs field by field', () => {
+    const registered = registerOutputSchema({
+      schemaId: 'panel-out',
+      fields: [{ name: 'title', type: 'string' }, { name: 'panels', type: 'array', required: false }],
+      existing: [],
+    });
+    if (!registered.ok) throw new Error('schema registration must succeed');
+    assert.deepEqual(registered, {
+      ok: true,
+      value: {
+        schema: { schemaId: 'panel-out', fields: [{ name: 'title', type: 'string' }, { name: 'panels', type: 'array', required: false }], fingerprint: 'os_14b64072' },
+        duplicate: false,
+        fingerprint: 'os_14b64072',
+      },
+    });
+
+    const dup = registerOutputSchema({ schemaId: 'panel-out', fields: [{ name: 'title', type: 'string' }, { name: 'panels', type: 'array', required: false }], existing: [registered.value.schema] });
+    assert.deepEqual(dup, { ok: true, value: { schema: registered.value.schema, duplicate: true, fingerprint: 'os_14b64072' } });
+
+    assert.deepEqual(registerOutputSchema({ schemaId: '', fields: [{ name: 'a', type: 'string' }], existing: [] }), { ok: false, reason: 'schema-no-id' });
+    assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [], existing: [] }), { ok: false, reason: 'schema-no-fields' });
+    assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [{ name: '', type: 'string' }], existing: [] }), { ok: false, reason: 'schema-field-no-name' });
+    assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [{ name: 'a', type: 'text' }], existing: [] }), { ok: false, reason: 'schema-unknown-type:text' });
+
+    const fields = [
+      { name: 'title', type: 'string' as const },
+      { name: 'score', type: 'number' as const },
+      { name: 'tags', type: 'array' as const },
+      { name: 'meta', type: 'object' as const },
+      { name: 'live', type: 'boolean' as const },
+      { name: 'kind', type: 'string' as const, enumValues: ['a', 'b'] },
+      { name: 'panels', type: 'array' as const, required: false },
+    ];
+    const valid = validateStructuredOutput({ fields, output: { title: 'x', score: 1, tags: [], meta: {}, live: true, kind: 'a' } });
+    assert.deepEqual(valid, { ok: true, value: { fieldsChecked: 7 } });
+
+    assert.deepEqual(validateStructuredOutput({ fields, output: null }), { ok: false, reason: 'output-not-object' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: [1, 2] }), { ok: false, reason: 'output-not-object' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: {} }), { ok: false, reason: 'output-missing-field:title' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 5, score: 1, tags: [], meta: {}, live: true, kind: 'a' } }), { ok: false, reason: 'output-wrong-type:title:string' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 'x', score: 'high', tags: [], meta: {}, live: true, kind: 'a' } }), { ok: false, reason: 'output-wrong-type:score:number' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 'x', score: 1, tags: 'none', meta: {}, live: true, kind: 'a' } }), { ok: false, reason: 'output-wrong-type:tags:array' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 'x', score: 1, tags: [], meta: [], live: true, kind: 'a' } }), { ok: false, reason: 'output-wrong-type:meta:object' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 'x', score: 1, tags: [], meta: {}, live: 'yes', kind: 'a' } }), { ok: false, reason: 'output-wrong-type:live:boolean' });
+    assert.deepEqual(validateStructuredOutput({ fields, output: { title: 'x', score: 1, tags: [], meta: {}, live: true, kind: 'c' } }), { ok: false, reason: 'output-not-enum:kind:c' });
+  });
+
+  it('sweeps randomized redaction, admission, normalization and validation against independent oracles', () => {
+    const rand = mulberry32(42);
+    const oracleDjb2 = (s: string): string => {
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+      return h.toString(16).padStart(8, '0');
+    };
+    const oracleRedact = (text: string): { text: string; count: number; findings: Array<{ kind: string; count: number }> } => {
+      const patterns: Array<{ rx: RegExp; repl: string; kind: string }> = [
+        { rx: /sk-[A-Za-z0-9_-]{8,}/g, repl: '[SECRET-KEY]', kind: 'secret-key' },
+        { rx: /[Bb]earer[ ]+[A-Za-z0-9._-]{8,}/g, repl: '[TOKEN]', kind: 'token' },
+        { rx: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/g, repl: '[EMAIL]', kind: 'email' },
+        { rx: /[+][0-9]{1,3}[- ]?([0-9][- ]?){7,12}[0-9]/g, repl: '[PHONE]', kind: 'phone' },
+      ];
+      let cur = text;
+      const findings: Array<{ kind: string; count: number }> = [];
+      let count = 0;
+      for (const p of patterns) {
+        let hit = 0;
+        cur = cur.replace(p.rx, () => {
+          hit++;
+          return p.repl;
+        });
+        if (hit > 0) findings.push({ kind: p.kind, count: hit });
+        count += hit;
+      }
+      return { text: cur, count, findings };
+    };
+
+    const fragments = ['use sk-AbCdEf12345 now', 'Bearer zzz12345678 here', 'mail ada@example.com now', 'call +234 802 123 4567', 'plain words only', ''];
+    for (let c = 0; c < 300; c++) {
+      const pick = (): string => fragments[Math.floor(rand() * fragments.length)]!;
+      let prompt = '';
+      let response = '';
+      const pn = Math.floor(rand() * 3);
+      const rn = Math.floor(rand() * 3);
+      for (let i = 0; i < pn; i++) prompt += (prompt ? ' ' : '') + pick();
+      for (let i = 0; i < rn; i++) response += (response ? ' ' : '') + pick();
+
+      const actual = redactGatewayLog({ prompt, response });
+      let expected: Record<string, unknown>;
+      if (prompt.trim().length === 0 && response.trim().length === 0) {
+        expected = { ok: false, reason: 'log-empty-entry' };
+      } else {
+        const rp = oracleRedact(prompt);
+        const rr = oracleRedact(response);
+        expected = { ok: true, value: { prompt: rp.text, response: rr.text, redactionCount: rp.count + rr.count, findings: rp.findings.concat(rr.findings) } };
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    const entries: Array<{ id: string; providerId: string; modelId: string; prompt: string; response: string; redactionCount: number; findings: Array<{ kind: string; count: number }>; contentOmitted: boolean; loggedAt: number }> = [];
+    for (let c = 0; c < 200; c++) {
+      entries.length = 0;
+      const n = Math.floor(rand() * 3);
+      for (let i = 0; i < n; i++) {
+        entries.push({
+          id: 'log_' + String(1000 + Math.floor(rand() * 9000)),
+          providerId: rand() < 0.8 ? 'p-cheap' : 'p-other',
+          modelId: rand() < 0.8 ? 'ink-flow' : 'ink-lite',
+          prompt: 'pr' + Math.floor(rand() * 2),
+          response: 're' + Math.floor(rand() * 2),
+          redactionCount: 0,
+          findings: [],
+          contentOmitted: false,
+          loggedAt: Math.floor(rand() * 100),
+        });
+      }
+      const prompt = 'pr' + Math.floor(rand() * 3);
+      const response = 're' + Math.floor(rand() * 3);
+      const persistContent = rand() < 0.7;
+      const maxEntries = rand() < 0.5 ? undefined : Math.floor(rand() * 3);
+      const now = Math.floor(rand() * 1000);
+
+      const actual = admitGatewayLog({ providerId: 'p-cheap', modelId: 'ink-flow', prompt, response, persistContent, maxEntries, now, entries });
+
+      const id = 'log_' + oracleDjb2('p-cheap:ink-flow:' + prompt + ':' + response);
+      const dup = entries.find((e) => e.id === id);
+      let expected: Record<string, unknown>;
+      if (dup !== undefined) {
+        expected = { ok: true, value: { admitted: dup, duplicate: true } };
+      } else {
+        const max = maxEntries ?? 500;
+        if (entries.length >= max) {
+          expected = { ok: false, reason: 'log-over-cap:' + entries.length };
+        } else {
+          expected = {
+            ok: true,
+            value: {
+              admitted: {
+                id,
+                providerId: 'p-cheap',
+                modelId: 'ink-flow',
+                prompt: persistContent ? prompt : '',
+                response: persistContent ? response : '',
+                redactionCount: 0,
+                findings: [],
+                contentOmitted: !persistContent,
+                loggedAt: now,
+              },
+              duplicate: false,
+            },
+          };
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    const oracleCanon = (args: Record<string, unknown>): string => {
+      const keys = Object.keys(args).sort();
+      const parts: string[] = [];
+      for (const k of keys) {
+        const v = args[k];
+        const encoded = Array.isArray(v) ? '[' + v.map((x) => JSON.stringify(x)).join(',') + ']' : v !== null && typeof v === 'object' ? JSON.stringify(v) : JSON.stringify(v);
+        parts.push(JSON.stringify(k) + ':' + encoded);
+      }
+      return parts.join('|');
+    };
+    const providersPool = ['openai', 'anthropic', 'generic', 'bedrock'];
+    const valuePool = [(): unknown => Math.floor(rand() * 10), (): unknown => 's' + Math.floor(rand() * 3), (): unknown => ({ nested: Math.floor(rand() * 5) }), (): unknown => null, (): unknown => true];
+    for (let c = 0; c < 300; c++) {
+      const providerId = providersPool[Math.floor(rand() * providersPool.length)]!;
+      const name = rand() < 0.1 ? '' : 'tool' + Math.floor(rand() * 3);
+      const args: Record<string, unknown> = {};
+      const keys = Math.floor(rand() * 3);
+      for (let k = 0; k < keys; k++) args['k' + k] = valuePool[Math.floor(rand() * valuePool.length)]!();
+      const asOpenai = providerId === 'openai';
+      const brokenJson = asOpenai && rand() < 0.1;
+
+      const actual = asOpenai
+        ? normalizeToolCall({ providerId, name, argumentsJson: brokenJson ? '{' : JSON.stringify(args) })
+        : normalizeToolCall({ providerId, name, args });
+
+      let expected: Record<string, unknown>;
+      if (!['openai', 'anthropic', 'generic'].includes(providerId)) {
+        expected = { ok: false, reason: 'toolcall-unknown-provider:' + providerId };
+      } else if (name.trim().length === 0) {
+        expected = { ok: false, reason: 'toolcall-missing-name' };
+      } else if (asOpenai) {
+        let parsed: unknown;
+        let parseFailed = false;
+        try {
+          parsed = JSON.parse(brokenJson ? '{' : JSON.stringify(args));
+        } catch {
+          parseFailed = true;
+        }
+        if (parseFailed || parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          expected = { ok: false, reason: 'toolcall-invalid-arguments' };
+        } else {
+          expected = { ok: true, value: { providerId, name, args: parsed as Record<string, unknown>, fingerprint: 'tc_' + oracleDjb2(providerId + ':' + name + ':' + oracleCanon(parsed as Record<string, unknown>)) } };
+        }
+      } else {
+        expected = { ok: true, value: { providerId, name, args, fingerprint: 'tc_' + oracleDjb2(providerId + ':' + name + ':' + oracleCanon(args)) } };
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    const types: Array<'string' | 'number' | 'boolean' | 'object' | 'array'> = ['string', 'number', 'boolean', 'object', 'array'];
+    const fields: Array<{ name: string; type: 'string' | 'number' | 'boolean' | 'object' | 'array'; required?: boolean; enumValues?: string[] }> = [];
+    for (let c = 0; c < 300; c++) {
+      fields.length = 0;
+      const n = 1 + Math.floor(rand() * 4);
+      for (let i = 0; i < n; i++) {
+        const type = types[Math.floor(rand() * types.length)]!;
+        fields.push({ name: 'f' + i, type, required: rand() < 0.75, enumValues: type === 'string' && rand() < 0.3 ? ['a', 'b'] : undefined });
+      }
+      const outputRoll = rand();
+      let output: unknown;
+      if (outputRoll < 0.1) output = null;
+      else if (outputRoll < 0.2) output = 'str';
+      else if (outputRoll < 0.3) output = [1, 2];
+      else {
+        output = {};
+        for (const f of fields) {
+          if (rand() < 0.75) {
+            (output as Record<string, unknown>)[f.name] =
+              f.type === 'string' ? (f.enumValues ? f.enumValues[Math.floor(rand() * 2)]! : 'val')
+              : f.type === 'number' ? Math.floor(rand() * 10)
+              : f.type === 'boolean' ? rand() < 0.5
+              : f.type === 'array' ? [rand() < 0.5 ? 'x' : 1]
+              : { nested: 1 };
+          }
+        }
+      }
+
+      const actual = validateStructuredOutput({ fields, output });
+
+      let expected: Record<string, unknown>;
+      if (output === null || typeof output !== 'object' || Array.isArray(output)) {
+        expected = { ok: false, reason: 'output-not-object' };
+      } else {
+        expected = { ok: true, value: { fieldsChecked: fields.length } };
+        for (const f of fields) {
+          const v = (output as Record<string, unknown>)[f.name];
+          if (v === undefined) {
+            if (f.required !== false) {
+              expected = { ok: false, reason: 'output-missing-field:' + f.name };
+              break;
+            }
+            continue;
+          }
+          const t = typeof v;
+          let failure: string | null = null;
+          if (f.type === 'array' && !Array.isArray(v)) failure = 'output-wrong-type:' + f.name + ':array';
+          else if (f.type === 'object' && (t !== 'object' || Array.isArray(v))) failure = 'output-wrong-type:' + f.name + ':object';
+          else if (f.type !== 'array' && f.type !== 'object' && t !== f.type) failure = 'output-wrong-type:' + f.name + ':' + f.type;
+          else if (f.enumValues && f.enumValues.length > 0 && !f.enumValues.includes(v as string)) failure = 'output-not-enum:' + f.name + ':' + String(v);
+          if (failure !== null) {
+            expected = { ok: false, reason: failure };
+            break;
+          }
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+  });
+});
+
+describe('workspace model access: pinning, dedicated instances, on-prem packages (FORGE AI-045..047)', () => {
+  it('pins workspace models to exact versions with switch-back history', () => {
+    const pinned = pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: 'pro', planTiers: ['starter', 'pro'], versions: [1, 2, 3] });
+    assert.deepEqual(pinned, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9db' },
+    });
+
+    const existing = { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9db' };
+    const switched = pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', planTiers: ['starter', 'pro'], versions: [1, 2, 3], existingPin: existing });
+    assert.deepEqual(switched, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', switchedFrom: 3, duplicate: false, fingerprint: 'pin_999bd9da' },
+    });
+
+    if (!switched.ok) throw new Error('pin switch must succeed');
+    const reSwitched = pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', planTiers: ['starter', 'pro'], versions: [1, 2, 3], existingPin: switched.value });
+    if (!reSwitched.ok) throw new Error('switch back must succeed');
+    assert.equal(reSwitched.value.switchedFrom, 2);
+    assert.deepEqual(reSwitched.value, { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', switchedFrom: 2, duplicate: false, fingerprint: 'pin_999bd9db' });
+
+    const duplicate = pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', planTiers: ['starter', 'pro'], versions: [1, 2, 3], existingPin: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', switchedFrom: 1, duplicate: false, fingerprint: 'pin_999bd9da' } });
+    assert.deepEqual(duplicate, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', switchedFrom: 1, duplicate: true, fingerprint: 'pin_999bd9da' },
+    });
+
+    const zeroAndNegative = pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'], versions: [0, -2, 2] });
+    assert.deepEqual(zeroAndNegative, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9da' },
+    });
+
+    assert.deepEqual(pinModel({ workspaceId: '', modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'], versions: [1] }), { ok: false, reason: 'pin-no-workspace' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: '', modelTier: 'pro', planTiers: ['pro'], versions: [1] }), { ok: false, reason: 'pin-no-model' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: '', planTiers: ['pro'], versions: [1] }), { ok: false, reason: 'pin-no-tier' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: 'team', planTiers: ['starter', 'pro'], versions: [1] }), { ok: false, reason: 'pin-tier-denied:team' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'], versions: [] }), { ok: false, reason: 'pin-no-versions:ink-flow' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'], versions: [0, -1] }), { ok: false, reason: 'pin-no-versions:ink-flow' });
+    assert.deepEqual(pinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 9, modelTier: 'pro', planTiers: ['pro'], versions: [1, 2, 3] }), { ok: false, reason: 'pin-unknown-version:9' });
+  });
+
+  it('unpins and resolves deterministically, lowest fingerprint wins among duplicates', () => {
+    const unpinned = unpinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', currentPin: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9db' } });
+    assert.deepEqual(unpinned, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', unpinnedVersionId: 3 } });
+
+    assert.deepEqual(unpinModel({ workspaceId: 'ws-1', modelId: 'ink-flow', currentPin: null }), { ok: false, reason: 'unpin-not-pinned:ws-1:ink-flow' });
+    assert.deepEqual(unpinModel({ workspaceId: '', modelId: 'ink-flow', currentPin: null }), { ok: false, reason: 'unpin-no-workspace' });
+    assert.deepEqual(unpinModel({ workspaceId: 'ws-1', modelId: '', currentPin: null }), { ok: false, reason: 'unpin-no-model' });
+
+    const pinV3 = { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9db' };
+    const pinV2 = { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, modelTier: 'pro', switchedFrom: 3, duplicate: false, fingerprint: 'pin_999bd9da' };
+
+    const resolved = resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [pinV3] });
+    assert.deepEqual(resolved, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 3, source: 'pinned' } });
+
+    const dupA = resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [pinV3, pinV2] });
+    const dupB = resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [pinV2, pinV3] });
+    assert.deepEqual(dupA, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, source: 'pinned' } });
+    assert.deepEqual(dupB, dupA);
+
+    const otherWorkspace = { workspaceId: 'ws-2', modelId: 'ink-flow', versionId: 1, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_999bd9d9' };
+    const fallback = resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [otherWorkspace, pinV2], fallbackVersionId: 1 });
+    assert.deepEqual(fallback, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 2, source: 'pinned' } });
+
+    const fellBack = resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [otherWorkspace], fallbackVersionId: 1 });
+    assert.deepEqual(fellBack, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', versionId: 1, source: 'fallback' } });
+
+    assert.deepEqual(resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [] }), { ok: false, reason: 'resolve-no-pinned:ws-1:ink-flow' });
+    assert.deepEqual(resolvePinnedModel({ workspaceId: 'ws-1', modelId: 'ink-flow', pins: [], fallbackVersionId: 0 }), { ok: false, reason: 'resolve-no-pinned:ws-1:ink-flow' });
+    assert.deepEqual(resolvePinnedModel({ workspaceId: '', modelId: 'ink-flow', pins: [] }), { ok: false, reason: 'resolve-no-workspace' });
+    assert.deepEqual(resolvePinnedModel({ workspaceId: 'ws-1', modelId: '', pins: [] }), { ok: false, reason: 'resolve-no-model' });
+  });
+
+  it('reserves and releases dedicated instances with exact free-capacity arithmetic', () => {
+    const reserved = reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 2, poolTotal: 10, reservedByOthers: 4 });
+    assert.deepEqual(reserved, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', slots: 2, freeAfter: 4, duplicate: false, fingerprint: 'inst_999bd9da' },
+    });
+
+    const own = { workspaceId: 'ws-1', modelId: 'ink-flow', slots: 4, freeAfter: 0, duplicate: false, fingerprint: 'inst_1a2b3c4d' };
+    const resized = reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 2, poolTotal: 10, reservedByOthers: 4, currentReservation: own });
+    assert.deepEqual(resized, {
+      ok: true,
+      value: { workspaceId: 'ws-1', modelId: 'ink-flow', slots: 2, freeAfter: 0, duplicate: false, fingerprint: 'inst_999bd9da' },
+    });
+
+    const sameAgain = reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 4, poolTotal: 10, reservedByOthers: 4, currentReservation: own });
+    assert.deepEqual(sameAgain, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', slots: 4, freeAfter: 0, duplicate: true, fingerprint: 'inst_1a2b3c4d' } });
+
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 3, poolTotal: 10, reservedByOthers: 8 }), { ok: false, reason: 'reserve-over-commit:3>2' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 5, poolTotal: 10, reservedByOthers: 8, currentReservation: own }), { ok: false, reason: 'reserve-over-commit:5>-2' });
+
+    assert.deepEqual(reserveInstances({ workspaceId: '', modelId: 'ink-flow', slots: 1, poolTotal: 10, reservedByOthers: 0 }), { ok: false, reason: 'reserve-no-workspace' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: '', slots: 1, poolTotal: 10, reservedByOthers: 0 }), { ok: false, reason: 'reserve-no-model' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 0, poolTotal: 10, reservedByOthers: 0 }), { ok: false, reason: 'reserve-invalid-slots:0' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 1.5, poolTotal: 10, reservedByOthers: 0 }), { ok: false, reason: 'reserve-invalid-slots:1.5' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: -1, poolTotal: 10, reservedByOthers: 0 }), { ok: false, reason: 'reserve-invalid-slots:-1' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 1, poolTotal: 0, reservedByOthers: 0 }), { ok: false, reason: 'reserve-invalid-pool:0' });
+    assert.deepEqual(reserveInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', slots: 1, poolTotal: 2.5, reservedByOthers: 0 }), { ok: false, reason: 'reserve-invalid-pool:2.5' });
+
+    const released = releaseInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', currentReservation: { workspaceId: 'ws-1', modelId: 'ink-flow', slots: 2, freeAfter: 4, duplicate: false, fingerprint: 'inst_999bd9da' } });
+    assert.deepEqual(released, { ok: true, value: { workspaceId: 'ws-1', modelId: 'ink-flow', slotsReturned: 2, fingerprint: 'inst_999bd9da' } });
+
+    assert.deepEqual(releaseInstances({ workspaceId: 'ws-1', modelId: 'ink-flow', currentReservation: null }), { ok: false, reason: 'release-not-reserved:ws-1:ink-flow' });
+    assert.deepEqual(releaseInstances({ workspaceId: '', modelId: 'ink-flow', currentReservation: null }), { ok: false, reason: 'release-no-workspace' });
+    assert.deepEqual(releaseInstances({ workspaceId: 'ws-1', modelId: '', currentReservation: null }), { ok: false, reason: 'release-no-model' });
+  });
+
+  it('builds on-prem packages that carry card, license and gates', () => {
+    assert.deepEqual([...EXPORTABLE_STAGES], ['beta', 'stable']);
+    assert.equal(PACKAGE_FORMAT, 'forge-pkg-1');
+
+    const pkg = buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' });
+    assert.deepEqual(pkg, {
+      ok: true,
+      value: {
+        modelId: 'ink-flow',
+        versionId: 2,
+        format: 'forge-pkg-1',
+        weightsFingerprint: 'wf_b31c',
+        quantized: false,
+        licenseTerms: 'CC-BY-4.0',
+        fingerprint: 'xpk_68d92ffd',
+      },
+    });
+
+    const quantizedPkg = buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'beta', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0', quantized: true });
+    assert.deepEqual(quantizedPkg, {
+      ok: true,
+      value: {
+        modelId: 'ink-flow',
+        versionId: 2,
+        format: 'forge-pkg-1',
+        weightsFingerprint: 'wf_b31c',
+        quantized: true,
+        licenseTerms: 'CC-BY-4.0',
+        fingerprint: 'xpk_e42d9352',
+      },
+    });
+
+    assert.deepEqual(buildOnPremPackage({ modelId: '', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-unknown-model' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 0, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-version' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2.5, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-version' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'lab', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-not-servable:lab' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'experimental', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-not-servable:experimental' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: '', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-weights' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: false, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-card:ink-flow' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-card:ink-flow' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: '' }), { ok: false, reason: 'package-no-license' });
+  });
+
+  it('re-imports only through the same quality gates', () => {
+    const built = buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' });
+    if (!built.ok) throw new Error('package build must succeed');
+
+    const accepted = verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: 0.9, qualityGate: 0.85, licenseAccepted: true });
+    assert.deepEqual(accepted, { ok: true, value: { accepted: true, fingerprint: 'xpk_68d92ffd', modelId: 'ink-flow', versionId: 2 } });
+
+    assert.deepEqual(verifyReimport({ pkg: null, weightsFingerprint: 'wf_b31c', qualityScore: 0.9, qualityGate: 0.85, licenseAccepted: true }), { ok: false, reason: 'reimport-no-package' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_other', qualityScore: 0.9, qualityGate: 0.85, licenseAccepted: true }), { ok: false, reason: 'reimport-weights-mismatch:wf_other!=wf_b31c' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: 1.2, qualityGate: 0.85, licenseAccepted: true }), { ok: false, reason: 'reimport-invalid-score:1.2' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: -0.1, qualityGate: 0.85, licenseAccepted: true }), { ok: false, reason: 'reimport-invalid-score:-0.1' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: 0.9, qualityGate: 1.1, licenseAccepted: true }), { ok: false, reason: 'reimport-invalid-gate:1.1' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: 0.5, qualityGate: 0.85, licenseAccepted: true }), { ok: false, reason: 'reimport-quality-gate:0.5<0.85' });
+    assert.deepEqual(verifyReimport({ pkg: built.value, weightsFingerprint: 'wf_b31c', qualityScore: 0.9, qualityGate: 0.85, licenseAccepted: false }), { ok: false, reason: 'reimport-license-not-accepted' });
+  });
+
+  it('sweeps randomized pinning, resolution, reservations and re-imports against independent oracles', () => {
+    const rand = mulberry32(42);
+    const oracleDjb2 = (s: string): string => {
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+      return h.toString(16).padStart(8, '0');
+    };
+
+    const wsPool = ['ws-1', 'ws-2', ''];
+    const modelPool = ['ink-flow', 'ink-lite', ''];
+    const tierPool = ['starter', 'pro', 'team', ''];
+    const versionPool = [0, 1, 2, 3, -1];
+    const pickVersionId = (): number | undefined => (rand() < 0.5 ? undefined : [1, 2, 3, 9][Math.floor(rand() * 4)]!);
+
+    for (let c = 0; c < 200; c++) {
+      const workspaceId = wsPool[Math.floor(rand() * wsPool.length)]!;
+      const modelId = modelPool[Math.floor(rand() * modelPool.length)]!;
+      const modelTier = tierPool[Math.floor(rand() * tierPool.length)]!;
+      const planTiers = ['starter', 'pro'];
+      const versions: number[] = [];
+      const vn = Math.floor(rand() * 4);
+      for (let i = 0; i < vn; i++) versions.push(versionPool[Math.floor(rand() * versionPool.length)]!);
+      const versionId = pickVersionId();
+      const existingRoll = rand() < 0.4;
+      const existingVersionId = 1 + Math.floor(rand() * 3);
+      const existingPin = existingRoll
+        ? { workspaceId, modelId, versionId: existingVersionId, modelTier: modelTier || 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_' + oracleDjb2(workspaceId + ':' + modelId + ':' + existingVersionId) }
+        : null;
+
+      const actual = pinModel({ workspaceId, modelId, modelTier, planTiers, versions, versionId, existingPin });
+
+      let expected: Record<string, unknown>;
+      if (workspaceId.length === 0) {
+        expected = { ok: false, reason: 'pin-no-workspace' };
+      } else if (modelId.length === 0) {
+        expected = { ok: false, reason: 'pin-no-model' };
+      } else if (modelTier.length === 0) {
+        expected = { ok: false, reason: 'pin-no-tier' };
+      } else if (!planTiers.includes(modelTier)) {
+        expected = { ok: false, reason: 'pin-tier-denied:' + modelTier };
+      } else {
+        const filtered = versions.filter((v) => typeof v === 'number' && v > 0);
+        if (filtered.length === 0) {
+          expected = { ok: false, reason: 'pin-no-versions:' + modelId };
+        } else if (typeof versionId === 'number' && !filtered.includes(versionId)) {
+          expected = { ok: false, reason: 'pin-unknown-version:' + versionId };
+        } else {
+          const vid = typeof versionId === 'number' ? versionId : Math.max(...filtered);
+          if (existingPin && existingPin.versionId === vid) {
+            expected = { ok: true, value: { ...existingPin, duplicate: true } };
+          } else {
+            expected = {
+              ok: true,
+              value: {
+                workspaceId,
+                modelId,
+                versionId: vid,
+                modelTier,
+                switchedFrom: existingPin ? existingPin.versionId : null,
+                duplicate: false,
+                fingerprint: 'pin_' + oracleDjb2(workspaceId + ':' + modelId + ':' + vid),
+              },
+            };
+          }
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    for (let c = 0; c < 200; c++) {
+      const workspaceId = wsPool[Math.floor(rand() * wsPool.length)]!;
+      const modelId = modelPool[Math.floor(rand() * modelPool.length)]!;
+      const pins: Array<{ workspaceId: string; modelId: string; versionId: number; modelTier: string; switchedFrom: number | null; duplicate: boolean; fingerprint: string }> = [];
+      const pn = Math.floor(rand() * 4);
+      for (let i = 0; i < pn; i++) {
+        const pws = wsPool[Math.floor(rand() * 2)]!;
+        const pmodel = modelPool[Math.floor(rand() * 2)]!;
+        const pvid = 1 + Math.floor(rand() * 3);
+        pins.push({ workspaceId: pws, modelId: pmodel, versionId: pvid, modelTier: 'pro', switchedFrom: null, duplicate: false, fingerprint: 'pin_' + oracleDjb2(pws + ':' + pmodel + ':' + pvid) });
+      }
+      const fallbackRoll = rand();
+      const fallbackVersionId = fallbackRoll < 0.4 ? undefined : [0, 1, 2, 3][Math.floor(rand() * 4)]!;
+
+      const actual = resolvePinnedModel({ workspaceId, modelId, pins, fallbackVersionId });
+
+      let expected: Record<string, unknown>;
+      if (workspaceId.length === 0) {
+        expected = { ok: false, reason: 'resolve-no-workspace' };
+      } else if (modelId.length === 0) {
+        expected = { ok: false, reason: 'resolve-no-model' };
+      } else {
+        const matching = pins.filter((p) => p.workspaceId === workspaceId && p.modelId === modelId);
+        if (matching.length === 0) {
+          if (typeof fallbackVersionId === 'number' && fallbackVersionId > 0) {
+            expected = { ok: true, value: { workspaceId, modelId, versionId: fallbackVersionId, source: 'fallback' } };
+          } else {
+            expected = { ok: false, reason: 'resolve-no-pinned:' + workspaceId + ':' + modelId };
+          }
+        } else {
+          const pin = matching.reduce((a, b) => (b.fingerprint < a.fingerprint ? b : a));
+          expected = { ok: true, value: { workspaceId, modelId, versionId: pin.versionId, source: 'pinned' } };
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    const slotsPool = [0, 1, 2, 3, 5, 8, 1.5, -1];
+    const poolPool = [0, 4, 10, 16, 2.5];
+    const othersPool = [0, 2, 4, 8, -3, 3.7];
+    for (let c = 0; c < 300; c++) {
+      const workspaceId = wsPool[Math.floor(rand() * wsPool.length)]!;
+      const modelId = modelPool[Math.floor(rand() * modelPool.length)]!;
+      const slots = slotsPool[Math.floor(rand() * slotsPool.length)]!;
+      const poolTotal = poolPool[Math.floor(rand() * poolPool.length)]!;
+      const reservedByOthers = othersPool[Math.floor(rand() * othersPool.length)]!;
+      const ownRoll = rand() < 0.4;
+      const ownSlots = [1, 2, 4][Math.floor(rand() * 3)]!;
+      const currentReservation = ownRoll
+        ? { workspaceId, modelId, slots: ownSlots, freeAfter: 0, duplicate: false, fingerprint: 'inst_' + oracleDjb2(workspaceId + ':' + modelId + ':' + ownSlots) }
+        : null;
+
+      const actual = reserveInstances({ workspaceId, modelId, slots, poolTotal, reservedByOthers, currentReservation });
+
+      let expected: Record<string, unknown>;
+      if (workspaceId.length === 0) {
+        expected = { ok: false, reason: 'reserve-no-workspace' };
+      } else if (modelId.length === 0) {
+        expected = { ok: false, reason: 'reserve-no-model' };
+      } else if (typeof slots !== 'number' || !Number.isInteger(slots) || slots < 1) {
+        expected = { ok: false, reason: 'reserve-invalid-slots:' + slots };
+      } else if (typeof poolTotal !== 'number' || !Number.isInteger(poolTotal) || poolTotal < 1) {
+        expected = { ok: false, reason: 'reserve-invalid-pool:' + poolTotal };
+      } else {
+        const own = currentReservation;
+        if (own && own.slots === slots) {
+          expected = { ok: true, value: { ...own, duplicate: true } };
+        } else {
+          const others = Math.max(0, Math.trunc(reservedByOthers ?? 0));
+          const free = poolTotal - others - (own ? own.slots : 0);
+          if (slots > free) {
+            expected = { ok: false, reason: 'reserve-over-commit:' + slots + '>' + free };
+          } else {
+            expected = {
+              ok: true,
+              value: {
+                workspaceId,
+                modelId,
+                slots,
+                freeAfter: free - slots,
+                duplicate: false,
+                fingerprint: 'inst_' + oracleDjb2(workspaceId + ':' + modelId + ':' + slots),
+              },
+            };
+          }
+        }
+      }
+      assert.deepEqual(actual, expected);
+    }
+
+    for (let c = 0; c < 200; c++) {
+      const pkgRoll = rand();
+      let pkg: { modelId: string; versionId: number; format: string; weightsFingerprint: string; quantized: boolean; licenseTerms: string; fingerprint: string } | null = null;
+      if (pkgRoll >= 0.1) {
+        const modelId = modelPool[Math.floor(rand() * 2)]!;
+        const versionId = 1 + Math.floor(rand() * 3);
+        const quantized = rand() < 0.5;
+        pkg = {
+          modelId,
+          versionId,
+          format: 'forge-pkg-1',
+          weightsFingerprint: 'wf_' + Math.floor(rand() * 4),
+          quantized,
+          licenseTerms: 'CC-BY-4.0',
+          fingerprint: 'xpk_' + oracleDjb2(modelId + ':' + versionId + ':' + quantized),
+        };
+      }
+      const weightsFingerprint = pkg !== null && rand() < 0.8 ? pkg.weightsFingerprint : 'wf_other';
+      const qualityScore = [0, 0.5, 0.9, 1, 1.2, -0.1][Math.floor(rand() * 6)]!;
+      const qualityGate = [0, 0.85, 1, 1.1][Math.floor(rand() * 4)]!;
+      const licenseAccepted = rand() < 0.8;
+
+      const actual = verifyReimport({ pkg, weightsFingerprint, qualityScore, qualityGate, licenseAccepted });
+
+      let expected: Record<string, unknown>;
+      if (pkg === null) {
+        expected = { ok: false, reason: 'reimport-no-package' };
+      } else if (weightsFingerprint !== pkg.weightsFingerprint) {
+        expected = { ok: false, reason: 'reimport-weights-mismatch:' + weightsFingerprint + '!=' + pkg.weightsFingerprint };
+      } else if (typeof qualityScore !== 'number' || qualityScore < 0 || qualityScore > 1) {
+        expected = { ok: false, reason: 'reimport-invalid-score:' + qualityScore };
+      } else if (typeof qualityGate !== 'number' || qualityGate < 0 || qualityGate > 1) {
+        expected = { ok: false, reason: 'reimport-invalid-gate:' + qualityGate };
+      } else if (qualityScore < qualityGate) {
+        expected = { ok: false, reason: 'reimport-quality-gate:' + qualityScore + '<' + qualityGate };
+      } else if (licenseAccepted !== true) {
+        expected = { ok: false, reason: 'reimport-license-not-accepted' };
+      } else {
+        expected = { ok: true, value: { accepted: true, fingerprint: pkg.fingerprint, modelId: pkg.modelId, versionId: pkg.versionId } };
+      }
+      assert.deepEqual(actual, expected);
+    }
+  });
+});
