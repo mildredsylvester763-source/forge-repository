@@ -127,6 +127,7 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
         return { status: 200, body: { user: auth.user } };
       },
+    },
 
     '/v1/auth/totp/enroll': {
       POST: async (ctx): Promise<HttpResult> => {
@@ -172,7 +173,6 @@ export function identityRoutes(identity: IdentityService, cookie: CookieSettings
         const status = await identity.getTotpStatus(sessionCredential(ctx, cookie.name));
         return { status: 200, body: { status: status.status } };
       },
-    },
     },
   };
 }

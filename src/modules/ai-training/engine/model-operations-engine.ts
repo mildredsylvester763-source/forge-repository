@@ -379,7 +379,8 @@ export function aggregateServingMetrics(input: MetricsInput): Verdict<ServingMet
       return 0;
     }
     const sorted = okSamples.map((s) => s.latencyMs).sort((a, b) => a - b);
-    return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)];
+    const idx = Math.max(0, Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1));
+    return sorted[idx] ?? sorted[sorted.length - 1] ?? 0;
   };
   const totalTokens = input.samples.reduce((n, s) => n + s.tokens, 0);
   const totalCost = r6(input.samples.reduce((n, s) => n + s.costUsd, 0));

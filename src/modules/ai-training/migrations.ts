@@ -323,10 +323,10 @@ export const aiTrainingMigrations: readonly Migration[] = [
   },
 ];
 
-import type { Migration } from '../../kernel/migration-types.ts';
+import type { Migration as PgMigration } from '../../kernel/migration-types.ts';
 
 /** AI training schema for PostgreSQL. Never edit a migration after it has shipped; add a new one. */
-export const pgAiTrainingMigrations: readonly Migration[] = [
+export const pgAiTrainingMigrations: readonly PgMigration[] = [
   {
     version: 1,
     name: 'ai_training_core',

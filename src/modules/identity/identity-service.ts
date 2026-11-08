@@ -14,7 +14,7 @@ import type { LoginThrottle } from './throttle.ts';
 import type { IdentityUnitOfWork } from './unit-of-work.ts';
 import { EmailTakenError, type UserRecord, type UserStore } from './user-store.ts';
 import type { TrustedDeviceService } from './trusted-devices.ts';
-import type { TotpFactorService, TotpEnrollmentStart } from './totp-service.ts';
+import type { TotpFactorService } from './totp-service.ts';
 import { TotpFactorError } from './totp-service.ts';
 
 export interface RequestMeta {
@@ -588,7 +588,7 @@ export class IdentityService {
   }
 
   /** Confirm TOTP enrollment with a code. */
-  async confirmTotpEnrollment(token: string | undefined, input: TotpVerificationInput): Promise<TotpVerificationResult> {
+  async confirmTotpEnrollment(token: string | undefined, input: TotpVerificationInput, meta: RequestMeta): Promise<TotpVerificationResult> {
     if (!this.d.totp) {
       throw new AppError(501, 'not_implemented', 'TOTP is not configured.');
     }
