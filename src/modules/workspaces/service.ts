@@ -19,7 +19,7 @@ import type { Clock } from '../../kernel/clock.ts';
 import type { Logger } from '../../kernel/logger.ts';
 import type { UserStore } from '../identity/user-store.ts';
 import { generateSlug, generateUniqueSlug, validateSlug } from './slug.ts';
-import { MAX_WORKSPACES_PER_USER, RESERVED_SLUGS, type CreateWorkspaceInput, type PublicWorkspace, type PublicWorkspaceMember, type WorkspaceMemberRecord, type WorkspaceRecord, type WorkspaceRole } from './types.ts';
+import { MAX_WORKSPACES_PER_USER, RESERVED_SLUGS, type CreateWorkspaceInput, type PublicWorkspace, type PublicWorkspaceMember, type WorkspaceRecord, type WorkspaceRole } from './types.ts';
 import type { WorkspaceStore } from './store.ts';
 
 export class WorkspaceServiceError extends Error {
@@ -46,7 +46,6 @@ export class WorkspaceService {
   private readonly store: WorkspaceStore;
   private readonly userStore: UserStore;
   private readonly clock: Clock;
-  private readonly logger: Logger;
   private readonly config: WorkspaceServiceConfig;
 
   constructor(options: {
@@ -59,7 +58,6 @@ export class WorkspaceService {
     this.store = options.store;
     this.userStore = options.userStore;
     this.clock = options.clock;
-    this.logger = options.logger;
     this.config = { ...DEFAULT_CONFIG, ...options.config };
   }
 
@@ -202,9 +200,8 @@ export class WorkspaceService {
       throw new WorkspaceServiceError('already_member', 'User is already a member of this workspace.');
     }
 
-    // Check workspace member limit (optional, can be configured)
-    const members = await this.store.listMembers(workspaceId);
-    // For now, no hard limit on members per workspace
+    // No hard member limit per workspace is enforced for now; the member row
+    // itself is the source of truth, so no pre-count query is needed here.
 
     const member = await this.store.addMember(workspaceId, userId, role);
 

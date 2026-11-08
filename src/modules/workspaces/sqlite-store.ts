@@ -96,7 +96,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
   }
 
   async findByOwner(ownerId: string): Promise<WorkspaceRecord[]> {
-    const rows = this.db.prepare('SELECT * FROM workspaces WHERE owner_id = ?').all(ownerId) as WorkspaceRow[];
+    const rows = this.db.prepare('SELECT * FROM workspaces WHERE owner_id = ?').all(ownerId) as unknown as WorkspaceRow[];
     return rows.map(toWorkspaceRecord);
   }
 
@@ -125,7 +125,8 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
 
     const row = this.db.prepare(
       'SELECT * FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
-    ).get(workspaceId, userId) as WorkspaceMemberRow;
+    ).get(workspaceId, userId) as unknown as WorkspaceMemberRow | undefined;
+    if (!row) throw new Error('workspace member row missing after insert');
     return toWorkspaceMemberRecord(row);
   }
 
@@ -145,7 +146,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
   }
 
   async listMembers(workspaceId: string): Promise<WorkspaceMemberRecord[]> {
-    const rows = this.db.prepare('SELECT * FROM workspace_members WHERE workspace_id = ?').all(workspaceId) as WorkspaceMemberRow[];
+    const rows = this.db.prepare('SELECT * FROM workspace_members WHERE workspace_id = ?').all(workspaceId) as unknown as WorkspaceMemberRow[];
     return rows.map(toWorkspaceMemberRecord);
   }
 
@@ -155,7 +156,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
       `SELECT w.*,wm.role FROM workspaces w
        JOIN workspace_members wm ON w.id = wm.workspace_id
        WHERE wm.user_id = ?`,
-    ).all(userId) as Array<WorkspaceRow & { role: WorkspaceRole }>;
+    ).all(userId) as unknown as Array<WorkspaceRow & { role: WorkspaceRole }>;
 
     return rows.map((row) => ({
       workspace: toWorkspaceRecord(row),

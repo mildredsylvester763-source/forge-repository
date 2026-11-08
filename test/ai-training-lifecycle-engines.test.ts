@@ -90,7 +90,7 @@ describe('model registry, cards and staged promotion (FORGE AI-033..035)', () =>
       stage: 'experimental' as const,
       owners: ['ada', 'zora'],
       weightsFingerprint: 'wf_9f2a',
-      lineage: { datasetId: 'ds_core', parentVersionId: null },
+      lineage: { datasetId: 'ds_core' },
     };
     assert.deepEqual(buildModelCard({ entry: {} as never, intendedUse: 'x', evalScores: [{ suiteId: 's', score: 0.5 }] }), { ok: false, reason: 'card-unknown-model' });
     assert.deepEqual(buildModelCard({ entry, intendedUse: '   ', evalScores: [{ suiteId: 's', score: 0.5 }] }), { ok: false, reason: 'card-no-intended-use' });
