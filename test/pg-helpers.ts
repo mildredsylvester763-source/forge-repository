@@ -4,6 +4,7 @@ import { migratePostgres } from '../src/kernel/postgres-migrate.ts';
 import { createPostgresPool, type DatabaseSsl } from '../src/kernel/postgres.ts';
 import type { SqlPool } from '../src/kernel/sql.ts';
 import { pgIdentityMigrations } from '../src/modules/identity/index.ts';
+import { pgPlansMigrations } from '../src/modules/plans/index.ts';
 import { createSqliteBackedPool } from './sqlite-pool.ts';
 
 /** Set in GitHub's automatic checks (and anywhere you have a throwaway PostgreSQL): the real thing is used instead of the stand-in. */
@@ -40,6 +41,7 @@ export async function makeTestPool(): Promise<TestPool> {
   const { pool, cleanup } = await realSchema();
   await migratePostgres(pool, 'kernel', pgKernelMigrations);
   await migratePostgres(pool, 'identity', pgIdentityMigrations);
+  await migratePostgres(pool, 'plans', pgPlansMigrations);
   return { pool, real: true, cleanup };
 }
 
