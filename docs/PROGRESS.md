@@ -1544,3 +1544,34 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
   - `c888cad`: the backup tamper test now performs the re-seal step it described (writing the forged checksum sidecar) so `verifyBackup` reaches the audit-chain gate and the tamper is caught as `audit_chain_hash_mismatch_at_1`.
   - `bdab5e1`: the identity sign-out rollback test injects its failure with a SQLite trigger, so it is skipped under the `identity.postgres.test.ts` re-run where the PostgreSQL storage contract applies (`app.db` is null by design there); the PostgreSQL rollback contract stays pinned by `test/co-065-postgres-uow.test.ts`. Also repaired the double-backslash line continuations in `.github/workflows/co-verification.yml` that truncated the CO regression `node --test` command.
 - This entry is a docs-only change so the full CI keeps running without the CO-focused workflow (its paths filter excludes `docs/**`); the remaining failing tests are read from the ci check annotations and fixed round by round.
+
+## Mistral branch: full CI green for the first time (2026-11-08, commit 68c3622)
+
+The mistral branch's full CI (typecheck + all 60 test files) succeeded for the first time on
+commit 68c36228d946814f7bafcda08da0af309c8e7e6b ("ci succeeded Nov 8, 2026 in 24s", zero error
+annotations; only the Node.js 20 deprecation warning and ubuntu-latest migration notice remain).
+
+Final test-repair rounds after the last PROGRESS entry (bdab5e1):
+
+- 17d4e09 — test/identity.test.ts breach-outage fixture: the password
+  'breach-service-outage-login-42' contained the email local part 'outage', tripping
+  evaluatePassword's contains_email rule, so registration silently failed with 422 and the
+  follow-up sign-in got 401 instead of 200. Password changed to
+  'breach-service-blackout-login-42' and the test now asserts its own registration (status 201)
+  so a setup failure can never masquerade as a product failure again.
+- 189a5a0 — test/kernel.test.ts: replaced 'bounds memory by evicting the oldest keys' with
+  'bounds memory by reclaiming expired keys, never live ones'. The SlidingWindowLimiter is
+  deliberately fail-closed (never evict a live counter; reclaim only expired entries), a
+  contract pinned by rate-limit.test.ts and identity-throttle.test.ts. The new test fills the
+  table with live keys, verifies fail-closed denial, then reclaims an expired key after the
+  clock passes expiry.
+- 68c3622 — test/training-data-engines.test.ts consent supersession test: it re-granted with
+  expiresAt NOW+3000 but revoked at NOW+4000, after the live grant had already expired. The
+  engine pins that expired grants cannot be revoked (consent-no-active-grant, expiry inclusive
+  of the deadline — pinned by the preceding test), so unwrap threw. The revoke now happens at
+  NOW+2500 while the grant is genuinely live; the final check still proves the superseded grant
+  never resurfaces (denied, grantId null).
+
+Doctrine applied throughout: the engines and their oracle sweeps are pinned law; every failure in
+this phase was a test-side error (fixture, timing, or a test contradicting a pinned contract),
+verified against the engine source before each fix. No product code was weakened to force green.
