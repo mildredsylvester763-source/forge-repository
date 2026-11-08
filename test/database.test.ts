@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { createBackup, pruneBackups, verifyBackup } from '../src/kernel/backup.ts';
 import { kernelMigrations } from '../src/kernel/migrations.ts';
@@ -324,6 +324,8 @@ describe('backups', () => {
     db.exec('DROP TRIGGER events_block_update');
     db.exec(`UPDATE events SET payload = '{"forged":true}' WHERE seq = 1`);
     db.close();
+    // The attacker re-seals the checksum sidecar, so only the audit chain itself can expose the tampering.
+    writeFileSync(`${edited}.sha256`, createHash('sha256').update(readFileSync(edited)).digest('hex') + '  ' + basename(edited) + '\n');
     const r3 = verifyBackup(edited);
     assert.equal(r3.ok, false);
     if (!r3.ok) assert.match(r3.reason, /audit_chain_hash_mismatch_at_1/);
