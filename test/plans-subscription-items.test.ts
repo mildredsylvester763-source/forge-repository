@@ -69,7 +69,7 @@ describe('subscription item foundation', () => {
 
       const legacyPlan = db.prepare('SELECT plan, engine_passes, updated_at FROM user_plans WHERE user_id = ?')
         .get('user_legacy') as { plan: string; engine_passes: string; updated_at: number };
-      assert.deepEqual(legacyPlan, { plan: 'pro', engine_passes: '["creative","vision"]', updated_at: 200 });
+      assert.deepEqual({ ...legacyPlan }, { plan: 'pro', engine_passes: '["creative","vision"]', updated_at: 200 });
 
       const rows = db.prepare(
         `SELECT item_type, product_id, status, provider FROM subscription_items WHERE user_id = ? ORDER BY CASE item_type WHEN 'base_plan' THEN 0 ELSE 1 END, product_id`,
