@@ -933,12 +933,22 @@ describe('preference engine (FORGE AI-009)', () => {
     assert.ok(!otherSignal.duplicate);
     assert.equal(otherSignal.prefId, 'prf_2');
     assert.equal(otherSignal.fingerprint, 'pfp_' + fp('u1:item-1:dislike'));
+    push(otherSignal, store);
     const otherItem = unwrap(storePreference(prefInput({ item: 'item-2' }), store));
+    assert.ok(!otherItem.duplicate);
     assert.equal(otherItem.prefId, 'prf_3');
     assert.equal(otherItem.fingerprint, 'pfp_' + fp('u1:item-2:like'));
+    push(otherItem, store);
     const otherUser = unwrap(storePreference(prefInput({ user: 'u2' }), store));
+    assert.ok(!otherUser.duplicate);
     assert.equal(otherUser.prefId, 'prf_4');
     assert.equal(otherUser.fingerprint, 'pfp_' + fp('u2:item-1:like'));
+    push(otherUser, store);
+    assert.equal(store.length, 4);
+    // the caller owns the array: ids number by appended records, so every variation is now idempotent
+    assert.ok(unwrap(storePreference(prefInput({ signal: 'dislike' }), store)).duplicate);
+    assert.ok(unwrap(storePreference(prefInput({ item: 'item-2' }), store)).duplicate);
+    assert.ok(unwrap(storePreference(prefInput({ user: 'u2' }), store)).duplicate);
     assert.equal(store.length, 4);
   });
 
