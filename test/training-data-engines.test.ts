@@ -43,6 +43,27 @@ import {
   type RegisterCodeDataInput,
   type UpdateDeployStateInput,
 } from '../src/modules/training-data/engine/codedata-engine.ts';
+import {
+  approveWork,
+  CREATIVE_MEDIA,
+  CREATIVE_TERMINAL_STATUSES,
+  publishWork,
+  registerCreativeWork,
+  rejectWork,
+  submitRevision,
+  type CreativeWork,
+  type RegisterCreativeInput,
+} from '../src/modules/training-data/engine/creative-engine.ts';
+import {
+  decodeIndices,
+  encodeText,
+  registerTokenizer,
+  TOKENIZER_VOCAB_MAX,
+  tokenizerById,
+  trainTokenizer,
+  type TokenizerRecord,
+  type TrainTokenizerInput,
+} from '../src/modules/training-data/engine/tokenizer-engine.ts';
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -1253,6 +1274,331 @@ describe('codedata engine (FORGE AI-010)', () => {
         assert.equal(state, 'running');
         assert.equal(refusal(updateDeployState({ codeId: rec.codeId, toState: 'pending', now: NOW }, registry)), 'codedata-invalid-transition:running:pending');
       }
+    }
+  });
+});
+
+describe('creative engine (FORGE AI-011)', () => {
+  function creativeInput(overrides: Partial<RegisterCreativeInput> = {}): RegisterCreativeInput {
+    return { creator: 'ada', medium: 'manhwa', title: 'Forge Tales', consent: { granted: true }, now: NOW, ...overrides };
+  }
+
+  function pushWork(rec: CreativeWork & { duplicate: boolean }, works: CreativeWork[]): void {
+    works.push({
+      workId: rec.workId,
+      creator: rec.creator,
+      medium: rec.medium,
+      title: rec.title,
+      status: rec.status,
+      revisions: rec.revisions.map((x) => ({ ...x })),
+      fingerprint: rec.fingerprint,
+      createdAt: rec.createdAt,
+    });
+  }
+
+  it('pins the media vocabulary and terminal statuses exactly', () => {
+    assert.deepEqual(CREATIVE_MEDIA, ['manhwa', 'music', 'voice']);
+    assert.deepEqual(CREATIVE_TERMINAL_STATUSES, ['published', 'rejected']);
+  });
+
+  it('registers a pinned work with exact id and fingerprint, and never mutates the works array', () => {
+    const works: CreativeWork[] = [];
+    assert.deepEqual(registerCreativeWork(creativeInput(), works), {
+      ok: true,
+      value: {
+        workId: 'cr_1',
+        creator: 'ada',
+        medium: 'manhwa',
+        title: 'Forge Tales',
+        status: 'pending',
+        revisions: [],
+        fingerprint: 'crfp_' + fp('ada:manhwa:Forge Tales'),
+        createdAt: NOW,
+        duplicate: false,
+      },
+    });
+    assert.equal(works.length, 0);
+    const first = unwrap(registerCreativeWork(creativeInput(), works));
+    pushWork(first, works);
+    const dup = unwrap(registerCreativeWork(creativeInput(), works));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.workId, 'cr_1');
+    assert.equal(works.length, 1);
+  });
+
+  it('refuses every bad registration with the named reason, in the engine order', () => {
+    const works: CreativeWork[] = [];
+    const cases: Array<[RegisterCreativeInput, string]> = [
+      [creativeInput({ creator: '' }), 'creative-no-creator'],
+      [creativeInput({ medium: 'film' }), 'creative-invalid-medium:film'],
+      // the engine order: the medium is validated before the title, the consent before the clock
+      [creativeInput({ medium: 'film', title: '' }), 'creative-invalid-medium:film'],
+      [creativeInput({ title: '' }), 'creative-no-title'],
+      [creativeInput({ consent: undefined as unknown as { granted: boolean } }), 'creative-no-consent'],
+      [creativeInput({ consent: { granted: false } }), 'creative-consent-required'],
+      [creativeInput({ consent: { granted: false }, now: NaN }), 'creative-consent-required'],
+      [creativeInput({ now: NaN }), 'creative-no-now'],
+    ];
+    for (const [input, expected] of cases) {
+      assert.equal(refusal(registerCreativeWork(input, works)), expected);
+    }
+    assert.equal(refusal(registerCreativeWork(undefined as unknown as RegisterCreativeInput, works)), 'creative-no-input');
+    assert.equal(works.length, 0);
+  });
+
+  it('keys identity on creator, medium and title: same triple idempotent, any variation a new work', () => {
+    const works: CreativeWork[] = [];
+    pushWork(unwrap(registerCreativeWork(creativeInput(), works)), works);
+    const dup = unwrap(registerCreativeWork(creativeInput(), works));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.workId, 'cr_1');
+    const otherMedium = unwrap(registerCreativeWork(creativeInput({ medium: 'music' }), works));
+    assert.ok(!otherMedium.duplicate);
+    assert.equal(otherMedium.workId, 'cr_2');
+    assert.equal(otherMedium.fingerprint, 'crfp_' + fp('ada:music:Forge Tales'));
+    pushWork(otherMedium, works);
+    const otherCreator = unwrap(registerCreativeWork(creativeInput({ creator: 'bob' }), works));
+    assert.ok(!otherCreator.duplicate);
+    assert.equal(otherCreator.workId, 'cr_3');
+    pushWork(otherCreator, works);
+    const otherTitle = unwrap(registerCreativeWork(creativeInput({ title: 'Second Tales' }), works));
+    assert.ok(!otherTitle.duplicate);
+    assert.equal(otherTitle.workId, 'cr_4');
+    pushWork(otherTitle, works);
+    assert.equal(works.length, 4);
+    // every variation is now idempotent against the works it joined
+    assert.ok(unwrap(registerCreativeWork(creativeInput({ medium: 'music' }), works)).duplicate);
+    assert.ok(unwrap(registerCreativeWork(creativeInput({ creator: 'bob' }), works)).duplicate);
+    assert.ok(unwrap(registerCreativeWork(creativeInput({ title: 'Second Tales' }), works)).duplicate);
+    assert.equal(works.length, 4);
+  });
+
+  it('walks the lifecycle: pending to approved to published, then locked forever', () => {
+    const works: CreativeWork[] = [];
+    pushWork(unwrap(registerCreativeWork(creativeInput(), works)), works);
+    assert.deepEqual(unwrap(approveWork('cr_1', works)), { workId: 'cr_1', status: 'approved' });
+    assert.equal(works[0]?.status, 'approved');
+    assert.deepEqual(unwrap(publishWork('cr_1', works)), { workId: 'cr_1', status: 'published' });
+    assert.equal(works[0]?.status, 'published');
+    // published is terminal: nothing moves the work again
+    assert.equal(refusal(approveWork('cr_1', works)), 'creative-terminal-state:published');
+    assert.equal(refusal(rejectWork('cr_1', works)), 'creative-terminal-state:published');
+    assert.equal(refusal(publishWork('cr_1', works)), 'creative-terminal-state:published');
+    assert.equal(refusal(submitRevision({ workId: 'cr_1', content: 'x', now: NOW }, works)), 'creative-terminal-state:published');
+    assert.equal(works[0]?.status, 'published');
+  });
+
+  it('rejects terminally: a rejected work can never be decided again', () => {
+    const works: CreativeWork[] = [];
+    pushWork(unwrap(registerCreativeWork(creativeInput(), works)), works);
+    assert.deepEqual(unwrap(rejectWork('cr_1', works)), { workId: 'cr_1', status: 'rejected' });
+    assert.equal(works[0]?.status, 'rejected');
+    assert.equal(refusal(approveWork('cr_1', works)), 'creative-terminal-state:rejected');
+    assert.equal(refusal(publishWork('cr_1', works)), 'creative-terminal-state:rejected');
+    assert.equal(refusal(submitRevision({ workId: 'cr_1', content: 'x', now: NOW }, works)), 'creative-terminal-state:rejected');
+    assert.equal(works[0]?.status, 'rejected');
+  });
+
+  it('publishes approved works only, without exception', () => {
+    const works: CreativeWork[] = [];
+    pushWork(unwrap(registerCreativeWork(creativeInput(), works)), works);
+    // a pending work can be neither published nor revised
+    assert.equal(refusal(publishWork('cr_1', works)), 'creative-unapproved');
+    assert.equal(refusal(submitRevision({ workId: 'cr_1', content: 'x', now: NOW }, works)), 'creative-unapproved');
+    // approval is a decision, not a terminal state: deciding again is legal
+    unwrap(approveWork('cr_1', works));
+    assert.deepEqual(unwrap(approveWork('cr_1', works)), { workId: 'cr_1', status: 'approved' });
+    assert.deepEqual(unwrap(publishWork('cr_1', works)), { workId: 'cr_1', status: 'published' });
+  });
+
+  it('numbers revisions per work and pins their fingerprints', () => {
+    const works: CreativeWork[] = [];
+    pushWork(unwrap(registerCreativeWork(creativeInput(), works)), works);
+    unwrap(approveWork('cr_1', works));
+    const first = unwrap(submitRevision({ workId: 'cr_1', content: 'panel-one', now: NOW + 1 }, works));
+    assert.deepEqual(first, {
+      revisionId: 'crev_cr_1_1',
+      content: 'panel-one',
+      fingerprint: 'crfp_' + fp('cr_1:1:panel-one'),
+      createdAt: NOW + 1,
+    });
+    const second = unwrap(submitRevision({ workId: 'cr_1', content: 'panel-two', now: NOW + 2 }, works));
+    assert.equal(second.revisionId, 'crev_cr_1_2');
+    assert.equal(second.fingerprint, 'crfp_' + fp('cr_1:2:panel-two'));
+    assert.equal(works[0]?.revisions.length, 2);
+    // the engine order: the clock before the work, the work before the content
+    assert.equal(refusal(submitRevision({ workId: 'cr_99', content: 'x', now: NaN }, works)), 'creative-no-now');
+    assert.equal(refusal(submitRevision({ workId: 'cr_99', content: 'x', now: NOW }, works)), 'creative-unknown-work:cr_99');
+    assert.equal(refusal(submitRevision({ workId: '', content: 'x', now: NOW }, works)), 'creative-no-work-id');
+    assert.equal(refusal(submitRevision({ workId: 'cr_1', content: '', now: NOW }, works)), 'revision-no-content');
+    assert.equal(refusal(submitRevision(undefined as unknown as { workId: string; content: string; now: number }, works)), 'creative-no-input');
+    assert.equal(works[0]?.revisions.length, 2);
+  });
+
+  it('names unknown works for every operation and never invents one', () => {
+    const works: CreativeWork[] = [];
+    assert.equal(refusal(approveWork('', works)), 'creative-no-work-id');
+    assert.equal(refusal(approveWork('cr_99', works)), 'creative-unknown-work:cr_99');
+    assert.equal(refusal(rejectWork('cr_99', works)), 'creative-unknown-work:cr_99');
+    assert.equal(refusal(publishWork('cr_99', works)), 'creative-unknown-work:cr_99');
+    assert.equal(refusal(submitRevision({ workId: 'cr_99', content: 'x', now: NOW }, works)), 'creative-unknown-work:cr_99');
+    assert.equal(works.length, 0);
+  });
+
+  it('sweeps random registrations against the fingerprint and id oracles', () => {
+    const rnd = mulberry32(42);
+    const works: CreativeWork[] = [];
+    const creators = ['ada', 'bob', 'eve'];
+    const titles = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5'];
+    let stored = 0;
+    for (let i = 0; i < 200; i++) {
+      const creator = creators[Math.floor(rnd() * creators.length)] ?? 'ada';
+      const medium = CREATIVE_MEDIA[Math.floor(rnd() * CREATIVE_MEDIA.length)] ?? 'manhwa';
+      const title = titles[Math.floor(rnd() * titles.length)] ?? 'T-1';
+      const rec = unwrap(registerCreativeWork({ creator, medium, title, consent: { granted: true }, now: NOW }, works));
+      const fingerprint = 'crfp_' + fp(creator + ':' + medium + ':' + title);
+      const existing = works.find((w) => w.fingerprint === fingerprint);
+      if (existing) {
+        assert.ok(rec.duplicate);
+        assert.equal(rec.workId, existing.workId);
+        assert.equal(works.length, stored);
+      } else {
+        assert.ok(!rec.duplicate);
+        assert.equal(rec.workId, 'cr_' + (stored + 1));
+        assert.equal(rec.fingerprint, fingerprint);
+        pushWork(rec, works);
+        stored++;
+      }
+    }
+    // the sweep exercised fresh works and duplicates across a bounded identity space
+    assert.ok(stored >= 10);
+    assert.ok(stored <= creators.length * CREATIVE_MEDIA.length * titles.length);
+    assert.equal(works.length, stored);
+  });
+});
+
+describe('tokenizer engine (FORGE AI-012)', () => {
+  it('pins the vocabulary ceiling exactly', () => {
+    assert.equal(TOKENIZER_VOCAB_MAX, 1024);
+  });
+
+  it('trains a pinned tokenizer with exact vocab, merges and fingerprints', () => {
+    const verdict = trainTokenizer({ corpus: 'aab aab', vocabSize: 5 });
+    const contentHash = 'tok_' + fp('aab aab');
+    assert.deepEqual(verdict, {
+      ok: true,
+      value: {
+        vocab: [' ', 'a', 'b', 'aa', 'aab'],
+        merges: ['aa', 'aab'],
+        contentHash,
+        fingerprint: 'tfp_' + fp(contentHash + ':5:5'),
+      },
+    });
+    // encode and decode round-trip through the pinned tokenizer
+    const tok = unwrap(verdict);
+    assert.deepEqual(unwrap(encodeText('aab aab', tok)), [4, 0, 4]);
+    assert.deepEqual(unwrap(encodeText('a a', tok)), [1, 0, 1]);
+    assert.equal(unwrap(decodeIndices([4, 0, 4], tok)), 'aab aab');
+  });
+
+  it('starts the vocabulary at the sorted alphabet and stops early when no pairs remain', () => {
+    // a vocab size equal to the alphabet trains zero merges
+    const flat = unwrap(trainTokenizer({ corpus: 'ab', vocabSize: 2 }));
+    assert.deepEqual(flat, {
+      vocab: ['a', 'b'],
+      merges: [],
+      contentHash: 'tok_' + fp('ab'),
+      fingerprint: 'tfp_' + fp('tok_' + fp('ab') + ':2:2'),
+    });
+    // a huge requested size cannot invent pairs: training stops when the corpus is one token
+    const early = unwrap(trainTokenizer({ corpus: 'ab', vocabSize: TOKENIZER_VOCAB_MAX }));
+    assert.deepEqual(early.merges, ['ab']);
+    assert.equal(early.vocab.length, 3);
+    assert.ok(early.vocab.length < TOKENIZER_VOCAB_MAX);
+    // the fingerprint records the real vocab length, not the request
+    assert.equal(early.fingerprint, 'tfp_' + fp('tok_' + fp('ab') + ':' + TOKENIZER_VOCAB_MAX + ':3'));
+  });
+
+  it('refuses bad training input with the named reasons, at both boundaries', () => {
+    assert.equal(refusal(trainTokenizer(undefined as unknown as TrainTokenizerInput)), 'tokenizer-no-input');
+    assert.equal(refusal(trainTokenizer({ corpus: '', vocabSize: 5 })), 'tokenizer-no-corpus');
+    assert.equal(refusal(trainTokenizer({ corpus: 'abc', vocabSize: NaN })), 'tokenizer-bad-vocab-size');
+    assert.equal(refusal(trainTokenizer({ corpus: 'abc', vocabSize: 2.5 })), 'tokenizer-bad-vocab-size');
+    assert.equal(refusal(trainTokenizer({ corpus: 'abc', vocabSize: 2 })), 'tokenizer-vocab-below-alphabet:2:3');
+    assert.equal(refusal(trainTokenizer({ corpus: 'abc', vocabSize: TOKENIZER_VOCAB_MAX + 1 })), 'tokenizer-vocab-above-max:1025:1024');
+    // the boundaries themselves are legal
+    assert.ok(trainTokenizer({ corpus: 'abc', vocabSize: 3 }).ok);
+    assert.ok(trainTokenizer({ corpus: 'abc', vocabSize: TOKENIZER_VOCAB_MAX }).ok);
+  });
+
+  it('refuses unknown characters and indices by name', () => {
+    const tok = unwrap(trainTokenizer({ corpus: 'aab aab', vocabSize: 5 }));
+    assert.equal(refusal(encodeText('', tok)), 'tokenizer-no-text');
+    assert.equal(refusal(encodeText('aabz', tok)), 'tokenizer-unknown-char:z');
+    assert.equal(refusal(decodeIndices('x' as unknown as number[], tok)), 'tokenizer-no-indices');
+    assert.equal(refusal(decodeIndices([99], tok)), 'tokenizer-unknown-token:99');
+    assert.equal(refusal(decodeIndices([-1], tok)), 'tokenizer-unknown-token:-1');
+  });
+
+  it('registers tokenizers with deterministic ids, duplicate manifests and copy-only reads', () => {
+    const registry: TokenizerRecord[] = [];
+    const first = unwrap(registerTokenizer({ corpus: 'abab', vocabSize: 3, now: NOW }, registry));
+    assert.equal(first.tokId, 'tok_1');
+    assert.equal(first.contentHash, 'tok_' + fp('abab'));
+    assert.deepEqual(first.merges, ['ab']);
+    assert.equal(first.duplicate, false);
+    assert.equal(registry.length, 0); // the caller owns the registry, the engine never appends
+    registry.push({ ...first, vocab: [...first.vocab], merges: [...first.merges] });
+    const dup = unwrap(registerTokenizer({ corpus: 'abab', vocabSize: 3, now: NOW + 5 }, registry));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.tokId, 'tok_1');
+    // the same corpus with a different vocab size is a different tokenizer
+    const second = unwrap(registerTokenizer({ corpus: 'abab', vocabSize: 2, now: NOW }, registry));
+    assert.ok(!second.duplicate);
+    assert.equal(second.tokId, 'tok_2');
+    assert.deepEqual(second.merges, []);
+    registry.push({ ...second, vocab: [...second.vocab], merges: [...second.merges] });
+    assert.equal(registry.length, 2);
+    // training refusals pass through registration by name, and nothing is stored
+    assert.equal(refusal(registerTokenizer({ corpus: 'abc', vocabSize: 2, now: NOW }, registry)), 'tokenizer-vocab-below-alphabet:2:3');
+    assert.equal(refusal(registerTokenizer({ corpus: 'abc', vocabSize: 3, now: NaN }, registry)), 'tokenizer-no-now');
+    assert.equal(refusal(registerTokenizer({ corpus: 'abc', vocabSize: 3, now: NOW }, undefined as unknown as TokenizerRecord[])), 'tokenizer-no-registry');
+    assert.equal(registry.length, 2);
+    // reads are by id, named when unknown, and always copies
+    assert.equal(refusal(tokenizerById('', registry)), 'tokenizer-no-input');
+    assert.equal(refusal(tokenizerById('tok_99', registry)), 'tokenizer-unknown-tokenizer:tok_99');
+    const found = unwrap(tokenizerById('tok_1', registry));
+    found.vocab.push('mutant');
+    assert.equal(registry[0]?.vocab.length, 3);
+  });
+
+  it('sweeps random corpora against the alphabet, fingerprint, round-trip and determinism oracles', () => {
+    const rnd = mulberry32(42);
+    const pool = ['a', 'b', 'c', 'd'];
+    for (let iter = 0; iter < 100; iter++) {
+      const len = 1 + Math.floor(rnd() * 10);
+      let corpus = '';
+      for (let i = 0; i < len; i++) corpus += pool[Math.floor(rnd() * pool.length)] ?? 'a';
+      const alphabet = Array.from(new Set(Array.from(corpus))).sort();
+      const vocabSize = alphabet.length + Math.floor(rnd() * 4);
+      const trained = unwrap(trainTokenizer({ corpus, vocabSize }));
+      // the vocabulary begins at the sorted alphabet and never exceeds the request
+      assert.deepEqual(trained.vocab.slice(0, alphabet.length), alphabet);
+      assert.ok(trained.vocab.length <= vocabSize);
+      // every merge is a vocabulary token, in training order
+      for (const m of trained.merges) assert.ok(trained.vocab.includes(m));
+      // the hash and fingerprint are derived from the corpus, never supplied
+      assert.equal(trained.contentHash, 'tok_' + fp(corpus));
+      assert.equal(trained.fingerprint, 'tfp_' + fp(trained.contentHash + ':' + vocabSize + ':' + trained.vocab.length));
+      // determinism: the same corpus and size always yield the same tokenizer
+      assert.deepEqual(trainTokenizer({ corpus, vocabSize }), { ok: true, value: trained });
+      // encode then decode round-trips the corpus exactly
+      assert.equal(unwrap(decodeIndices(unwrap(encodeText(corpus, trained)), trained)), corpus);
+      // a vocab size below the alphabet is refused with the exact counts
+      assert.equal(
+        refusal(trainTokenizer({ corpus, vocabSize: alphabet.length - 1 })),
+        'tokenizer-vocab-below-alphabet:' + (alphabet.length - 1) + ':' + alphabet.length,
+      );
     }
   });
 });

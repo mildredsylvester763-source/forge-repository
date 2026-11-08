@@ -61,7 +61,7 @@ function admitBody(overrides: Partial<AdmitBody> = {}): AdmitBody {
   };
 }
 
-describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008, AI-009, AI-010)', () => {
+describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008, AI-009, AI-010, AI-011, AI-012)', () => {
   it('refuses every route without a session', async () => {
     const h = await startHarness();
     try {
@@ -86,6 +86,16 @@ describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008, AI-009, AI
         '/v1/training-data/codedata/register',
         '/v1/training-data/codedata/deploy',
         '/v1/training-data/codedata/list',
+        '/v1/training-data/creative/register',
+        '/v1/training-data/creative/approve',
+        '/v1/training-data/creative/reject',
+        '/v1/training-data/creative/publish',
+        '/v1/training-data/creative/revise',
+        '/v1/training-data/creative/list',
+        '/v1/training-data/tokenizer/register',
+        '/v1/training-data/tokenizer/encode',
+        '/v1/training-data/tokenizer/decode',
+        '/v1/training-data/tokenizer/list',
       ];
       for (const path of paths) {
         const res = await h.post(path, {});
@@ -703,6 +713,188 @@ describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008, AI-009, AI
       // and user A's view is untouched
       const prefsA = await h.post('/v1/training-data/preference/list', { page: 1, limit: 20 }, { cookie: cookieA });
       assert.equal(((await prefsA.json()) as { total: number }).total, 1);
+    } finally {
+      await h.close();
+    }
+  });
+  it('gates creative registration behind creator consent and walks the full lifecycle end to end', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'td-creative@forge.test');
+      // no consent on record: the registry is closed
+      const gated = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'manhwa', title: 'Forge Tales' }, { cookie });
+      assert.equal(gated.status, 400);
+      assert.equal(await errorCode(gated), 'creative-consent-required');
+      // an unknown medium is refused by name, before anything is stored
+      const badMedium = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'film', title: 'Forge Tales' }, { cookie });
+      assert.equal(badMedium.status, 400);
+      assert.equal(await errorCode(badMedium), 'creative-invalid-medium:film');
+      // consent for the creator opens the gate
+      const grant = await h.post('/v1/training-data/consent/grant', { workspace: 'default', user: 'ada', dataType: 'creative-work', purpose: 'training' }, { cookie });
+      assert.equal(grant.status, 201);
+      const register = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'manhwa', title: 'Forge Tales' }, { cookie });
+      assert.equal(register.status, 201);
+      const row = (await register.json()) as { workId: string; creator: string; medium: string; title: string; status: string; revisions: unknown[]; fingerprint: string; duplicate: boolean; createdAt: number };
+      assert.equal(row.workId, 'cr_1');
+      assert.equal(row.creator, 'ada');
+      assert.equal(row.medium, 'manhwa');
+      assert.equal(row.title, 'Forge Tales');
+      assert.equal(row.status, 'pending');
+      assert.deepEqual(row.revisions, []);
+      assert.equal(row.fingerprint, 'crfp_f9f1f727');
+      assert.equal(row.duplicate, false);
+      assert.equal(row.createdAt, NOW);
+      // the same triple is idempotent
+      const dup = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'manhwa', title: 'Forge Tales' }, { cookie });
+      assert.equal(dup.status, 201);
+      const dupRow = (await dup.json()) as { workId: string; duplicate: boolean };
+      assert.equal(dupRow.duplicate, true);
+      assert.equal(dupRow.workId, 'cr_1');
+      // unknown fields are refused
+      const bad = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'voice', title: 'T', bogus: 1 }, { cookie });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'invalid_request');
+      // unknown works are a 404 for this owner
+      const unknown = await h.post('/v1/training-data/creative/approve', { workId: 'cr_99' }, { cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'creative-unknown-work:cr_99');
+      // a pending work can be neither published nor revised
+      const unapprovedPublish = await h.post('/v1/training-data/creative/publish', { workId: 'cr_1' }, { cookie });
+      assert.equal(unapprovedPublish.status, 409);
+      assert.equal(await errorCode(unapprovedPublish), 'creative-unapproved');
+      const unapprovedRevise = await h.post('/v1/training-data/creative/revise', { workId: 'cr_1', content: 'x' }, { cookie });
+      assert.equal(unapprovedRevise.status, 409);
+      assert.equal(await errorCode(unapprovedRevise), 'creative-unapproved');
+      // approve, then a revision with its exact id and fingerprint
+      const approve = await h.post('/v1/training-data/creative/approve', { workId: 'cr_1' }, { cookie });
+      assert.equal(approve.status, 200);
+      assert.deepEqual(await approve.json(), { workId: 'cr_1', status: 'approved' });
+      const revise = await h.post('/v1/training-data/creative/revise', { workId: 'cr_1', content: 'panel-one' }, { cookie });
+      assert.equal(revise.status, 200);
+      assert.deepEqual(await revise.json(), { revisionId: 'crev_cr_1_1', content: 'panel-one', fingerprint: 'crfp_64b41aae', createdAt: NOW });
+      // publish, then the work is locked forever
+      const publish = await h.post('/v1/training-data/creative/publish', { workId: 'cr_1' }, { cookie });
+      assert.equal(publish.status, 200);
+      assert.deepEqual(await publish.json(), { workId: 'cr_1', status: 'published' });
+      for (const path of ['/v1/training-data/creative/approve', '/v1/training-data/creative/reject', '/v1/training-data/creative/publish']) {
+        const res = await h.post(path, { workId: 'cr_1' }, { cookie });
+        assert.equal(res.status, 409, path);
+        assert.equal(await errorCode(res), 'creative-terminal-state:published', path);
+      }
+      const reviseLocked = await h.post('/v1/training-data/creative/revise', { workId: 'cr_1', content: 'x' }, { cookie });
+      assert.equal(reviseLocked.status, 409);
+      assert.equal(await errorCode(reviseLocked), 'creative-terminal-state:published');
+      // rejection is terminal too, on a fresh work
+      const second = await h.post('/v1/training-data/creative/register', { creator: 'ada', medium: 'music', title: 'Forge Songs' }, { cookie });
+      assert.equal(second.status, 201);
+      const reject = await h.post('/v1/training-data/creative/reject', { workId: 'cr_2' }, { cookie });
+      assert.equal(reject.status, 200);
+      assert.deepEqual(await reject.json(), { workId: 'cr_2', status: 'rejected' });
+      const revive = await h.post('/v1/training-data/creative/approve', { workId: 'cr_2' }, { cookie });
+      assert.equal(revive.status, 409);
+      assert.equal(await errorCode(revive), 'creative-terminal-state:rejected');
+      // the list shows every state where it is
+      const list = await h.post('/v1/training-data/creative/list', { page: 1, limit: 20 }, { cookie });
+      assert.equal(list.status, 200);
+      const listed = (await list.json()) as { data: Array<{ workId: string; status: string; revisions: Array<{ revisionId: string }> }>; total: number };
+      assert.equal(listed.total, 2);
+      const publishedWork = listed.data.find((w) => w.workId === 'cr_1');
+      assert.equal(publishedWork?.status, 'published');
+      assert.deepEqual(publishedWork?.revisions.map((r) => r.revisionId), ['crev_cr_1_1']);
+      assert.equal(listed.data.find((w) => w.workId === 'cr_2')?.status, 'rejected');
+      // isolation: another user owns nothing of this
+      const cookieB = await signedInUser(h, 'td-creative-b@forge.test');
+      const listB = await h.post('/v1/training-data/creative/list', { page: 1, limit: 20 }, { cookie: cookieB });
+      assert.equal(((await listB.json()) as { total: number }).total, 0);
+      const approveB = await h.post('/v1/training-data/creative/approve', { workId: 'cr_1' }, { cookie: cookieB });
+      assert.equal(approveB.status, 404);
+      assert.equal(await errorCode(approveB), 'creative-unknown-work:cr_1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('trains tokenizers deterministically and round-trips encode and decode end to end', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'td-tok@forge.test');
+      const register = await h.post('/v1/training-data/tokenizer/register', { corpus: 'aab aab', vocabSize: 5 }, { cookie });
+      assert.equal(register.status, 201);
+      const row = (await register.json()) as { tokId: string; vocab: string[]; merges: string[]; contentHash: string; fingerprint: string; duplicate: boolean; createdAt: number };
+      assert.equal(row.tokId, 'tok_1');
+      assert.deepEqual(row.vocab, [' ', 'a', 'b', 'aa', 'aab']);
+      assert.deepEqual(row.merges, ['aa', 'aab']);
+      assert.equal(row.contentHash, 'tok_17d59e8d');
+      assert.equal(row.fingerprint, 'tfp_848f4e6b');
+      assert.equal(row.duplicate, false);
+      assert.equal(row.createdAt, NOW);
+      // the same corpus and size are idempotent
+      const dup = await h.post('/v1/training-data/tokenizer/register', { corpus: 'aab aab', vocabSize: 5 }, { cookie });
+      assert.equal(dup.status, 201);
+      const dupRow = (await dup.json()) as { tokId: string; duplicate: boolean };
+      assert.equal(dupRow.duplicate, true);
+      assert.equal(dupRow.tokId, 'tok_1');
+      // the same corpus with a different vocab size is a different tokenizer
+      const second = await h.post('/v1/training-data/tokenizer/register', { corpus: 'aab aab', vocabSize: 3 }, { cookie });
+      assert.equal(second.status, 201);
+      const secondRow = (await second.json()) as { tokId: string; merges: string[] };
+      assert.equal(secondRow.tokId, 'tok_2');
+      assert.deepEqual(secondRow.merges, []);
+      // training refusals are named
+      const noCorpus = await h.post('/v1/training-data/tokenizer/register', { corpus: '', vocabSize: 5 }, { cookie });
+      assert.equal(noCorpus.status, 400);
+      assert.equal(await errorCode(noCorpus), 'tokenizer-no-corpus');
+      const badSize = await h.post('/v1/training-data/tokenizer/register', { corpus: 'abc', vocabSize: 'x' }, { cookie });
+      assert.equal(badSize.status, 400);
+      assert.equal(await errorCode(badSize), 'tokenizer-bad-vocab-size');
+      const tooSmall = await h.post('/v1/training-data/tokenizer/register', { corpus: 'abc', vocabSize: 2 }, { cookie });
+      assert.equal(tooSmall.status, 400);
+      assert.equal(await errorCode(tooSmall), 'tokenizer-vocab-below-alphabet:2:3');
+      const tooBig = await h.post('/v1/training-data/tokenizer/register', { corpus: 'abc', vocabSize: 1025 }, { cookie });
+      assert.equal(tooBig.status, 400);
+      assert.equal(await errorCode(tooBig), 'tokenizer-vocab-above-max:1025:1024');
+      const bad = await h.post('/v1/training-data/tokenizer/register', { corpus: 'abc', vocabSize: 3, bogus: 1 }, { cookie });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'invalid_request');
+      // encode and decode round-trip through the registered tokenizer
+      const encode = await h.post('/v1/training-data/tokenizer/encode', { tokId: 'tok_1', text: 'aab aab' }, { cookie });
+      assert.equal(encode.status, 200);
+      assert.deepEqual(await encode.json(), { indices: [4, 0, 4] });
+      const decode = await h.post('/v1/training-data/tokenizer/decode', { tokId: 'tok_1', indices: [4, 0, 4] }, { cookie });
+      assert.equal(decode.status, 200);
+      assert.deepEqual(await decode.json(), { text: 'aab aab' });
+      // encode and decode refusals are named
+      const unknownChar = await h.post('/v1/training-data/tokenizer/encode', { tokId: 'tok_1', text: 'aabz' }, { cookie });
+      assert.equal(unknownChar.status, 400);
+      assert.equal(await errorCode(unknownChar), 'tokenizer-unknown-char:z');
+      const noText = await h.post('/v1/training-data/tokenizer/encode', { tokId: 'tok_1', text: '' }, { cookie });
+      assert.equal(noText.status, 400);
+      assert.equal(await errorCode(noText), 'tokenizer-no-text');
+      const unknownToken = await h.post('/v1/training-data/tokenizer/decode', { tokId: 'tok_1', indices: [99] }, { cookie });
+      assert.equal(unknownToken.status, 400);
+      assert.equal(await errorCode(unknownToken), 'tokenizer-unknown-token:99');
+      const noIndices = await h.post('/v1/training-data/tokenizer/decode', { tokId: 'tok_1', indices: 'x' }, { cookie });
+      assert.equal(noIndices.status, 400);
+      assert.equal(await errorCode(noIndices), 'tokenizer-no-indices');
+      const unknownTokenizer = await h.post('/v1/training-data/tokenizer/encode', { tokId: 'tok_99', text: 'a' }, { cookie });
+      assert.equal(unknownTokenizer.status, 404);
+      assert.equal(await errorCode(unknownTokenizer), 'tokenizer-unknown-tokenizer:tok_99');
+      // the list pages the registry
+      const list = await h.post('/v1/training-data/tokenizer/list', { page: 1, limit: 20 }, { cookie });
+      assert.equal(list.status, 200);
+      const listed = (await list.json()) as { data: Array<{ tokId: string }>; total: number };
+      assert.equal(listed.total, 2);
+      assert.deepEqual(listed.data.map((r) => r.tokId), ['tok_1', 'tok_2']);
+      // isolation: another user owns nothing of this, and numbers from 1
+      const cookieB = await signedInUser(h, 'td-tok-b@forge.test');
+      const listB = await h.post('/v1/training-data/tokenizer/list', { page: 1, limit: 20 }, { cookie: cookieB });
+      assert.equal(((await listB.json()) as { total: number }).total, 0);
+      const encodeB = await h.post('/v1/training-data/tokenizer/encode', { tokId: 'tok_1', text: 'a' }, { cookie: cookieB });
+      assert.equal(encodeB.status, 404);
+      assert.equal(await errorCode(encodeB), 'tokenizer-unknown-tokenizer:tok_1');
+      const registerB = await h.post('/v1/training-data/tokenizer/register', { corpus: 'aab aab', vocabSize: 5 }, { cookie: cookieB });
+      assert.equal(registerB.status, 201);
+      assert.equal(((await registerB.json()) as { tokId: string }).tokId, 'tok_1');
     } finally {
       await h.close();
     }
