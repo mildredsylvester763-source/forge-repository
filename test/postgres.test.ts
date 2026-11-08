@@ -207,7 +207,8 @@ describe('PostgreSQL migrations (real database only)', { skip: REAL_POSTGRES_URL
   it('apply once and are idempotent', async () => {
     const t = await makeBlankRealPool();
     try {
-      assert.deepEqual(await migratePostgres(t.pool, 'kernel', pgKernelMigrations), [1]);
+      const versions = pgKernelMigrations.map((m) => m.version);
+      assert.deepEqual(await migratePostgres(t.pool, 'kernel', pgKernelMigrations), versions);
       assert.deepEqual(await migratePostgres(t.pool, 'kernel', pgKernelMigrations), []);
     } finally {
       await t.pool.end();
@@ -251,7 +252,7 @@ describe('PostgreSQL migrations (real database only)', { skip: REAL_POSTGRES_URL
         migratePostgres(t.pool, 'kernel', pgKernelMigrations),
       ]);
       const applied = results.flat().length;
-      assert.equal(applied, 1, 'the migration must be applied exactly once');
+      assert.equal(applied, pgKernelMigrations.length, 'every migration must be applied exactly once');
     } finally {
       await t.pool.end();
       await t.cleanup();
