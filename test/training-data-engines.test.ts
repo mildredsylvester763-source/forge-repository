@@ -21,7 +21,6 @@ import {
   consentLedger,
   grantConsent,
   revokeConsent,
-  type ConsentLedgerEvent,
   type ConsentState,
   type GrantConsentInput,
 } from '../src/modules/training-data/engine/consent-engine.ts';
@@ -84,7 +83,7 @@ describe('data lake engine (FORGE AI-001)', () => {
     };
   }
 
-  function admitNext(lake: LakeRecord[], overrides: Partial<AdmitLakeInput> = {}): LakeRecord {
+  function admitNext(lake: LakeRecord[], overrides: Partial<AdmitLakeInput> = {}): LakeRecord & { duplicate: boolean } {
     const verdict = admitLakeRecord(baseLake({ contentHash: 'ch-' + (lake.length + 1), ...overrides }), lake);
     const rec = unwrap(verdict);
     lake.push(rec);

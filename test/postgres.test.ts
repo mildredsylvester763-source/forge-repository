@@ -137,7 +137,7 @@ describe('PostgreSQL all-or-nothing writes', () => {
       const { users, sessions, uow } = build(pool);
       const user = await uow.registerUser(newUser, (u) => ({ ...draft(1), subject: { type: 'user', id: u.id } }));
       const session = { idHash: 'a'.repeat(64), userId: user.id, createdAt: 1, lastSeenAt: 1, expiresAt: 9e12, ip: 'i', userAgent: 'u', revokedAt: null, revokedReason: null };
-      await assert.rejects(uow.startSession({ session, revokeIdHashes: [], event: badEvent() }), TypeError);
+      await assert.rejects(uow.startSession({ session, maxPerUser: 5, event: badEvent() }), TypeError);
       assert.equal(await sessions.findByHash(session.idHash), null);
       assert.ok(await users.findById(user.id));
     }));
@@ -150,7 +150,7 @@ describe('PostgreSQL all-or-nothing writes', () => {
       assert.equal(typeof found?.createdAt, 'number');
       assert.equal(found?.createdAt, 1_800_000_000_000);
       const s = { idHash: 'b'.repeat(64), userId: user.id, createdAt: 5, lastSeenAt: 5, expiresAt: 9_000_000_000_000, ip: 'i', userAgent: 'u', revokedAt: null, revokedReason: null };
-      await uow.startSession({ session: s, revokeIdHashes: [], event: draft(2) });
+      await uow.startSession({ session: s, maxPerUser: 5, event: draft(2) });
       const back = await sessions.findByHash(s.idHash);
       assert.equal(back?.expiresAt, 9_000_000_000_000);
       assert.equal(typeof back?.expiresAt, 'number');

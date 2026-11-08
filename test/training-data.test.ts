@@ -449,51 +449,51 @@ describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008)', () => {
       const cookieA = await signedInUser(h, 'iso-a@forge.test');
       const cookieB = await signedInUser(h, 'iso-b@forge.test');
       // user A fills every registry
-      const admitA = await h.post('/v1/training-data/lake/admit', admitBody({ contentHash: 'ch-a' }), { cookieA });
+      const admitA = await h.post('/v1/training-data/lake/admit', admitBody({ contentHash: 'ch-a' }), { cookie: cookieA });
       assert.equal(admitA.status, 201);
-      const grantA = await h.post('/v1/training-data/consent/grant', { workspace: 'ws-1', user: 'subject-1', dataType: 'preference', purpose: 'training' }, { cookieA });
+      const grantA = await h.post('/v1/training-data/consent/grant', { workspace: 'ws-1', user: 'subject-1', dataType: 'preference', purpose: 'training' }, { cookie: cookieA });
       assert.equal(grantA.status, 201);
-      const synthA = await h.post('/v1/training-data/synthetic/register', { provenance: 'synthetic', generator: { model: 'forge-gen', version: '1.0', seed: 1 } }, { cookieA });
+      const synthA = await h.post('/v1/training-data/synthetic/register', { provenance: 'synthetic', generator: { model: 'forge-gen', version: '1.0', seed: 1 } }, { cookie: cookieA });
       assert.equal(synthA.status, 201);
-      const labelA = await h.post('/v1/training-data/labeling/submit', { batchId: 'batch-iso', labeler: 'ada', ranking: ['a', 'b'] }, { cookieA });
+      const labelA = await h.post('/v1/training-data/labeling/submit', { batchId: 'batch-iso', labeler: 'ada', ranking: ['a', 'b'] }, { cookie: cookieA });
       assert.equal(labelA.status, 201);
       // user B sees none of it
-      const listB = await h.post('/v1/training-data/lake/list', { page: 1, limit: 20 }, { cookieB });
+      const listB = await h.post('/v1/training-data/lake/list', { page: 1, limit: 20 }, { cookie: cookieB });
       const lakeB = (await listB.json()) as { total: number };
       assert.equal(lakeB.total, 0);
-      const checkB = await h.post('/v1/training-data/consent/check', { workspace: 'ws-1', user: 'subject-1', dataType: 'preference' }, { cookieB });
+      const checkB = await h.post('/v1/training-data/consent/check', { workspace: 'ws-1', user: 'subject-1', dataType: 'preference' }, { cookie: cookieB });
       assert.deepEqual(await checkB.json(), { granted: false, state: 'denied', grantId: null, expiresAt: null });
-      const grantsB = await h.post('/v1/training-data/consent/list', { page: 1, limit: 20 }, { cookieB });
+      const grantsB = await h.post('/v1/training-data/consent/list', { page: 1, limit: 20 }, { cookie: cookieB });
       const grantsBBody = (await grantsB.json()) as { total: number };
       assert.equal(grantsBBody.total, 0);
-      const ledgerB = await h.post('/v1/training-data/consent/ledger', {}, { cookieB });
+      const ledgerB = await h.post('/v1/training-data/consent/ledger', {}, { cookie: cookieB });
       const ledgerBBody = (await ledgerB.json()) as { total: number };
       assert.equal(ledgerBBody.total, 0);
-      const synthListB = await h.post('/v1/training-data/synthetic/list', { page: 1, limit: 20 }, { cookieB });
+      const synthListB = await h.post('/v1/training-data/synthetic/list', { page: 1, limit: 20 }, { cookie: cookieB });
       const synthBBody = (await synthListB.json()) as { total: number };
       assert.equal(synthBBody.total, 0);
-      const bordaB = await h.post('/v1/training-data/labeling/borda', { batchId: 'batch-iso' }, { cookieB });
+      const bordaB = await h.post('/v1/training-data/labeling/borda', { batchId: 'batch-iso' }, { cookie: cookieB });
       assert.equal(bordaB.status, 404);
       assert.equal(await errorCode(bordaB), 'labeling-no-labels:batch-iso');
-      const labelsB = await h.post('/v1/training-data/labeling/list', { page: 1, limit: 20 }, { cookieB });
+      const labelsB = await h.post('/v1/training-data/labeling/list', { page: 1, limit: 20 }, { cookie: cookieB });
       const labelsBBody = (await labelsB.json()) as { total: number };
       assert.equal(labelsBBody.total, 0);
       // user B's own records are numbered per owner, starting clean
-      const admitB = await h.post('/v1/training-data/lake/admit', admitBody({ contentHash: 'ch-b', creator: 'bee' }), { cookieB });
+      const admitB = await h.post('/v1/training-data/lake/admit', admitBody({ contentHash: 'ch-b', creator: 'bee' }), { cookie: cookieB });
       assert.equal(admitB.status, 201);
       const rowB = (await admitB.json()) as LakeRow;
       assert.equal(rowB.lakeId, 'lr_1');
       assert.equal(rowB.contentHash, 'ch-b');
       // and user A's view is untouched
-      const lineageB = await h.post('/v1/training-data/lake/lineage', { lakeId: 'lr_1' }, { cookieB });
+      const lineageB = await h.post('/v1/training-data/lake/lineage', { lakeId: 'lr_1' }, { cookie: cookieB });
       const chainB = (await lineageB.json()) as { data: Array<{ id: string; contentHash: string }>; total: number };
       assert.equal(chainB.total, 1);
       assert.equal(chainB.data[0]?.contentHash, 'ch-b');
-      const lineageA = await h.post('/v1/training-data/lake/lineage', { lakeId: 'lr_1' }, { cookieA });
+      const lineageA = await h.post('/v1/training-data/lake/lineage', { lakeId: 'lr_1' }, { cookie: cookieA });
       const chainA = (await lineageA.json()) as { data: Array<{ id: string; contentHash: string }>; total: number };
       assert.equal(chainA.total, 1);
       assert.equal(chainA.data[0]?.contentHash, 'ch-a');
-      const listA = await h.post('/v1/training-data/lake/list', { page: 1, limit: 20 }, { cookieA });
+      const listA = await h.post('/v1/training-data/lake/list', { page: 1, limit: 20 }, { cookie: cookieA });
       const lakeABody = (await listA.json()) as { total: number };
       assert.equal(lakeABody.total, 1);
     } finally {

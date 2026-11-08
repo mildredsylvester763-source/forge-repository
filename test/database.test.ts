@@ -170,7 +170,7 @@ describe('all-or-nothing writes (transactional outbox)', () => {
     const uow = new SqliteIdentityUnitOfWork({ db, users, sessions, events, clock: () => 1 });
     const user = await uow.registerUser(newUser, (u) => ({ ...draft(1), subject: { type: 'user', id: u.id } }));
     const session = { idHash: 'a'.repeat(64), userId: user.id, createdAt: 1, lastSeenAt: 1, expiresAt: 9e12, ip: 'i', userAgent: 'u', revokedAt: null, revokedReason: null };
-    await assert.rejects(uow.startSession({ session, revokeIdHashes: [], event: badEvent() }), TypeError);
+    await assert.rejects(uow.startSession({ session, maxPerUser: 5, event: badEvent() }), TypeError);
     assert.equal(await sessions.findByHash(session.idHash), null);
     db.close();
   });
