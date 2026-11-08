@@ -195,8 +195,9 @@ describe('sign-in, session and sign-out', () => {
   it('records an unavailable sign-in breach recheck without blocking authentication', async () => {
     const strict = await startHarness({ FORGE_BREACH_ON_SIGN_IN: 'true' });
     try {
-      const password = 'breach-service-outage-login-42';
-      await strict.post('/v1/auth/register', { email: 'outage@example.com', password });
+      const password = 'breach-service-blackout-login-42';
+      const registered = await strict.post('/v1/auth/register', { email: 'outage@example.com', password });
+      assert.equal(registered.status, 201, `register must succeed before the outage is simulated (got ${registered.status})`);
       strict.breach.mode = 'unavailable';
 
       const result = await strict.post('/v1/auth/sign-in', { email: 'outage@example.com', password });
