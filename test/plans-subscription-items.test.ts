@@ -59,7 +59,7 @@ describe('subscription item foundation', () => {
     const db = openDatabase(':memory:');
     try {
       db.exec('CREATE TABLE users (id TEXT PRIMARY KEY) STRICT');
-      migrate(db, 'plans', [plansMigrations[0]]);
+      migrate(db, 'plans', plansMigrations.slice(0, 1));
       db.prepare('INSERT INTO users (id) VALUES (?)').run('user_legacy');
       db.prepare(
         'INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
