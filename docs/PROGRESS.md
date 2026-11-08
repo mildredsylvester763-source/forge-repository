@@ -1535,3 +1535,12 @@ Compared Mistral and main health, limiter, identity throttle, backup and focused
 - Verification: the tests were written against the audited engine sources; no local Node run exists in this environment. Full CI (typecheck plus the whole node --test suite) on this commit is the confirmation step; if it reports anything, fix rounds follow before batch 2.
 - Next: batch 2 covers AI-009, AI-010, AI-011 and AI-012 (preference, codedata, creative works, tokenizer) with the same two test layers and feature docs.
 
+## Mistral full-CI repair rounds (2026-11-08)
+
+- Owner standing instruction: nothing broken stays; the whole CI (typecheck plus `npm test`) must go green on `mistral` before feature batch 2 (AI-009..AI-012). `main` is untouched throughout.
+- Typecheck finally green at commit `adaf41b` after the engine/store guard repairs recorded in earlier rounds; `npm test` then ran for the first time on this branch.
+- Test-fix rounds, each verified against the next CI run:
+  - `60a8333`: the ai-training lifecycle test expects `gateway-no-providers` (the pinned engine contract for an empty provider list) instead of `gateway-no-active-providers`.
+  - `c888cad`: the backup tamper test now performs the re-seal step it described (writing the forged checksum sidecar) so `verifyBackup` reaches the audit-chain gate and the tamper is caught as `audit_chain_hash_mismatch_at_1`.
+  - `bdab5e1`: the identity sign-out rollback test injects its failure with a SQLite trigger, so it is skipped under the `identity.postgres.test.ts` re-run where the PostgreSQL storage contract applies (`app.db` is null by design there); the PostgreSQL rollback contract stays pinned by `test/co-065-postgres-uow.test.ts`. Also repaired the double-backslash line continuations in `.github/workflows/co-verification.yml` that truncated the CO regression `node --test` command.
+- This entry is a docs-only change so the full CI keeps running without the CO-focused workflow (its paths filter excludes `docs/**`); the remaining failing tests are read from the ci check annotations and fixed round by round.
