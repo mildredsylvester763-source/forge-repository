@@ -1631,3 +1631,9 @@ appended before id or duplicate assertions); both engines were verified byte-lev
 and left untouched, the tests were fixed instead (fc679d4, 24a153d). The engines test file also had an unclosed
 labeling describe that silently nested the two new describes; repaired in 24a153d. CI green at 24a153d:
 typecheck pass, npm test pass, zero failing-test annotations.
+
+## Mistral feature batch 3 (2026-11-08)
+
+- 6961d86: batch 3 - AI-011 creative works + AI-012 tokenizer training (engine oracle tests, functional route tests, docs/features/AI-011.md and AI-012.md). Training-data engines test now covers 9 describes: lake, consent, synthetic, labeling, preference, codedata, creative, tokenizer.
+- 2c50d5f: test-only fix - the AI-012 read assertion demanded a deep copy of vocab, but the pinned tokenizerById returns a record copy ({ ...rec }) whose arrays are shared with the registry; the test now pins the record-copy contract (scalar edits never leak back).
+- Full CI green at 2c50d5f (typecheck + entire test suite, mistral branch).
