@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { Method, RouteHandler, RouteTable } from '../../kernel/http.ts';
-import { IdentityService, sessionCredential } from '../identity/index.ts';
+import { IdentityService } from '../identity/index.ts';
 import { gateForRoute } from './engine/route-gates.ts';
 import type { PlansService } from './plans-service.ts';
 
@@ -23,7 +23,7 @@ export function applyRouteGates(routes: RouteTable, plans: PlansService, identit
       const handler = entry[method];
       if (handler === undefined) continue;
       gated[method] = async (ctx) => {
-        const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
+        const auth = await identity.authenticate(ctx.cookie(cookie.name));
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
         const entitlement = await plans.checkFeature(auth.user.id, decision.feature);
         if (!entitlement.allowed) {

@@ -5,6 +5,8 @@ import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './help
 async function signedInUser(h: Harness, email: string): Promise<string> {
   const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'Lifecycle Tester' });
   assert.equal(register.status, 201);
+  const registered = (await register.json()) as { user: { id: string } };
+  await h.app.plans.setPlan(registered.user.id, 'enterprise');
   const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
   assert.equal(signIn.status, 200);
   return sessionCookie(signIn);

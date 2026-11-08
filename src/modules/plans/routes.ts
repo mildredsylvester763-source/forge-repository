@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.ts';
-import { IdentityService, sessionCredential, type PublicUser } from '../identity/index.ts';
+import { IdentityService, type PublicUser } from '../identity/index.ts';
 import type { PlanPrices } from './engine/plan-engine.ts';
 import type { PlansService } from './plans-service.ts';
 
@@ -14,10 +14,10 @@ function rejectUnknownFields(body: Record<string, unknown>, allowed: readonly st
   }
 }
 
-/** The plans routes themselves are never gated: a user must always be able to see their plan. */
+/** The plans routes themselves are never gated: a user must always be able to see their own plan. */
 export function plansRoutes(plans: PlansService, identity: IdentityService, cookie: { name: string }, prices: PlanPrices): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<PublicUser> => {
-    const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
+    const auth = await identity.authenticate(ctx.cookie(cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
     return auth.user;
   };

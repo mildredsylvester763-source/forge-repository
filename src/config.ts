@@ -24,6 +24,14 @@ export interface ForgeConfig {
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
   passkeys: { rpId: string | null; origins: readonly string[]; rpName: string };
+  plans: {
+    plusUsdPerMonth: number;
+    proUsdPerMonth: number;
+    studioUsdPerMonth: number;
+    teamUsdPerSeatPerMonth: number;
+    teamMinSeats: number;
+    enterpriseFromUsdPerMonth: number;
+  };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
     databaseUrl: string | null;
@@ -54,6 +62,14 @@ function int(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number
   if (raw === undefined || raw === '') return fallback;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < min || n > max) throw new ConfigError(`${name} must be an integer between ${min} and ${max}`);
+  return n;
+}
+
+function money(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new ConfigError(`${name} must be a number between 0 and 1000000`);
   return n;
 }
 
@@ -201,6 +217,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       rpId: webAuthnRpId,
       origins: webAuthnOrigins,
       rpName: webAuthnRpName,
+    },
+    plans: {
+      plusUsdPerMonth: money(env, 'FORGE_PLUS_USD_PER_MONTH', 9.99),
+      proUsdPerMonth: money(env, 'FORGE_PRO_USD_PER_MONTH', 24.99),
+      studioUsdPerMonth: money(env, 'FORGE_STUDIO_USD_PER_MONTH', 59.99),
+      teamUsdPerSeatPerMonth: money(env, 'FORGE_TEAM_USD_PER_SEAT_PER_MONTH', 39),
+      teamMinSeats: int(env, 'FORGE_TEAM_MIN_SEATS', 3, 1, 10_000),
+      enterpriseFromUsdPerMonth: money(env, 'FORGE_ENTERPRISE_FROM_USD_PER_MONTH', 1000),
     },
     storage: {
       databaseUrl,

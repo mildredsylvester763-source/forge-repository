@@ -7,6 +7,7 @@ import { pgKernelMigrations } from './kernel/postgres-migrations.ts';
 import { migratePostgres } from './kernel/postgres-migrate.ts';
 import { createPostgresPool } from './kernel/postgres.ts';
 import type { SqlPool } from './kernel/sql.ts';
+import { pgPlansMigrations } from './modules/plans/index.ts';
 import { pgIdentityMigrations } from './modules/identity/index.ts';
 import { pgTaskRuntimeMigrations } from './modules/task-runtime/index.ts';
 import { pgOrchestratorMigrations } from './modules/orchestrator/index.ts';
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'search_integrity', pgSearchIntegrityMigrations);
     await migratePostgres(pool, 'ai_training', pgAiTrainingMigrations);
     await migratePostgres(pool, 'training_data', pgTrainingDataMigrations);
+    await migratePostgres(pool, 'plans', pgPlansMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 
