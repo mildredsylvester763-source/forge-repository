@@ -121,7 +121,9 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       'SELECT * FROM workspace_members WHERE workspace_id = $1 AND user_id = $2',
       [workspaceId, userId],
     );
-    return toWorkspaceMemberRecord(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) throw new Error('workspace member row missing after insert');
+    return toWorkspaceMemberRecord(row);
   }
 
   async removeMember(workspaceId: string, userId: string): Promise<void> {
@@ -167,11 +169,13 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
   async countByOwner(ownerId: string): Promise<number> {
     const result = await this.pool.query<{ count: string }>('SELECT COUNT(*) as count FROM workspaces WHERE owner_id = $1', [ownerId]);
-    return parseInt(result.rows[0].count, 10);
+    const row = result.rows[0];
+    return row ? parseInt(row.count, 10) : 0;
   }
 
   async countByUser(userId: string): Promise<number> {
     const result = await this.pool.query<{ count: string }>('SELECT COUNT(*) as count FROM workspace_members WHERE user_id = $1', [userId]);
-    return parseInt(result.rows[0].count, 10);
+    const row = result.rows[0];
+    return row ? parseInt(row.count, 10) : 0;
   }
 }

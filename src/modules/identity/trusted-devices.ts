@@ -241,7 +241,8 @@ export class PostgresTrustedDeviceStore implements TrustedDeviceStore {
       [tokenHash, this.clock()],
     );
     if (result.rows.length === 0) return null;
-    return mapRow(result.rows[0]);
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
   }
 
   async findByUser(userId: string): Promise<TrustedDeviceRecord[]> {
@@ -260,7 +261,8 @@ export class PostgresTrustedDeviceStore implements TrustedDeviceStore {
       [userId, deviceId, this.clock()],
     );
     if (result.rows.length === 0) return null;
-    return mapRow(result.rows[0]);
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
   }
 
   async updateLastUsed(id: string, now: number): Promise<void> {
@@ -291,7 +293,9 @@ export class PostgresTrustedDeviceStore implements TrustedDeviceStore {
       [userId, this.clock()],
     );
     if (result.rows.length === 0) return 0;
-    const cnt = result.rows[0].cnt;
+    const row = result.rows[0];
+    if (!row) return 0;
+    const cnt = row.cnt;
     return typeof cnt === 'number' ? cnt : Number(cnt);
   }
 

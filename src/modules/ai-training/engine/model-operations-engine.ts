@@ -183,6 +183,9 @@ export function admitCacheEntry(input: CacheAdmitInput): Verdict<CacheAdmitResul
       return { ok: false, reason: 'cache-full-pinned:' + pool.length };
     }
     let victim = candidates[0];
+    if (victim === undefined) {
+      return { ok: false, reason: 'cache-full-pinned:' + pool.length };
+    }
     for (const c of candidates) {
       if (
         c.lastUsedAt < victim.lastUsedAt ||

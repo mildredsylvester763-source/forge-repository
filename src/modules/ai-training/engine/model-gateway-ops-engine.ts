@@ -26,7 +26,7 @@
 // Validation: pinned vectors + 4x500-case mulberry32(42) sweeps + order
 // independence in model-gateway-ops-engine.spec.ts (CI green is ground truth).
 
-import { ProviderDescriptor } from './model-gateway-engine';
+import { ProviderDescriptor } from './model-gateway-engine.ts';
 
 export type Verdict<T> = { ok: true; value: T } | { ok: false; reason: string };
 

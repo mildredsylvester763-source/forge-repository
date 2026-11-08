@@ -1301,7 +1301,8 @@ export class SqliteAiTrainingStore implements AiTrainingStore {
 
   async findOutputSchema(userId: string, schemaId: string): Promise<OutputSchemaRecord | null> {
     const rows = this.findOutputSchemaStmt.all(userId, schemaId) as unknown as OutputSchemaRow[];
-    return rows.length > 0 ? toOutputSchemaRecord(rows[0]) : null;
+    const row = rows[0];
+    return row ? toOutputSchemaRecord(row) : null;
   }
 
   async listOutputSchemas(userId: string, take: number): Promise<OutputSchemaRecord[]> {

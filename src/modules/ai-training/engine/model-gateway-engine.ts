@@ -121,6 +121,9 @@ export function planGatewayRoute(input: {
   }
   const ranked = rankProviders(capable);
   const primary = ranked[0];
+  if (primary === undefined) {
+    return { ok: false, reason: 'gateway-no-capable-provider:' + need };
+  }
   const estimatedCostUsd = round6(
     (promptTokens / 1000) * primary.costPer1kIn + (outputTokens / 1000) * primary.costPer1kOut,
   );
@@ -233,14 +236,14 @@ export function enforceDataPolicy(input: {
   if (tags.length > 0 && maxIdx > clearanceIdx) {
     return {
       ok: false,
-      reason: 'policy-clearance-exceeded:' + CLASSIFICATION_ORDER[maxIdx] + '>' + providerClearance,
+      reason: 'policy-clearance-exceeded:' + (CLASSIFICATION_ORDER[maxIdx] ?? '') + '>' + providerClearance,
     };
   }
   return {
     ok: true,
     value: {
       allowedTags: tags,
-      maxTag: tags.length ? CLASSIFICATION_ORDER[maxIdx] : null,
+      maxTag: tags.length ? CLASSIFICATION_ORDER[maxIdx] ?? null : null,
       providerClearance,
     },
   };

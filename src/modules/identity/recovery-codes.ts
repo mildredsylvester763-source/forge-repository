@@ -210,7 +210,8 @@ export class PostgresRecoveryCodesStore implements RecoveryCodesStore {
       [userId, codeId],
     );
     if (result.rows.length === 0) return null;
-    return mapRow(result.rows[0]);
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
   }
 
   async markUsed(id: string, now: number): Promise<void> {
@@ -228,7 +229,8 @@ export class PostgresRecoveryCodesStore implements RecoveryCodesStore {
       [userId],
     );
     if (result.rows.length === 0) return 0;
-    return Number(result.rows[0].cnt);
+    const row = result.rows[0];
+    return row ? Number(row.cnt) : 0;
   }
 }
 

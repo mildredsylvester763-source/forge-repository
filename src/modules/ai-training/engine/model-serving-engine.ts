@@ -413,6 +413,9 @@ export function routeModel(input: RouteInput): Verdict<RoutePlan> {
   }
   const costOf = (m: RouteModel): number => r6(m.costPer1kTokens * (tokens / ROUTE_COST_TOKEN_CHUNK));
   const primary = fits[0];
+  if (primary === undefined) {
+    return { ok: false, reason: 'routing-no-fit:' + tokens };
+  }
   const primaryCost = costOf(primary);
   if (primaryCost > input.costCap) {
     return { ok: false, reason: 'routing-cap-below-primary:' + primaryCost + '>' + input.costCap };
