@@ -85,10 +85,16 @@ describe('rate limiter and semaphore', () => {
     assert.equal(limiter.consume('k').allowed, true);
   });
 
-  it('bounds memory by evicting the oldest keys', () => {
-    const limiter = new SlidingWindowLimiter({ limit: 1, windowMs: 1000, maxKeys: 3, clock: () => 0 });
-    for (let i = 0; i < 10; i += 1) limiter.consume(`k${i}`);
-    assert.equal(limiter.consume('k0').allowed, true); // evicted earlier, so it starts fresh
+  it('bounds memory by reclaiming expired keys, never live ones', () => {
+    let now = 0;
+    const limiter = new SlidingWindowLimiter({ limit: 1, windowMs: 1000, maxKeys: 3, clock: () => now });
+    for (let i = 0; i < 3; i += 1) limiter.consume(`k${i}`);
+    // The table is full of live counters: new keys are denied fail-closed; no live budget is evicted.
+    for (let i = 3; i < 10; i += 1) assert.equal(limiter.consume(`k${i}`).allowed, false);
+    assert.equal(limiter.consume('k0').allowed, false); // k0 spent its window at 0 and is still live
+    now = 1001; // every recorded window has expired
+    assert.equal(limiter.consume('k3').allowed, true, 'an expired entry is reclaimed so a new key can start fresh');
+    assert.equal(limiter.consume('k0').allowed, true, 'the reclaimed key also starts fresh');
   });
 
   it('limits concurrency and sheds load when the queue is full', async () => {
