@@ -61,7 +61,7 @@ function admitBody(overrides: Partial<AdmitBody> = {}): AdmitBody {
   };
 }
 
-describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008)', () => {
+describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008, AI-009, AI-010)', () => {
   it('refuses every route without a session', async () => {
     const h = await startHarness();
     try {
@@ -81,6 +81,11 @@ describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008)', () => {
         '/v1/training-data/labeling/submit',
         '/v1/training-data/labeling/borda',
         '/v1/training-data/labeling/list',
+        '/v1/training-data/preference/store',
+        '/v1/training-data/preference/list',
+        '/v1/training-data/codedata/register',
+        '/v1/training-data/codedata/deploy',
+        '/v1/training-data/codedata/list',
       ];
       for (const path of paths) {
         const res = await h.post(path, {});
@@ -496,6 +501,208 @@ describe('training data routes (FORGE AI-001, AI-002, AI-007, AI-008)', () => {
       const listA = await h.post('/v1/training-data/lake/list', { page: 1, limit: 20 }, { cookie: cookieA });
       const lakeABody = (await listA.json()) as { total: number };
       assert.equal(lakeABody.total, 1);
+    } finally {
+      await h.close();
+    }
+  });
+  it('gates preference storage behind consent and stores explicit signals end to end', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'td-pref@forge.test');
+      // without consent on record the store is refused by name
+      const gated = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'like' }, { cookie });
+      assert.equal(gated.status, 400);
+      assert.equal(await errorCode(gated), 'preference-consent-required');
+      // consent is granted in the workspace the service checks
+      const grant = await h.post('/v1/training-data/consent/grant', { workspace: 'default', user: 'subject-1', dataType: 'preference', purpose: 'training' }, { cookie });
+      assert.equal(grant.status, 201);
+      const store = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'like' }, { cookie });
+      assert.equal(store.status, 201);
+      const row = (await store.json()) as { prefId: string; user: string; item: string; signal: string; fingerprint: string; duplicate: boolean; createdAt: number };
+      assert.equal(row.prefId, 'prf_1');
+      assert.equal(row.user, 'subject-1');
+      assert.equal(row.item, 'item-1');
+      assert.equal(row.signal, 'like');
+      assert.equal(row.fingerprint, 'pfp_ca0ead59');
+      assert.equal(row.duplicate, false);
+      assert.equal(row.createdAt, NOW);
+      // the same signal is idempotent: the existing record returns, nothing is appended
+      const dup = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'like' }, { cookie });
+      assert.equal(dup.status, 201);
+      const dupRow = (await dup.json()) as { prefId: string; duplicate: boolean };
+      assert.equal(dupRow.duplicate, true);
+      assert.equal(dupRow.prefId, 'prf_1');
+      // contradictory signals on one item coexist: nothing is inferred, replaced or merged
+      const dislike = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'dislike' }, { cookie });
+      assert.equal(dislike.status, 201);
+      const dislikeRow = (await dislike.json()) as { prefId: string; signal: string };
+      assert.equal(dislikeRow.prefId, 'prf_2');
+      assert.equal(dislikeRow.signal, 'dislike');
+      // a subject without consent stays gated
+      const other = await h.post('/v1/training-data/preference/store', { user: 'subject-2', item: 'item-1', signal: 'like' }, { cookie });
+      assert.equal(other.status, 400);
+      assert.equal(await errorCode(other), 'preference-consent-required');
+      // explicit means explicit: unknown signals are refused by name
+      const invalid = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-2', signal: 'upvote' }, { cookie });
+      assert.equal(invalid.status, 400);
+      assert.equal(await errorCode(invalid), 'preference-invalid-signal:upvote');
+      // unknown fields are refused, not ignored
+      const bad = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-3', signal: 'like', bogus: 1 }, { cookie });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'invalid_request');
+      // lists filter by subject and page
+      const listAll = await h.post('/v1/training-data/preference/list', { page: 1, limit: 20 }, { cookie });
+      assert.equal(listAll.status, 200);
+      const all = (await listAll.json()) as { data: Array<{ prefId: string }>; total: number; page: number; limit: number };
+      assert.equal(all.total, 2);
+      assert.deepEqual(all.data.map((r) => r.prefId), ['prf_1', 'prf_2']);
+      const listOne = await h.post('/v1/training-data/preference/list', { user: 'subject-1', page: 1, limit: 1 }, { cookie });
+      const one = (await listOne.json()) as { data: Array<{ prefId: string }>; total: number; page: number; limit: number };
+      assert.equal(one.total, 2);
+      assert.equal(one.data.length, 1);
+      assert.equal(one.limit, 1);
+      const listGhost = await h.post('/v1/training-data/preference/list', { user: 'ghost' }, { cookie });
+      const ghost = (await listGhost.json()) as { total: number };
+      assert.equal(ghost.total, 0);
+      // revoking consent closes the gate for new signals, but stored ones still read back
+      const revoke = await h.post('/v1/training-data/consent/revoke', { workspace: 'default', user: 'subject-1', dataType: 'preference' }, { cookie });
+      assert.equal(revoke.status, 200);
+      const afterRevoke = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-9', signal: 'skip' }, { cookie });
+      assert.equal(afterRevoke.status, 400);
+      assert.equal(await errorCode(afterRevoke), 'preference-consent-required');
+      const still = await h.post('/v1/training-data/preference/list', { page: 1, limit: 20 }, { cookie });
+      const stillBody = (await still.json()) as { total: number };
+      assert.equal(stillBody.total, 2);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('registers code and data contributions end to end with the deploy lifecycle', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'td-code@forge.test');
+      // a fix must reference the failing test that proves the bug
+      const fixNoTest = await h.post('/v1/training-data/codedata/register', { kind: 'fix', contentHash: 'h-1', author: 'ada' }, { cookie });
+      assert.equal(fixNoTest.status, 400);
+      assert.equal(await errorCode(fixNoTest), 'codedata-fix-no-test');
+      // a parent must already exist
+      const badParent = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-1', author: 'ada', parentCode: 'cd_99' }, { cookie });
+      assert.equal(badParent.status, 400);
+      assert.equal(await errorCode(badParent), 'codedata-unknown-parent:cd_99');
+      const badKind = await h.post('/v1/training-data/codedata/register', { kind: 'patch', contentHash: 'h-1', author: 'ada' }, { cookie });
+      assert.equal(badKind.status, 400);
+      assert.equal(await errorCode(badKind), 'codedata-invalid-kind:patch');
+      // a root diff registers
+      const diff = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-1', author: 'ada' }, { cookie });
+      assert.equal(diff.status, 201);
+      const diffRow = (await diff.json()) as { codeId: string; kind: string; contentHash: string; author: string; parentCode: string | null; failingTestId: string | null; state: string | null; fingerprint: string; duplicate: boolean; createdAt: number };
+      assert.equal(diffRow.codeId, 'cd_1');
+      assert.equal(diffRow.kind, 'diff');
+      assert.equal(diffRow.contentHash, 'h-1');
+      assert.equal(diffRow.author, 'ada');
+      assert.equal(diffRow.parentCode, null);
+      assert.equal(diffRow.failingTestId, null);
+      assert.equal(diffRow.state, null);
+      assert.equal(diffRow.fingerprint, 'cdfp_72289d12');
+      assert.equal(diffRow.duplicate, false);
+      assert.equal(diffRow.createdAt, NOW);
+      // the identical manifest is idempotent
+      const dup = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-1', author: 'ada' }, { cookie });
+      assert.equal(dup.status, 201);
+      const dupRow = (await dup.json()) as { codeId: string; duplicate: boolean };
+      assert.equal(dupRow.duplicate, true);
+      assert.equal(dupRow.codeId, 'cd_1');
+      // a fix chains onto the diff and carries its failing test in identity
+      const fix = await h.post('/v1/training-data/codedata/register', { kind: 'fix', contentHash: 'h-2', author: 'ada', parentCode: 'cd_1', failingTestId: 'ft-1' }, { cookie });
+      assert.equal(fix.status, 201);
+      const fixRow = (await fix.json()) as { codeId: string; parentCode: string | null; failingTestId: string | null; fingerprint: string };
+      assert.equal(fixRow.codeId, 'cd_2');
+      assert.equal(fixRow.parentCode, 'cd_1');
+      assert.equal(fixRow.failingTestId, 'ft-1');
+      assert.equal(fixRow.fingerprint, 'cdfp_5e666050');
+      // deploys are born pending; other kinds never have a state
+      const deploy = await h.post('/v1/training-data/codedata/register', { kind: 'deploy', contentHash: 'h-3', author: 'ada' }, { cookie });
+      assert.equal(deploy.status, 201);
+      const deployRow = (await deploy.json()) as { codeId: string; state: string | null; fingerprint: string };
+      assert.equal(deployRow.codeId, 'cd_3');
+      assert.equal(deployRow.state, 'pending');
+      assert.equal(deployRow.fingerprint, 'cdfp_41034128');
+      // non-deploys have no state machine
+      const notDeploy = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_1', toState: 'running' }, { cookie });
+      assert.equal(notDeploy.status, 409);
+      assert.equal(await errorCode(notDeploy), 'codedata-not-deploy:cd_1');
+      // unknown ids are a 404 for this owner
+      const unknown = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_99', toState: 'running' }, { cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'codedata-unknown-code:cd_99');
+      // the lifecycle: pending -> running -> succeeded, then locked
+      const running = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_3', toState: 'running' }, { cookie });
+      assert.equal(running.status, 200);
+      assert.deepEqual(await running.json(), { codeId: 'cd_3', state: 'running' });
+      const succeeded = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_3', toState: 'succeeded' }, { cookie });
+      assert.equal(succeeded.status, 200);
+      assert.deepEqual(await succeeded.json(), { codeId: 'cd_3', state: 'succeeded' });
+      const locked = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_3', toState: 'aborted' }, { cookie });
+      assert.equal(locked.status, 409);
+      assert.equal(await errorCode(locked), 'codedata-terminal-state:succeeded');
+      // an impossible hop is a conflict named from:to
+      const fresh = await h.post('/v1/training-data/codedata/register', { kind: 'deploy', contentHash: 'h-4', author: 'ada' }, { cookie });
+      assert.equal(fresh.status, 201);
+      const hop = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_4', toState: 'succeeded' }, { cookie });
+      assert.equal(hop.status, 409);
+      assert.equal(await errorCode(hop), 'codedata-invalid-transition:pending:succeeded');
+      // unknown fields are refused
+      const badField = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-9', author: 'ada', bogus: 1 }, { cookie });
+      assert.equal(badField.status, 400);
+      assert.equal(await errorCode(badField), 'invalid_request');
+      // the list pages the registry with live deploy states
+      const list = await h.post('/v1/training-data/codedata/list', { page: 1, limit: 20 }, { cookie });
+      assert.equal(list.status, 200);
+      const listed = (await list.json()) as { data: Array<{ codeId: string; state: string | null }>; total: number; page: number; limit: number };
+      assert.equal(listed.total, 4);
+      assert.deepEqual(listed.data.map((r) => r.codeId), ['cd_1', 'cd_2', 'cd_3', 'cd_4']);
+      assert.equal(listed.data.find((r) => r.codeId === 'cd_3')?.state, 'succeeded');
+      assert.equal(listed.data.find((r) => r.codeId === 'cd_4')?.state, 'pending');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('isolates preference and codedata records behind their owner', async () => {
+    const h = await startHarness();
+    try {
+      const cookieA = await signedInUser(h, 'iso-pref-a@forge.test');
+      const cookieB = await signedInUser(h, 'iso-pref-b@forge.test');
+      // user A grants consent and fills both registries
+      const grantA = await h.post('/v1/training-data/consent/grant', { workspace: 'default', user: 'subject-1', dataType: 'preference', purpose: 'training' }, { cookie: cookieA });
+      assert.equal(grantA.status, 201);
+      const prefA = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'like' }, { cookie: cookieA });
+      assert.equal(prefA.status, 201);
+      assert.equal(((await prefA.json()) as { prefId: string }).prefId, 'prf_1');
+      const codeA = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-a', author: 'ada' }, { cookie: cookieA });
+      assert.equal(codeA.status, 201);
+      assert.equal(((await codeA.json()) as { codeId: string }).codeId, 'cd_1');
+      // user B sees none of it: every registry is per owner
+      const prefsB = await h.post('/v1/training-data/preference/list', { page: 1, limit: 20 }, { cookie: cookieB });
+      assert.equal(((await prefsB.json()) as { total: number }).total, 0);
+      const codesB = await h.post('/v1/training-data/codedata/list', { page: 1, limit: 20 }, { cookie: cookieB });
+      assert.equal(((await codesB.json()) as { total: number }).total, 0);
+      const deployB = await h.post('/v1/training-data/codedata/deploy', { codeId: 'cd_1', toState: 'running' }, { cookie: cookieB });
+      assert.equal(deployB.status, 404);
+      assert.equal(await errorCode(deployB), 'codedata-unknown-code:cd_1');
+      // user B's own consent opens B's own gate, and B's records number from 1
+      const grantB = await h.post('/v1/training-data/consent/grant', { workspace: 'default', user: 'subject-1', dataType: 'preference', purpose: 'training' }, { cookie: cookieB });
+      assert.equal(grantB.status, 201);
+      const prefB = await h.post('/v1/training-data/preference/store', { user: 'subject-1', item: 'item-1', signal: 'like' }, { cookie: cookieB });
+      assert.equal(prefB.status, 201);
+      assert.equal(((await prefB.json()) as { prefId: string }).prefId, 'prf_1');
+      const codeB = await h.post('/v1/training-data/codedata/register', { kind: 'diff', contentHash: 'h-a', author: 'ada' }, { cookie: cookieB });
+      assert.equal(codeB.status, 201);
+      assert.equal(((await codeB.json()) as { codeId: string }).codeId, 'cd_1');
+      // and user A's view is untouched
+      const prefsA = await h.post('/v1/training-data/preference/list', { page: 1, limit: 20 }, { cookie: cookieA });
+      assert.equal(((await prefsA.json()) as { total: number }).total, 1);
     } finally {
       await h.close();
     }

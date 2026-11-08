@@ -26,6 +26,23 @@ import {
 } from '../src/modules/training-data/engine/consent-engine.ts';
 import { registerSynthetic, syntheticChain, type RegisterSyntheticInput, type SyntheticRecord } from '../src/modules/training-data/engine/synthetic-engine.ts';
 import { bordaCount, registerLabel, type LabelRecord, type RegisterLabelInput } from '../src/modules/training-data/engine/labeling-engine.ts';
+import {
+  preferencesFor,
+  PREFERENCE_SIGNALS,
+  storePreference,
+  type PreferenceRecord,
+  type StorePreferenceInput,
+} from '../src/modules/training-data/engine/preference-engine.ts';
+import {
+  CODE_DATA_KINDS,
+  DEPLOY_TERMINAL_STATES,
+  DEPLOY_TRANSITIONS,
+  registerCodeData,
+  updateDeployState,
+  type CodeDataRecord,
+  type RegisterCodeDataInput,
+  type UpdateDeployStateInput,
+} from '../src/modules/training-data/engine/codedata-engine.ts';
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -843,4 +860,388 @@ describe('labeling engine (FORGE AI-008)', () => {
       assert.equal(result.labelers, ballots.length);
     }
   });
+describe('preference engine (FORGE AI-009)', () => {
+  function prefInput(overrides: Partial<StorePreferenceInput> = {}): StorePreferenceInput {
+    return { user: 'u1', item: 'item-1', signal: 'like', consent: { granted: true }, now: NOW, ...overrides };
+  }
+
+  function push(rec: PreferenceRecord & { duplicate: boolean }, store: PreferenceRecord[]): void {
+    store.push({ prefId: rec.prefId, user: rec.user, item: rec.item, signal: rec.signal, fingerprint: rec.fingerprint, createdAt: rec.createdAt });
+  }
+
+  it('pins the signal vocabulary exactly: explicit signals only, never inferred', () => {
+    assert.deepEqual(PREFERENCE_SIGNALS, ['like', 'dislike', 'skip']);
+  });
+
+  it('stores a pinned record with exact id and fingerprint, and never mutates the store', () => {
+    const store: PreferenceRecord[] = [];
+    assert.deepEqual(storePreference(prefInput(), store), {
+      ok: true,
+      value: {
+        prefId: 'prf_1',
+        user: 'u1',
+        item: 'item-1',
+        signal: 'like',
+        fingerprint: 'pfp_' + fp('u1:item-1:like'),
+        createdAt: NOW,
+        duplicate: false,
+      },
+    });
+    assert.equal(store.length, 0);
+    const first = unwrap(storePreference(prefInput(), store));
+    push(first, store);
+    const dup = unwrap(storePreference(prefInput(), store));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.prefId, 'prf_1');
+    assert.equal(store.length, 1);
+    const second = unwrap(storePreference(prefInput({ item: 'item-2', signal: 'dislike' }), store));
+    assert.ok(!second.duplicate);
+    assert.equal(second.prefId, 'prf_2');
+    assert.equal(second.fingerprint, 'pfp_' + fp('u1:item-2:dislike'));
+    assert.equal(store.length, 1);
+  });
+
+  it('refuses every bad signal with the named reason, in the engine order, and leaves nothing behind', () => {
+    const store: PreferenceRecord[] = [];
+    const cases: Array<[StorePreferenceInput, string]> = [
+      [prefInput({ user: '' }), 'preference-no-user'],
+      [prefInput({ item: '' }), 'preference-no-item'],
+      [prefInput({ signal: undefined as unknown as string }), 'preference-no-signal'],
+      [prefInput({ signal: 'upvote' }), 'preference-invalid-signal:upvote'],
+      [prefInput({ consent: undefined as unknown as { granted: boolean } }), 'preference-no-consent'],
+      [prefInput({ consent: { granted: false } }), 'preference-consent-required'],
+      [prefInput({ now: NaN }), 'preference-no-now'],
+      // the engine order: the signal is validated before the consent is read, the consent before the clock
+      [prefInput({ signal: 'upvote', consent: { granted: false } }), 'preference-invalid-signal:upvote'],
+      [prefInput({ consent: { granted: false }, now: NaN }), 'preference-consent-required'],
+    ];
+    for (const [input, expected] of cases) {
+      assert.equal(refusal(storePreference(input, store)), expected);
+    }
+    assert.equal(refusal(storePreference(undefined as unknown as StorePreferenceInput, store)), 'preference-no-input');
+    assert.equal(store.length, 0);
+  });
+
+  it('keys identity on the full triple: same signal idempotent, any variation a new record', () => {
+    const store: PreferenceRecord[] = [];
+    push(unwrap(storePreference(prefInput(), store)), store);
+    const dup = unwrap(storePreference(prefInput(), store));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.prefId, 'prf_1');
+    assert.equal(store.length, 1);
+    const otherSignal = unwrap(storePreference(prefInput({ signal: 'dislike' }), store));
+    assert.ok(!otherSignal.duplicate);
+    assert.equal(otherSignal.prefId, 'prf_2');
+    assert.equal(otherSignal.fingerprint, 'pfp_' + fp('u1:item-1:dislike'));
+    const otherItem = unwrap(storePreference(prefInput({ item: 'item-2' }), store));
+    assert.equal(otherItem.prefId, 'prf_3');
+    assert.equal(otherItem.fingerprint, 'pfp_' + fp('u1:item-2:like'));
+    const otherUser = unwrap(storePreference(prefInput({ user: 'u2' }), store));
+    assert.equal(otherUser.prefId, 'prf_4');
+    assert.equal(otherUser.fingerprint, 'pfp_' + fp('u2:item-1:like'));
+    assert.equal(store.length, 4);
+  });
+
+  it('never infers: one item can carry contradictory signals at once, each its own record', () => {
+    const store: PreferenceRecord[] = [];
+    const fingerprints = new Set<string>();
+    for (const signal of ['like', 'dislike', 'skip'] as const) {
+      const rec = unwrap(storePreference(prefInput({ signal }), store));
+      assert.ok(!rec.duplicate);
+      fingerprints.add(rec.fingerprint);
+    }
+    assert.equal(fingerprints.size, 3);
+    assert.equal(store.length, 0);
+  });
+
+  it('reads one user back as copies only: never a reference, never a mutation', () => {
+    const store: PreferenceRecord[] = [];
+    push(unwrap(storePreference(prefInput(), store)), store);
+    push(unwrap(storePreference(prefInput({ item: 'item-2', signal: 'skip' }), store)), store);
+    push(unwrap(storePreference(prefInput({ user: 'u2', signal: 'dislike' }), store)), store);
+    push(unwrap(storePreference(prefInput({ user: 'u2', item: 'item-9' }), store)), store);
+    const u1 = preferencesFor('u1', store);
+    assert.equal(u1.length, 2);
+    assert.deepEqual(u1.map((p) => p.prefId), ['prf_1', 'prf_2']);
+    assert.deepEqual(u1.map((p) => p.item), ['item-1', 'item-2']);
+    assert.deepEqual(preferencesFor('u2', store).map((p) => p.signal), ['dislike', 'like']);
+    assert.deepEqual(preferencesFor('ghost', store), []);
+    const head = u1[0];
+    if (head !== undefined) {
+      head.signal = 'dislike';
+      assert.equal(store[0]?.signal, 'like');
+    }
+    u1.pop();
+    assert.equal(store.length, 4);
+  });
+
+  it('sweeps random preference stores against the fingerprint and id oracles', () => {
+    const rnd = mulberry32(42);
+    const store: PreferenceRecord[] = [];
+    const users = ['u1', 'u2', 'u3'];
+    const items = ['it-a', 'it-b', 'it-c', 'it-d'];
+    let stored = 0;
+    for (let i = 0; i < 200; i++) {
+      const user = users[Math.floor(rnd() * users.length)] ?? 'u1';
+      const item = items[Math.floor(rnd() * items.length)] ?? 'it-a';
+      const signal = PREFERENCE_SIGNALS[Math.floor(rnd() * PREFERENCE_SIGNALS.length)] ?? 'like';
+      const rec = unwrap(storePreference({ user, item, signal, consent: { granted: true }, now: NOW }, store));
+      const fingerprint = 'pfp_' + fp(user + ':' + item + ':' + signal);
+      const existing = store.find((p) => p.fingerprint === fingerprint);
+      if (existing) {
+        assert.ok(rec.duplicate);
+        assert.equal(rec.prefId, existing.prefId);
+        assert.equal(store.length, stored);
+      } else {
+        assert.ok(!rec.duplicate);
+        assert.equal(rec.prefId, 'prf_' + (stored + 1));
+        assert.equal(rec.fingerprint, fingerprint);
+        push(rec, store);
+        stored++;
+      }
+      if (rnd() < 0.25) {
+        // re-submitting the exact same signal never appends and never re-numbers
+        const again = unwrap(storePreference({ user, item, signal, consent: { granted: true }, now: NOW + i }, store));
+        assert.ok(again.duplicate);
+        assert.equal(again.prefId, rec.prefId);
+      }
+    }
+    // the sweep exercised fresh records and duplicates across a bounded identity space
+    assert.ok(stored >= 10);
+    assert.ok(stored <= users.length * items.length * PREFERENCE_SIGNALS.length);
+    assert.equal(store.length, stored);
+  });
+});
+
+describe('codedata engine (FORGE AI-010)', () => {
+  function codeInput(overrides: Partial<RegisterCodeDataInput> = {}): RegisterCodeDataInput {
+    return { kind: 'diff', contentHash: 'h1', author: 'author-a', now: NOW, ...overrides };
+  }
+
+  function pushCode(rec: CodeDataRecord & { duplicate: boolean }, registry: CodeDataRecord[]): void {
+    registry.push({
+      codeId: rec.codeId,
+      kind: rec.kind,
+      contentHash: rec.contentHash,
+      author: rec.author,
+      parentCode: rec.parentCode,
+      failingTestId: rec.failingTestId,
+      state: rec.state,
+      fingerprint: rec.fingerprint,
+      createdAt: rec.createdAt,
+    });
+  }
+
+  it('pins the kind vocabulary, the transition table and the terminal states exactly', () => {
+    assert.deepEqual(CODE_DATA_KINDS, ['diff', 'fix', 'review', 'test', 'deploy']);
+    assert.deepEqual(DEPLOY_TRANSITIONS, {
+      pending: ['running', 'aborted', 'failed'],
+      running: ['succeeded', 'failed', 'rolled-back', 'aborted'],
+    });
+    assert.deepEqual(DEPLOY_TERMINAL_STATES, ['succeeded', 'failed', 'rolled-back', 'aborted']);
+  });
+
+  it('registers a pinned diff with the exact id and fingerprint, and never mutates the registry', () => {
+    const registry: CodeDataRecord[] = [];
+    assert.deepEqual(registerCodeData(codeInput(), registry), {
+      ok: true,
+      value: {
+        codeId: 'cd_1',
+        kind: 'diff',
+        contentHash: 'h1',
+        author: 'author-a',
+        parentCode: null,
+        failingTestId: null,
+        state: null,
+        fingerprint: 'cdfp_' + fp('diff:h1:author-a::'),
+        createdAt: NOW,
+        duplicate: false,
+      },
+    });
+    assert.equal(registry.length, 0);
+    pushCode(unwrap(registerCodeData(codeInput(), registry)), registry);
+    const dup = unwrap(registerCodeData(codeInput(), registry));
+    assert.ok(dup.duplicate);
+    assert.equal(dup.codeId, 'cd_1');
+    assert.equal(registry.length, 1);
+    const second = unwrap(registerCodeData(codeInput({ kind: 'review', contentHash: 'h2' }), registry));
+    assert.ok(!second.duplicate);
+    assert.equal(second.codeId, 'cd_2');
+    assert.equal(second.fingerprint, 'cdfp_' + fp('review:h2:author-a::'));
+  });
+
+  it('refuses every bad manifest with the named reason, in the engine order, and leaves nothing behind', () => {
+    const registry: CodeDataRecord[] = [];
+    const cases: Array<[RegisterCodeDataInput, string]> = [
+      [codeInput({ kind: '' }), 'codedata-no-kind'],
+      [codeInput({ kind: 'patch' }), 'codedata-invalid-kind:patch'],
+      [codeInput({ contentHash: '' }), 'codedata-no-content-hash'],
+      [codeInput({ author: '' }), 'codedata-no-author'],
+      [codeInput({ now: NaN }), 'codedata-no-now'],
+      [codeInput({ kind: 'fix' }), 'codedata-fix-no-test'],
+      // the engine order: the fix rule fires before the parent is resolved
+      [codeInput({ kind: 'fix', parentCode: 'cd_99' }), 'codedata-fix-no-test'],
+      [codeInput({ parentCode: 'cd_99' }), 'codedata-unknown-parent:cd_99'],
+    ];
+    for (const [input, expected] of cases) {
+      assert.equal(refusal(registerCodeData(input, registry)), expected);
+    }
+    assert.equal(refusal(registerCodeData(undefined as unknown as RegisterCodeDataInput, registry)), 'codedata-no-input');
+    assert.equal(registry.length, 0);
+  });
+
+  it('pins a fix to its failing test, and ignores the test field for every other kind', () => {
+    const registry: CodeDataRecord[] = [];
+    pushCode(unwrap(registerCodeData(codeInput(), registry)), registry);
+    const fix = unwrap(registerCodeData(codeInput({ kind: 'fix', contentHash: 'h2', parentCode: 'cd_1', failingTestId: 'ft-1' }), registry));
+    assert.equal(fix.codeId, 'cd_2');
+    assert.equal(fix.parentCode, 'cd_1');
+    assert.equal(fix.failingTestId, 'ft-1');
+    assert.equal(fix.fingerprint, 'cdfp_' + fp('fix:h2:author-a:cd_1:ft-1'));
+    pushCode(fix, registry);
+    // the failing test is part of a fix's identity: a different test is a different fix
+    const otherTest = unwrap(registerCodeData(codeInput({ kind: 'fix', contentHash: 'h2', parentCode: 'cd_1', failingTestId: 'ft-2' }), registry));
+    assert.ok(!otherTest.duplicate);
+    assert.equal(otherTest.codeId, 'cd_3');
+    pushCode(otherTest, registry);
+    // but for any other kind the field is not identity and not stored at all
+    const review = unwrap(registerCodeData(codeInput({ kind: 'review', contentHash: 'h3', failingTestId: 'ft-9' }), registry));
+    assert.equal(review.failingTestId, null);
+    const reviewAgain = unwrap(registerCodeData(codeInput({ kind: 'review', contentHash: 'h3' }), registry));
+    assert.ok(reviewAgain.duplicate);
+    assert.equal(reviewAgain.codeId, review.codeId);
+    assert.equal(registry.length, 3);
+  });
+
+  it('chains children onto existing parents only, so every chain is well formed', () => {
+    const registry: CodeDataRecord[] = [];
+    const root = unwrap(registerCodeData(codeInput(), registry));
+    pushCode(root, registry);
+    const child = unwrap(registerCodeData(codeInput({ kind: 'test', contentHash: 'h2', parentCode: 'cd_1' }), registry));
+    assert.equal(child.codeId, 'cd_2');
+    assert.equal(child.parentCode, 'cd_1');
+    assert.equal(child.failingTestId, null);
+    assert.equal(child.fingerprint, 'cdfp_' + fp('test:h2:author-a:cd_1:'));
+    pushCode(child, registry);
+    const grand = unwrap(registerCodeData(codeInput({ kind: 'diff', contentHash: 'h3', parentCode: 'cd_2' }), registry));
+    assert.equal(grand.codeId, 'cd_3');
+    assert.equal(grand.parentCode, 'cd_2');
+    pushCode(grand, registry);
+    // a parent that never existed is refused by name, before any record is made
+    assert.equal(refusal(registerCodeData(codeInput({ kind: 'diff', contentHash: 'h4', parentCode: 'cd_99' }), registry)), 'codedata-unknown-parent:cd_99');
+    assert.equal(registry.length, 3);
+  });
+
+  it('walks the deploy lifecycle and locks every terminal state by name', () => {
+    const registry: CodeDataRecord[] = [];
+    function newDeploy(): string {
+      const rec = unwrap(registerCodeData(codeInput({ kind: 'deploy', contentHash: 'h-d-' + registry.length }), registry));
+      assert.equal(rec.state, 'pending');
+      pushCode(rec, registry);
+      return rec.codeId;
+    }
+    // the happy path: pending -> running -> succeeded, then locked forever
+    const happy = newDeploy();
+    assert.deepEqual(unwrap(updateDeployState({ codeId: happy, toState: 'running', now: NOW + 1 }, registry)), { codeId: happy, state: 'running' });
+    assert.deepEqual(unwrap(updateDeployState({ codeId: happy, toState: 'succeeded', now: NOW + 2 }, registry)), { codeId: happy, state: 'succeeded' });
+    assert.equal(registry.find((r) => r.codeId === happy)?.state, 'succeeded');
+    assert.equal(refusal(updateDeployState({ codeId: happy, toState: 'aborted', now: NOW + 3 }, registry)), 'codedata-terminal-state:succeeded');
+    // every terminal state is reachable and then refuses any move
+    const paths: string[][] = [['aborted'], ['failed'], ['running', 'failed'], ['running', 'rolled-back'], ['running', 'aborted']];
+    for (const path of paths) {
+      const id = newDeploy();
+      for (const toState of path) {
+        unwrap(updateDeployState({ codeId: id, toState, now: NOW }, registry));
+      }
+      const terminal = path[path.length - 1] ?? 'aborted';
+      assert.equal(registry.find((r) => r.codeId === id)?.state, terminal);
+      assert.equal(refusal(updateDeployState({ codeId: id, toState: 'running', now: NOW }, registry)), 'codedata-terminal-state:' + terminal);
+    }
+    // invalid hops are refused in the from:to shape and change nothing
+    const fresh = newDeploy();
+    assert.equal(refusal(updateDeployState({ codeId: fresh, toState: 'succeeded', now: NOW }, registry)), 'codedata-invalid-transition:pending:succeeded');
+    assert.equal(refusal(updateDeployState({ codeId: fresh, toState: 'rolled-back', now: NOW }, registry)), 'codedata-invalid-transition:pending:rolled-back');
+    assert.equal(refusal(updateDeployState({ codeId: fresh, toState: 'queued', now: NOW }, registry)), 'codedata-invalid-transition:pending:queued');
+    unwrap(updateDeployState({ codeId: fresh, toState: 'running', now: NOW }, registry));
+    assert.equal(refusal(updateDeployState({ codeId: fresh, toState: 'pending', now: NOW }, registry)), 'codedata-invalid-transition:running:pending');
+    assert.equal(refusal(updateDeployState({ codeId: fresh, toState: 'running', now: NOW }, registry)), 'codedata-invalid-transition:running:running');
+    assert.equal(registry.find((r) => r.codeId === fresh)?.state, 'running');
+  });
+
+  it('refuses state updates on the wrong records with the named reasons', () => {
+    const registry: CodeDataRecord[] = [];
+    pushCode(unwrap(registerCodeData(codeInput(), registry)), registry);
+    assert.equal(refusal(updateDeployState(undefined as unknown as UpdateDeployStateInput, registry)), 'codedata-no-input');
+    assert.equal(refusal(updateDeployState({ codeId: '', toState: 'running', now: NOW }, registry)), 'codedata-no-code-id');
+    assert.equal(refusal(updateDeployState({ codeId: 'cd_1', toState: '', now: NOW }, registry)), 'codedata-no-state');
+    assert.equal(refusal(updateDeployState({ codeId: 'cd_99', toState: 'running', now: NOW }, registry)), 'codedata-unknown-code:cd_99');
+    // a diff has no state machine at all
+    assert.equal(refusal(updateDeployState({ codeId: 'cd_1', toState: 'running', now: NOW }, registry)), 'codedata-not-deploy:cd_1');
+    assert.equal(registry.find((r) => r.codeId === 'cd_1')?.state, null);
+  });
+
+  it('sweeps random registrations against the fingerprint, id and state oracles', () => {
+    const rnd = mulberry32(42);
+    const registry: CodeDataRecord[] = [];
+    const authors = ['author-a', 'author-b', 'author-c'];
+    let registered = 0;
+    for (let i = 0; i < 200; i++) {
+      const kind = CODE_DATA_KINDS[Math.floor(rnd() * CODE_DATA_KINDS.length)] ?? 'diff';
+      const contentHash = 'h-' + i;
+      const author = authors[Math.floor(rnd() * authors.length)] ?? 'author-a';
+      const parentCode = registered > 0 && rnd() < 0.5 ? registry[Math.floor(rnd() * registry.length)]?.codeId : undefined;
+      const failingTestId = kind === 'fix' ? 'ft-' + i : undefined;
+      const input: RegisterCodeDataInput = {
+        kind,
+        contentHash,
+        author,
+        now: NOW,
+        ...(parentCode !== undefined ? { parentCode } : {}),
+        ...(failingTestId !== undefined ? { failingTestId } : {}),
+      };
+      const rec = unwrap(registerCodeData(input, registry));
+      const identity = kind + ':' + contentHash + ':' + author + ':' + (parentCode ?? '') + ':' + (kind === 'fix' ? failingTestId ?? '' : '');
+      assert.equal(rec.fingerprint, 'cdfp_' + fp(identity));
+      assert.equal(rec.parentCode, parentCode ?? null);
+      assert.equal(rec.failingTestId, kind === 'fix' ? failingTestId ?? null : null);
+      assert.equal(rec.state, kind === 'deploy' ? 'pending' : null);
+      assert.equal(rec.codeId, 'cd_' + (registered + 1));
+      pushCode(rec, registry);
+      registered++;
+      if (rnd() < 0.25) {
+        // the identical manifest is always an idempotent duplicate
+        const again = unwrap(registerCodeData(input, registry));
+        assert.ok(again.duplicate);
+        assert.equal(again.codeId, rec.codeId);
+        assert.equal(registry.length, registered);
+      }
+    }
+    assert.equal(registry.length, registered);
+  });
+
+  it('sweeps deploy walks against the transition table, and terminals refuse everything', () => {
+    const rnd = mulberry32(42);
+    for (let i = 0; i < 100; i++) {
+      const registry: CodeDataRecord[] = [];
+      const rec = unwrap(registerCodeData(codeInput({ kind: 'deploy', contentHash: 'h-d' }), registry));
+      pushCode(rec, registry);
+      let state = rec.state ?? 'pending';
+      for (let step = 0; step < 5; step++) {
+        const allowed = DEPLOY_TRANSITIONS[state] as string[];
+        const toState = allowed[Math.floor(rnd() * allowed.length)] ?? 'running';
+        assert.deepEqual(unwrap(updateDeployState({ codeId: rec.codeId, toState, now: NOW + step }, registry)), { codeId: rec.codeId, state: toState });
+        state = toState;
+        assert.equal(registry.find((r) => r.codeId === rec.codeId)?.state, state);
+        if (DEPLOY_TERMINAL_STATES.includes(state)) {
+          assert.equal(refusal(updateDeployState({ codeId: rec.codeId, toState: 'pending', now: NOW }, registry)), 'codedata-terminal-state:' + state);
+          break;
+        }
+        // the only non-terminal state mid-walk is running, and running cannot go back
+        assert.equal(state, 'running');
+        assert.equal(refusal(updateDeployState({ codeId: rec.codeId, toState: 'pending', now: NOW }, registry)), 'codedata-invalid-transition:running:pending');
+      }
+    }
+  });
+});
+
 });
