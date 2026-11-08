@@ -440,7 +440,7 @@ describe('freshness engine (FORGE AI-060)', () => {
     const rand = mulberry32(42);
     for (let c = 0; c < 500; c++) {
       const kind = rand();
-      let input: string | null;
+      let input: string | null | undefined;
       if (kind < 0.05) input = null;
       else if (kind < 0.1) input = '';
       else if (kind < 0.15) input = 'garbage-' + c;
