@@ -1575,3 +1575,28 @@ Final test-repair rounds after the last PROGRESS entry (bdab5e1):
 Doctrine applied throughout: the engines and their oracle sweeps are pinned law; every failure in
 this phase was a test-side error (fixture, timing, or a test contradicting a pinned contract),
 verified against the engine source before each fix. No product code was weakened to force green.
+
+## CO focused verification green (2026-11-08, commit a6ecac7, run #239)
+
+After the full CI went green (68c3622), the CO focused workflow — which runs 29 CO/identity test
+files against a real PostgreSQL 16 service — was still red from before the repair campaign
+(last failure #238, and #237 on bdab5e1 before that). Two rounds closed it:
+
+- 20f9017 — the CO focused regressions step had no annotation-surfacing, so its failures could
+  not be read from the checks page (raw logs require sign-in). Mirrored the ci.yml pattern:
+  the regressions step now tees its output to co-test.log with pipefail, and a failure-only
+  step emits up to 24 grep lines as ::error:: annotations. The yml change itself triggered the
+  workflow and surfaced the real failure for the first time.
+- a6ecac7 — test/postgres.test.ts pinned the single-migration era: the first
+  migratePostgres('kernel') on a blank database was expected to return [1], and the concurrent
+  double-run test expected a flat count of 1. CO-100 legitimately added kernel migration
+  version 2 (offline_sync), so the first run now applies both. Both assertions now derive the
+  expected versions from pgKernelMigrations itself, preserving the pinned contract: every
+  pending migration applies exactly once, in order, the second run applies nothing, concurrent
+  instances never collide, and edited/newer-than-code migrations are still refused.
+
+Result: CO focused verification run #239 (a6ecac7) completed successfully in 37s — the first
+green run of the focused workflow since #219 (2026-11-06) and the first that passes the native
+PostgreSQL regressions alongside the full CI. Both workflows are green on mistral; main remains
+untouched. Next: feature batches from the With-Plans catalogs (AI then TQ), max two features
+per batch, every feature carrying its plan gate.
