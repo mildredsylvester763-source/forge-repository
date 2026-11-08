@@ -74,10 +74,10 @@ describe('subscription item foundation', () => {
       const rows = db.prepare(
         `SELECT item_type, product_id, status, provider FROM subscription_items WHERE user_id = ? ORDER BY CASE item_type WHEN 'base_plan' THEN 0 ELSE 1 END, product_id`,
       ).all('user_legacy') as Array<{ item_type: string; product_id: string; status: string; provider: string }>;
-      assert.deepEqual(rows, [
+      assert.deepEqual(rows.map((row) => ({ ...row })), [
+        { item_type: 'base_plan', product_id: 'pro', status: 'legacy', provider: 'legacy_migration' },
         { item_type: 'engine_pass', product_id: 'creative', status: 'legacy', provider: 'legacy_migration' },
         { item_type: 'engine_pass', product_id: 'vision', status: 'legacy', provider: 'legacy_migration' },
-        { item_type: 'base_plan', product_id: 'pro', status: 'legacy', provider: 'legacy_migration' },
       ]);
     } finally {
       db.close();
