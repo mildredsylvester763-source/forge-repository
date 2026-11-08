@@ -128,7 +128,6 @@ import {
   PostgresTrainingDataStore,
   SqliteTrainingDataStore,
   TrainingDataService,
-  pgTrainingDataMigrations,
   trainingDataMigrations,
   trainingDataRoutes,
   type TrainingDataStore,

@@ -143,10 +143,22 @@ export function planServingScale(input: ScaleInput): Verdict<ScalePlan> {
   const assigned: GpuAssignment[] = sorted.map((g) => ({ gpuId: g.id, replicas: 0 }));
   let gi = 0;
   for (let r = 0; r < replicas; r++) {
-    while (assigned[gi].replicas >= sorted[gi].replicaSlots) {
+    while (true) {
+      const slot = assigned[gi];
+      const source = sorted[gi];
+      if (slot === undefined || source === undefined) {
+        return { ok: false, reason: 'scaling-pool-invariant-violated' };
+      }
+      if (slot.replicas < source.replicaSlots) {
+        break;
+      }
       gi = (gi + 1) % assigned.length;
     }
-    assigned[gi].replicas += 1;
+    const placement = assigned[gi];
+    if (placement === undefined) {
+      return { ok: false, reason: 'scaling-pool-invariant-violated' };
+    }
+    placement.replicas += 1;
     gi = (gi + 1) % assigned.length;
   }
   const projectedUtilization = inFlight > 0 ? r6(Math.min(1, inFlight / (replicas * input.replicaConcurrency))) : 0;

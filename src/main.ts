@@ -14,6 +14,10 @@ import { pgTestQualityMigrations } from './modules/test-quality/index.ts';
 import { pgTestGenerationMigrations } from './modules/test-generation/index.ts';
 import { pgLiveTestingMigrations } from './modules/live-testing/index.ts';
 import { pgWebSearchMigrations } from './modules/web-search/index.ts';
+import { pgWorkspaceRetrievalMigrations } from './modules/workspace-retrieval/index.ts';
+import { pgSearchIntegrityMigrations } from './modules/search-integrity/index.ts';
+import { pgAiTrainingMigrations } from './modules/ai-training/index.ts';
+import { pgTrainingDataMigrations } from './modules/training-data/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -47,6 +51,10 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'test_generation', pgTestGenerationMigrations);
     await migratePostgres(pool, 'live_testing', pgLiveTestingMigrations);
     await migratePostgres(pool, 'web_search', pgWebSearchMigrations);
+    await migratePostgres(pool, 'workspace_retrieval', pgWorkspaceRetrievalMigrations);
+    await migratePostgres(pool, 'search_integrity', pgSearchIntegrityMigrations);
+    await migratePostgres(pool, 'ai_training', pgAiTrainingMigrations);
+    await migratePostgres(pool, 'training_data', pgTrainingDataMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }
 

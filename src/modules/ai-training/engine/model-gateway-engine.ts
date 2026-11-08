@@ -172,7 +172,8 @@ export function planFailoverChain(input: {
     .filter((p) => (health[p.id] ?? 0) >= GATEWAY_UNHEALTHY_THRESHOLD)
     .map((p) => p.id);
   const healthy = ranked.filter((p) => (health[p.id] ?? 0) < GATEWAY_UNHEALTHY_THRESHOLD);
-  if (healthy.length === 0) {
+  const primary = healthy[0];
+  if (primary === undefined) {
     return { ok: false, reason: 'failover-no-healthy-providers' };
   }
   const attempts = Math.max(1, Math.floor(maxRetriesPerProvider));
@@ -182,7 +183,7 @@ export function planFailoverChain(input: {
       chain.push({ providerId: p.id, attempt: a });
     }
   }
-  return { ok: true, value: { chain, unhealthy, primaryId: healthy[0].id } };
+  return { ok: true, value: { chain, unhealthy, primaryId: primary.id } };
 }
 
 // --- AI-050: BYOK identity - the key NEVER leaves this function ---

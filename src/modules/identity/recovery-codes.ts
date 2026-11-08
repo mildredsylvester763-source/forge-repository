@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Clock } from '../../kernel/clock.ts';
 import type { Database } from '../../kernel/sqlite.ts';
-import type { SqlConn, SqlPool } from '../../kernel/sql.ts';
-import { hashDeviceToken } from './trusted-devices.ts';
+import type { SqlPool } from '../../kernel/sql.ts';
 
 export interface RecoveryCodeRecord {
   readonly id: string;

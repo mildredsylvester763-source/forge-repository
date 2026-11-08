@@ -286,6 +286,9 @@ export function planZeroRetentionRoute(input: {
       : a.id < b.id ? -1 : 1,
   );
   const primary = ranked[0];
+  if (primary === undefined) {
+    return { ok: false, reason: 'retention-no-capable-provider:' + need };
+  }
   return {
     ok: true,
     value: {
@@ -388,9 +391,13 @@ export function matchModelCapabilities(input: {
       ? a.costPer1kOut - b.costPer1kOut
       : a.modelId < b.modelId ? -1 : 1,
   );
+  const primary = ranked[0];
+  if (primary === undefined) {
+    return { ok: false, reason: 'capability-no-capable-model:' + need };
+  }
   return {
     ok: true,
-    value: { primaryId: ranked[0].modelId, chain: ranked.map((m) => m.modelId) },
+    value: { primaryId: primary.modelId, chain: ranked.map((m) => m.modelId) },
   };
 }
 

@@ -1194,8 +1194,9 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   async saveModelPin(pin: NewModelPin): Promise<ModelPinRecord> {
     const list = this.modelPinsByUser.get(pin.userId) ?? [];
     const existingIdx = list.findIndex((p) => p.modelId === pin.modelId);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: ModelPinRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: pin.userId,
       modelId: pin.modelId,
       version: pin.version,
@@ -1228,8 +1229,9 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   async saveInstanceReservation(reservation: NewInstanceReservation): Promise<InstanceReservationRecord> {
     const list = this.reservationsByUser.get(reservation.userId) ?? [];
     const existingIdx = list.findIndex((r) => r.modelId === reservation.modelId);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: InstanceReservationRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: reservation.userId,
       modelId: reservation.modelId,
       slots: reservation.slots,
@@ -1286,8 +1288,9 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   async saveGatewayProvider(provider: NewGatewayProvider): Promise<GatewayProviderRecord> {
     const list = this.providersByUser.get(provider.userId) ?? [];
     const existingIdx = list.findIndex((p) => p.providerId === provider.providerId);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: GatewayProviderRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: provider.userId,
       providerId: provider.providerId,
       costPer1kIn: provider.costPer1kIn,
@@ -1295,7 +1298,7 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
       maxTokens: provider.maxTokens,
       retentionDays: provider.retentionDays,
       active: provider.active,
-      consecutiveFailures: existingIdx >= 0 ? list[existingIdx].consecutiveFailures : 0,
+      consecutiveFailures: existing ? existing.consecutiveFailures : 0,
       createdAt: provider.now,
     };
     if (existingIdx >= 0) list[existingIdx] = record;
@@ -1319,15 +1322,19 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
     const list = this.providersByUser.get(userId) ?? [];
     const idx = list.findIndex((p) => p.providerId === providerId);
     if (idx === -1) return null;
-    list[idx] = { ...list[idx], consecutiveFailures };
-    return list[idx];
+    const current = list[idx];
+    if (current === undefined) return null;
+    const updated: GatewayProviderRecord = { ...current, consecutiveFailures };
+    list[idx] = updated;
+    return updated;
   }
 
   async saveByokKey(key: NewByokKey): Promise<ByokKeyRecord> {
     const list = this.byokByUser.get(key.userId) ?? [];
     const existingIdx = list.findIndex((k) => k.providerId === key.providerId);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: ByokKeyRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: key.userId,
       providerId: key.providerId,
       keyFingerprint: key.keyFingerprint,
@@ -1394,8 +1401,9 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   async saveCapabilityMatrix(matrix: NewCapabilityMatrix): Promise<CapabilityMatrixRecord> {
     const list = this.capabilityByUser.get(matrix.userId) ?? [];
     const existingIdx = list.findIndex((m) => m.fingerprint === matrix.fingerprint);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: CapabilityMatrixRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: matrix.userId,
       modelId: matrix.modelId,
       capabilities: [...matrix.capabilities],
@@ -1421,8 +1429,9 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   async saveOutputSchema(schema: NewOutputSchema): Promise<OutputSchemaRecord> {
     const list = this.outputSchemasByUser.get(schema.userId) ?? [];
     const existingIdx = list.findIndex((s) => s.fingerprint === schema.fingerprint);
+    const existing = existingIdx >= 0 ? list[existingIdx] : undefined;
     const record: OutputSchemaRecord = {
-      id: existingIdx >= 0 ? list[existingIdx].id : randomUUID(),
+      id: existing ? existing.id : randomUUID(),
       userId: schema.userId,
       schemaId: schema.schemaId,
       fields: schema.fields,
