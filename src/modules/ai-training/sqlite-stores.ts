@@ -499,6 +499,7 @@ const toMiningRecord = (r: MiningRow): MiningBatchRecord => ({
   count: r.count,
   duplicatesDropped: r.duplicates_dropped,
   createdAt: r.created_at,
+});
 
 const toModelVersionRecord = (r: ModelVersionRow): ModelVersionRecord => ({
   id: r.id,
@@ -654,7 +655,6 @@ const toOutputSchemaRecord = (r: OutputSchemaRow): OutputSchemaRecord => ({
   fields: JSON.parse(r.fields) as unknown,
   fingerprint: r.fingerprint,
   createdAt: r.created_at,
-});
 });
 
 export class SqliteAiTrainingStore implements AiTrainingStore {
