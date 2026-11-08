@@ -26,12 +26,6 @@ export class InMemoryWorkspaceStore implements WorkspaceStore {
     ownerSet.add(workspace.id);
 
     // Add owner as a member
-    const member: WorkspaceMemberRecord = {
-      workspaceId: workspace.id,
-      userId: workspace.ownerId,
-      role: 'owner',
-      joinedAt: workspace.createdAt,
-    };
     await this.addMember(workspace.id, workspace.ownerId, 'owner');
 
     return workspace;
@@ -122,10 +116,10 @@ export class InMemoryWorkspaceStore implements WorkspaceStore {
     const member = this.members.get(key);
     if (!member) return;
 
-    member.role = role;
-    this.members.set(key, member);
-    this.membersByWorkspace.get(workspaceId)?.set(userId, member);
-    this.membersByUser.get(userId)?.set(workspaceId, member);
+    const updated: WorkspaceMemberRecord = { ...member, role };
+    this.members.set(key, updated);
+    this.membersByWorkspace.get(workspaceId)?.set(userId, updated);
+    this.membersByUser.get(userId)?.set(workspaceId, updated);
   }
 
   async findMember(workspaceId: string, userId: string): Promise<WorkspaceMemberRecord | null> {

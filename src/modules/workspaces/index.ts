@@ -22,4 +22,5 @@ export type {
   PublicWorkspaceMember,
 } from './types.ts';
 
-export { generateSlug, generateUniqueSlug, validateSlug, RESERVED_SLUGS, MAX_WORKSPACES_PER_USER } from './slug.ts';
+export { generateSlug, generateUniqueSlug, validateSlug } from './slug.ts';
+export { RESERVED_SLUGS, MAX_WORKSPACES_PER_USER } from './types.ts';

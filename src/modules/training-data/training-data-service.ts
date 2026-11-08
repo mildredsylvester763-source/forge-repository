@@ -478,14 +478,11 @@ export class TrainingDataService {
     const verdict = runRegisterSynthetic(
       {
         provenance: str(dto, 'provenance'),
-        generator:
-          generator === undefined
-            ? undefined
-            : {
-                model: typeof generator.model === 'string' ? generator.model : '',
-                version: typeof generator.version === 'string' ? generator.version : '',
-                seed: typeof generator.seed === 'number' ? generator.seed : NaN,
-              },
+        generator: {
+          model: typeof generator?.model === 'string' ? generator.model : '',
+          version: typeof generator?.version === 'string' ? generator.version : '',
+          seed: typeof generator?.seed === 'number' ? generator.seed : NaN,
+        },
         bases: listOrRaw(dto, 'bases') as string[] | undefined,
         now: this.clock(),
       },
@@ -648,8 +645,8 @@ export class TrainingDataService {
         kind: str(dto, 'kind'),
         contentHash: str(dto, 'contentHash'),
         author: str(dto, 'author'),
-        parentCode: raw(dto, 'parentCode') as string | null | undefined,
-        failingTestId: raw(dto, 'failingTestId') as string | null | undefined,
+        parentCode: (raw(dto, 'parentCode') as string | null | undefined) ?? undefined,
+        failingTestId: (raw(dto, 'failingTestId') as string | null | undefined) ?? undefined,
         now: this.clock(),
       },
       await this.engineCodeData(userId)

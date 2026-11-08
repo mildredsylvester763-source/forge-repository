@@ -87,7 +87,7 @@ export class InMemoryTrustedDeviceStore implements TrustedDeviceStore {
     }
   }
 
-  async revoke(id: string, now: number): Promise<void> {
+  async revoke(id: string, _now: number): Promise<void> {
     const record = this.records.get(id);
     if (record) {
       this.records.delete(id);
@@ -99,7 +99,7 @@ export class InMemoryTrustedDeviceStore implements TrustedDeviceStore {
     }
   }
 
-  async revokeAllForUser(userId: string, now: number): Promise<number> {
+  async revokeAllForUser(userId: string, _now: number): Promise<number> {
     const userMap = this.byUser.get(userId);
     if (!userMap) return 0;
     const ids = Array.from(userMap.keys());

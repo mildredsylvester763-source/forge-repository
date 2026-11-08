@@ -9,7 +9,7 @@ import type { Migration } from '../../kernel/sqlite.ts';
 export const workspaceMigrations: Migration[] = [
   {
     version: 1,
-    description: 'Create workspaces and workspace_members tables',
+    name: 'workspaces_core',
     sql: `
       CREATE TABLE IF NOT EXISTS workspaces (
         id TEXT PRIMARY KEY,
