@@ -101,8 +101,8 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-byok@forge.test');
       const denied = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
       assert.equal(denied.status, 402);
-      assert.equal(await errorCode(denied), 'plan_required');
-      const body = (await denied.json()) as { error: { details: Record<string, string> } };
+      const body = (await denied.json()) as { error: { code: string; details: Record<string, string> } };
+      assert.equal(body.error.code, 'plan_required');
       assert.deepEqual(body.error.details, { feature: 'AI-050', gate: 'plus', plan: 'free', reason: 'plan_too_low' });
       await h.app.plans.setPlan(user.id, 'plus');
       const allowed = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
