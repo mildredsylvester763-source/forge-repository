@@ -106,6 +106,6 @@ jobs:
             test/identity-service.test.ts \
             test/co-006-session-manager.test.ts \
             test/co-007-native-token.test.ts \
-            test/co-100-offline-sync.test.ts \\
-            test/co-100-offline-sync-postgres.test.ts \\
+            test/co-100-offline-sync.test.ts \
+            test/co-100-offline-sync-postgres.test.ts \
             test/postgres.test.ts

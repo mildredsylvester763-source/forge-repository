@@ -85,7 +85,7 @@ describe('sign-in, session and sign-out', () => {
     assert.equal((await h.get('/v1/auth/me', { cookie })).status, 401);
   });
 
-  it('rolls back sign-out when its audit event cannot be committed', async () => {
+  it('rolls back sign-out when its audit event cannot be committed', { skip: process.env.FORGE_TEST_STORAGE === 'postgres' ? 'SQLite trigger injection does not apply to the PostgreSQL run; CO-065 covers the PostgreSQL rollback' : false }, async () => {
     const sqlite = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const created = await sqlite.post('/v1/auth/register', { email: 'atomic-signout@example.com', password: GOOD_PASSWORD });
