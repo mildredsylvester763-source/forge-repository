@@ -560,7 +560,6 @@ describe('model lifecycle (FORGE AI-033..056) functional', () => {
       assert.equal(cheapBody.consecutiveFailures, 0);
       assert.equal(cheapBody.createdAt, NOW);
       assert.ok(typeof cheapBody.id === 'string' && cheapBody.id.length > 0);
-      const uid = cheapBody.userId;
 
       const pricey = await h.post('/v1/ai-training/gateway/providers', { providerId: 'p-pricey', costPer1kIn: 0.5, costPer1kOut: 1, maxTokens: 16000, retentionDays: 30, active: true }, { cookie });
       assert.equal(pricey.status, 201);
@@ -962,7 +961,7 @@ describe('model lifecycle (FORGE AI-033..056) functional', () => {
       const cookieA = await signedInUser(h, 'lifecycle-a@forge.test');
       const cookieB = await signedInUser(h, 'lifecycle-b@forge.test');
 
-      const registered = await h.post('/v1/ai-training/models/versions', { modelId: 'ink-flow', owners: ['ada'], weightsFingerprint: 'wf_9f2a', lineage: { datasetId: 'ds_1' } }, { cookieA });
+      const registered = await h.post('/v1/ai-training/models/versions', { modelId: 'ink-flow', owners: ['ada'], weightsFingerprint: 'wf_9f2a', lineage: { datasetId: 'ds_1' } }, { cookie: cookieA });
       assert.equal(registered.status, 201);
       const v1 = (await registered.json()) as VersionRecord;
 
@@ -973,106 +972,106 @@ describe('model lifecycle (FORGE AI-033..056) functional', () => {
         evalScores: [{ suiteId: 'suit_ink', score: 0.88 }, { suiteId: 'suit_safe', score: 0.91 }],
         safetyPassRate: 0.97,
         limitations: ['No photorealism.', 'English prompts only.'],
-      }, { cookieA });
-      await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'internal', evalScore: 0.82 }, { cookieA });
-      await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'beta', evalScore: 0.85 }, { cookieA });
-      const pkg = await h.post('/v1/ai-training/access/packages', { modelId: 'ink-flow', versionId: 1, licenseTerms: 'Internal evaluation license' }, { cookieA });
+      }, { cookie: cookieA });
+      await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'internal', evalScore: 0.82 }, { cookie: cookieA });
+      await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'beta', evalScore: 0.85 }, { cookie: cookieA });
+      const pkg = await h.post('/v1/ai-training/access/packages', { modelId: 'ink-flow', versionId: 1, licenseTerms: 'Internal evaluation license' }, { cookie: cookieA });
       assert.equal(pkg.status, 201);
 
-      await h.post('/v1/ai-training/gateway/providers', { providerId: 'p-cheap', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 8000, retentionDays: 0, active: true }, { cookieA });
-      await h.post('/v1/ai-training/ops/streams/start', { streamId: 'st_a' }, { cookieA });
-      await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 0, content: 'Ink' }, { cookieA });
-      await h.post('/v1/ai-training/ops/cache/admit', { modelId: 'ink-flow', prompt: 'p one', promptTokens: 5, outputTokens: 6 }, { cookieA });
-      await h.post('/v1/ai-training/access/pin', { modelId: 'ink-flow', versionId: 1, modelTier: 'pro', planTiers: ['pro'] }, { cookieA });
-      await h.post('/v1/ai-training/gateway/capabilities', { modelId: 'ink-flow', capabilities: ['code'], maxContextTokens: 8000, costPer1kIn: 0.1, costPer1kOut: 0.2, active: true }, { cookieA });
-      await h.post('/v1/ai-training/gateway/logs', { providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'a log entry', response: 'ok' }, { cookieA });
-      const byokA = await h.post('/v1/ai-training/gateway/byok', { providerId: 'openai', key: 'sk-live-9f2a77' }, { cookieA });
+      await h.post('/v1/ai-training/gateway/providers', { providerId: 'p-cheap', costPer1kIn: 0.1, costPer1kOut: 0.2, maxTokens: 8000, retentionDays: 0, active: true }, { cookie: cookieA });
+      await h.post('/v1/ai-training/ops/streams/start', { streamId: 'st_a' }, { cookie: cookieA });
+      await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 0, content: 'Ink' }, { cookie: cookieA });
+      await h.post('/v1/ai-training/ops/cache/admit', { modelId: 'ink-flow', prompt: 'p one', promptTokens: 5, outputTokens: 6 }, { cookie: cookieA });
+      await h.post('/v1/ai-training/access/pin', { modelId: 'ink-flow', versionId: 1, modelTier: 'pro', planTiers: ['pro'] }, { cookie: cookieA });
+      await h.post('/v1/ai-training/gateway/capabilities', { modelId: 'ink-flow', capabilities: ['code'], maxContextTokens: 8000, costPer1kIn: 0.1, costPer1kOut: 0.2, active: true }, { cookie: cookieA });
+      await h.post('/v1/ai-training/gateway/logs', { providerId: 'p-cheap', modelId: 'ink-flow', prompt: 'a log entry', response: 'ok' }, { cookie: cookieA });
+      const byokA = await h.post('/v1/ai-training/gateway/byok', { providerId: 'openai', key: 'sk-live-9f2a77' }, { cookie: cookieA });
       assert.equal(byokA.status, 201);
 
-      const bList = await h.post('/v1/ai-training/models/versions/list', { modelId: 'ink-flow' }, { cookieB });
+      const bList = await h.post('/v1/ai-training/models/versions/list', { modelId: 'ink-flow' }, { cookie: cookieB });
       assert.equal(bList.status, 200);
       const bListBody = (await bList.json()) as { data: VersionRecord[]; total: number };
       assert.deepEqual([bListBody.total, bListBody.data.length], [0, 0]);
 
-      const bCard = await h.post('/v1/ai-training/models/cards', { modelId: 'ink-flow', version: 1, intendedUse: 'x', evalScores: [{ suiteId: 's', score: 0.9 }] }, { cookieB });
+      const bCard = await h.post('/v1/ai-training/models/cards', { modelId: 'ink-flow', version: 1, intendedUse: 'x', evalScores: [{ suiteId: 's', score: 0.9 }] }, { cookie: cookieB });
       assert.equal(bCard.status, 404);
       assert.equal(await errorCode(bCard), 'model-version-not-found:ink-flow:1');
 
-      const bPromote = await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'internal', evalScore: 0.9 }, { cookieB });
+      const bPromote = await h.post('/v1/ai-training/models/promote', { modelId: 'ink-flow', version: 1, to: 'internal', evalScore: 0.9 }, { cookie: cookieB });
       assert.equal(bPromote.status, 404);
       assert.equal(await errorCode(bPromote), 'model-version-not-found:ink-flow:1');
 
-      const bRoute = await h.post('/v1/ai-training/gateway/route', { promptTokens: 100, outputTokens: 100 }, { cookieB });
+      const bRoute = await h.post('/v1/ai-training/gateway/route', { promptTokens: 100, outputTokens: 100 }, { cookie: cookieB });
       assert.equal(bRoute.status, 400);
       assert.equal(await errorCode(bRoute), 'gateway-no-active-providers');
 
-      const bProviders = await h.post('/v1/ai-training/gateway/providers/list', {}, { cookieB });
+      const bProviders = await h.post('/v1/ai-training/gateway/providers/list', {}, { cookie: cookieB });
       assert.equal(bProviders.status, 200);
       const bProvidersBody = (await bProviders.json()) as { total: number };
       assert.equal(bProvidersBody.total, 0);
 
-      const bAccounting = await h.post('/v1/ai-training/gateway/accounting', { providerId: 'p-cheap' }, { cookieB });
+      const bAccounting = await h.post('/v1/ai-training/gateway/accounting', { providerId: 'p-cheap' }, { cookie: cookieB });
       assert.equal(bAccounting.status, 404);
       assert.equal(await errorCode(bAccounting), 'provider-not-found:p-cheap');
 
-      const bStreamEvent = await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 1, content: 'x' }, { cookieB });
+      const bStreamEvent = await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 1, content: 'x' }, { cookie: cookieB });
       assert.equal(bStreamEvent.status, 404);
       assert.equal(await errorCode(bStreamEvent), 'stream-not-found:st_a');
 
-      const bStreamResume = await h.post('/v1/ai-training/ops/streams/resume', { streamId: 'st_a', lastIndex: 0 }, { cookieB });
+      const bStreamResume = await h.post('/v1/ai-training/ops/streams/resume', { streamId: 'st_a', lastIndex: 0 }, { cookie: cookieB });
       assert.equal(bStreamResume.status, 404);
       assert.equal(await errorCode(bStreamResume), 'stream-not-found:st_a');
 
-      const bCacheMiss = await h.post('/v1/ai-training/ops/cache/lookup', { modelId: 'ink-flow', prompt: 'p one' }, { cookieB });
+      const bCacheMiss = await h.post('/v1/ai-training/ops/cache/lookup', { modelId: 'ink-flow', prompt: 'p one' }, { cookie: cookieB });
       assert.equal(bCacheMiss.status, 200);
       assert.deepEqual(await bCacheMiss.json(), { modelId: 'ink-flow', outcome: 'miss', entryId: null, reusedTokens: 0, savedTokens: 0 });
 
-      const bCacheAdmit = await h.post('/v1/ai-training/ops/cache/admit', { modelId: 'ink-flow', prompt: 'p one', promptTokens: 5, outputTokens: 6 }, { cookieB });
+      const bCacheAdmit = await h.post('/v1/ai-training/ops/cache/admit', { modelId: 'ink-flow', prompt: 'p one', promptTokens: 5, outputTokens: 6 }, { cookie: cookieB });
       assert.equal(bCacheAdmit.status, 200);
-      const bCacheHit = await h.post('/v1/ai-training/ops/cache/lookup', { modelId: 'ink-flow', prompt: 'p one' }, { cookieB });
+      const bCacheHit = await h.post('/v1/ai-training/ops/cache/lookup', { modelId: 'ink-flow', prompt: 'p one' }, { cookie: cookieB });
       assert.equal(bCacheHit.status, 200);
       assert.equal(((await bCacheHit.json()) as { outcome: string }).outcome, 'exact');
 
-      const bPin = await h.post('/v1/ai-training/access/pin', { modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'] }, { cookieB });
+      const bPin = await h.post('/v1/ai-training/access/pin', { modelId: 'ink-flow', modelTier: 'pro', planTiers: ['pro'] }, { cookie: cookieB });
       assert.equal(bPin.status, 400);
       assert.equal(await errorCode(bPin), 'pin-no-versions:ink-flow');
 
-      const bMatch = await h.post('/v1/ai-training/gateway/capabilities/match', { required: ['code'], promptTokens: 1, outputTokens: 1 }, { cookieB });
+      const bMatch = await h.post('/v1/ai-training/gateway/capabilities/match', { required: ['code'], promptTokens: 1, outputTokens: 1 }, { cookie: cookieB });
       assert.equal(bMatch.status, 400);
       assert.equal(await errorCode(bMatch), 'capability-no-models');
 
-      const bLogs = await h.post('/v1/ai-training/gateway/logs/list', { providerId: 'p-cheap' }, { cookieB });
+      const bLogs = await h.post('/v1/ai-training/gateway/logs/list', { providerId: 'p-cheap' }, { cookie: cookieB });
       assert.equal(bLogs.status, 200);
       const bLogsBody = (await bLogs.json()) as { total: number };
       assert.equal(bLogsBody.total, 0);
 
-      const bResolve = await h.post('/v1/ai-training/access/resolve', { modelId: 'ink-flow', fallbackVersionId: 3 }, { cookieB });
+      const bResolve = await h.post('/v1/ai-training/access/resolve', { modelId: 'ink-flow', fallbackVersionId: 3 }, { cookie: cookieB });
       assert.equal(bResolve.status, 200);
       const bResolveBody = (await bResolve.json()) as { versionId: number; source: string };
       assert.deepEqual([bResolveBody.versionId, bResolveBody.source], [3, 'fallback']);
 
-      const bVerify = await h.post('/v1/ai-training/access/packages/verify', { fingerprint: 'xpk_1bdef33c', weightsFingerprint: 'wf_9f2a', qualityScore: 0.9, qualityGate: 0.8, licenseAccepted: true }, { cookieB });
+      const bVerify = await h.post('/v1/ai-training/access/packages/verify', { fingerprint: 'xpk_1bdef33c', weightsFingerprint: 'wf_9f2a', qualityScore: 0.9, qualityGate: 0.8, licenseAccepted: true }, { cookie: cookieB });
       assert.equal(bVerify.status, 404);
       assert.equal(await errorCode(bVerify), 'package-not-found:xpk_1bdef33c');
 
-      const byokB = await h.post('/v1/ai-training/gateway/byok', { providerId: 'openai', key: 'sk-live-9f2a77' }, { cookieB });
+      const byokB = await h.post('/v1/ai-training/gateway/byok', { providerId: 'openai', key: 'sk-live-9f2a77' }, { cookie: cookieB });
       assert.equal(byokB.status, 201);
       const byokBBody = (await byokB.json()) as { keyFingerprint: string };
       assert.equal(byokBBody.keyFingerprint, 'byok_d9df8143');
       assert.equal(JSON.stringify(byokBBody).includes('sk-live-9f2a77'), false);
 
-      const aList = await h.post('/v1/ai-training/models/versions/list', { modelId: 'ink-flow' }, { cookieA });
+      const aList = await h.post('/v1/ai-training/models/versions/list', { modelId: 'ink-flow' }, { cookie: cookieA });
       assert.equal(aList.status, 200);
       const aListBody = (await aList.json()) as { data: VersionRecord[]; total: number };
       assert.equal(aListBody.total, 1);
       assert.equal(aListBody.data[0]?.fingerprint, v1.fingerprint);
 
-      const aResolve = await h.post('/v1/ai-training/access/resolve', { modelId: 'ink-flow' }, { cookieA });
+      const aResolve = await h.post('/v1/ai-training/access/resolve', { modelId: 'ink-flow' }, { cookie: cookieA });
       assert.equal(aResolve.status, 200);
       const aResolveBody = (await aResolve.json()) as { versionId: number; source: string };
       assert.deepEqual([aResolveBody.versionId, aResolveBody.source], [1, 'pinned']);
 
-      const aStream = await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 1, content: ' still' }, { cookieA });
+      const aStream = await h.post('/v1/ai-training/ops/streams/event', { streamId: 'st_a', type: 'chunk', index: 1, content: ' still' }, { cookie: cookieA });
       assert.equal(aStream.status, 200);
       const aStreamBody = (await aStream.json()) as { chunks: string[] };
       assert.deepEqual(aStreamBody.chunks, ['Ink', ' still']);

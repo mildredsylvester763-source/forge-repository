@@ -150,8 +150,8 @@ describe('model registry, cards and staged promotion (FORGE AI-033..035)', () =>
     assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'experimental', to: 'stable', evidence: { hasCard: true, evalScore: 0.9, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-illegal:experimental->stable' });
     assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'beta', to: 'experimental', evidence: { hasCard: true, evalScore: 0.9 } }), { ok: false, reason: 'promotion-illegal:beta->experimental' });
     assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'internal', to: 'internal', evidence: { hasCard: true, evalScore: 0.9 } }), { ok: false, reason: 'promotion-illegal:internal->internal' });
-    assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'gamma', to: 'stable', evidence: { hasCard: true, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-unknown-stage:gamma' });
-    assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'beta', to: 'gamma', evidence: { hasCard: true, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-unknown-stage:gamma' });
+    assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'gamma' as never, to: 'stable', evidence: { hasCard: true, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-unknown-stage:gamma' });
+    assert.deepEqual(promoteModel({ modelId: 'ink-flow', version: 1, from: 'beta', to: 'gamma' as never, evidence: { hasCard: true, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-unknown-stage:gamma' });
     assert.deepEqual(promoteModel({ modelId: '', version: 1, from: 'beta', to: 'stable', evidence: { hasCard: true, safetyPassRate: 0.99 } }), { ok: false, reason: 'promotion-unknown-model:' });
   });
 
@@ -226,7 +226,7 @@ describe('model registry, cards and staged promotion (FORGE AI-033..035)', () =>
       const evalScore = rand() < 0.8 ? Math.round(rand() * 100) / 100 : undefined;
       const safetyPassRate = rand() < 0.6 ? Math.round(rand() * 100) / 100 : undefined;
       const version = 1 + Math.floor(rand() * 3);
-      const actual = promoteModel({ modelId: 'ink-flow', version, from, to, evidence: { hasCard, evalScore, safetyPassRate } });
+      const actual = promoteModel({ modelId: 'ink-flow', version, from: from as never, to: to as never, evidence: { hasCard, evalScore, safetyPassRate } });
 
       let expected: Record<string, unknown>;
       if (!ladder.includes(from)) {
@@ -1558,7 +1558,7 @@ describe('gateway operations: redaction, retention, capabilities, tool calls, sc
     assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '[1,2]' }), { ok: false, reason: 'toolcall-invalid-arguments' });
     assert.deepEqual(normalizeToolCall({ providerId: 'openai', name: 'draw', argumentsJson: '"str"' }), { ok: false, reason: 'toolcall-invalid-arguments' });
     assert.deepEqual(normalizeToolCall({ providerId: 'anthropic', name: 'draw' }), { ok: false, reason: 'toolcall-missing-arguments' });
-    assert.deepEqual(normalizeToolCall({ providerId: 'anthropic', name: 'draw', args: [1, 2] }), { ok: false, reason: 'toolcall-missing-arguments' });
+    assert.deepEqual(normalizeToolCall({ providerId: 'anthropic', name: 'draw', args: [1, 2] as never }), { ok: false, reason: 'toolcall-missing-arguments' });
   });
 
   it('registers output schemas and validates structured outputs field by field', () => {
@@ -1583,7 +1583,7 @@ describe('gateway operations: redaction, retention, capabilities, tool calls, sc
     assert.deepEqual(registerOutputSchema({ schemaId: '', fields: [{ name: 'a', type: 'string' }], existing: [] }), { ok: false, reason: 'schema-no-id' });
     assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [], existing: [] }), { ok: false, reason: 'schema-no-fields' });
     assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [{ name: '', type: 'string' }], existing: [] }), { ok: false, reason: 'schema-field-no-name' });
-    assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [{ name: 'a', type: 'text' }], existing: [] }), { ok: false, reason: 'schema-unknown-type:text' });
+    assert.deepEqual(registerOutputSchema({ schemaId: 's', fields: [{ name: 'a', type: 'text' as never }], existing: [] }), { ok: false, reason: 'schema-unknown-type:text' });
 
     const fields = [
       { name: 'title', type: 'string' as const },
@@ -1975,7 +1975,7 @@ describe('workspace model access: pinning, dedicated instances, on-prem packages
     assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'experimental', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-not-servable:experimental' });
     assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: '', hasCard: true, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-weights' });
     assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: false, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-card:ink-flow' });
-    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-card:ink-flow' });
+    assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: false, licenseTerms: 'CC-BY-4.0' }), { ok: false, reason: 'package-no-card:ink-flow' });
     assert.deepEqual(buildOnPremPackage({ modelId: 'ink-flow', versionId: 2, stage: 'stable', weightsFingerprint: 'wf_b31c', hasCard: true, licenseTerms: '' }), { ok: false, reason: 'package-no-license' });
   });
 
