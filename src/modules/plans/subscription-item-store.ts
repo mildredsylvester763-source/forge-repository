@@ -1,9 +1,11 @@
 import type { CreateSubscriptionItem, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
+import { validateSubscriptionItemInput } from './subscription-items.ts';
 
 export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   private readonly items = new Map<string, SubscriptionItem>();
 
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
+    validateSubscriptionItemInput(input);
     if (this.items.has(input.id)) throw new Error('subscription item already exists');
     this.assertUniqueActiveItem(input.userId, input.itemType, input.productId, input.status);
     const item: SubscriptionItem = {
