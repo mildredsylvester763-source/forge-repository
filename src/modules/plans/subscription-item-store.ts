@@ -58,6 +58,19 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
       if (mutation.kind === 'activate') {
         const input = mutation.item;
         if (next.has(input.id)) throw new Error('subscription item already exists');
+        if (input.itemType === 'base_plan') {
+          for (const current of next.values()) {
+            if (current.userId === input.userId && current.itemType === 'base_plan' &&
+              ['trialing', 'active', 'grace', 'legacy'].includes(current.status)) {
+              next.set(current.id, {
+                ...current,
+                status: 'cancelled',
+                lastProviderEventAt: event.occurredAt,
+                updatedAt: event.receivedAt,
+              });
+            }
+          }
+        }
         this.assertUniqueActiveItem(next, input.userId, input.itemType, input.itemCode);
         const item: SubscriptionItem = {
           id: input.id,
