@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { buildApp, type ForgeApp } from '../src/app.ts';
@@ -5,6 +6,7 @@ import { loadConfig, type ForgeConfig } from '../src/config.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { makeTestPool, type TestPool } from './pg-helpers.ts';
 import type { BreachChecker, BreachResult, ThrottleConfig } from '../src/modules/identity/index.ts';
+import { verifyAndParsePaystackEvent, type PlanId, type PaystackSubscriptionMutation } from '../src/modules/plans/index.ts';
 
 export const ORIGIN = 'https://app.forge.test';
 export const GOOD_PASSWORD = 'violet-lantern-orbit-42';
@@ -76,4 +78,64 @@ export async function startHarness(
 export function sessionCookie(res: Response): string {
   const raw = res.headers.getSetCookie()[0] ?? '';
   return raw.split(';')[0] ?? '';
+}
+
+
+let testPaymentSequence = 0;
+const TEST_PAYSTACK_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
+const TEST_PAYSTACK_KEY_ID = 'whk_testkey1';
+
+/**
+ * Grants test entitlements through the same verified provider-event path used
+ * by billing. Tests must not bypass the payment boundary with setPlan().
+ */
+export async function setPlanForTest(
+  harness: Harness,
+  userId: string,
+  plan: PlanId,
+  enginePasses: readonly string[] = [],
+): Promise<void> {
+  testPaymentSequence += 1;
+  const now = harness.clock.now;
+  const transactionId = `forge_test_${testPaymentSequence}`;
+  const rawBody = Buffer.from(JSON.stringify({
+    event: 'charge.success',
+    data: { id: transactionId, created_at: new Date(now).toISOString() },
+  }), 'utf8');
+  const timestamp = Math.floor(now / 1000);
+  const digest = createHmac('sha512', TEST_PAYSTACK_SECRET)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+  const event = verifyAndParsePaystackEvent({
+    rawBody,
+    signatureHeader: `t=${timestamp},v1=${TEST_PAYSTACK_KEY_ID}:${digest}`,
+    secrets: [{ keyId: TEST_PAYSTACK_KEY_ID, secret: TEST_PAYSTACK_SECRET }],
+    nowMs: now,
+  });
+  if (!event) throw new Error('test payment event failed signature verification');
+
+  const mutations: PaystackSubscriptionMutation[] = [{
+    kind: 'activate',
+    item: {
+      id: `forge_test_base_${testPaymentSequence}`,
+      userId,
+      itemType: 'base_plan',
+      itemCode: plan,
+      providerSubscriptionId: `forge_test_subscription_${testPaymentSequence}`,
+    },
+  }];
+  for (const engine of enginePasses) {
+    mutations.push({
+      kind: 'activate',
+      item: {
+        id: `forge_test_pass_${testPaymentSequence}_${engine}`,
+        userId,
+        itemType: 'engine_pass',
+        itemCode: engine,
+        providerSubscriptionId: `forge_test_subscription_${testPaymentSequence}_${engine}`,
+      },
+    });
+  }
+  await harness.app.plans.applyPaystackEvent(event, mutations);
 }
