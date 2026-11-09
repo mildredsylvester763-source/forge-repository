@@ -4,15 +4,24 @@ import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
 const ACTIVE_STATES: readonly SubscriptionItem['status'][] = ['trialing', 'active', 'grace', 'legacy'];
 
+interface CheckoutRecord {
+  readonly userId: string;
+  readonly status: 'pending' | 'completed' | 'cancelled' | 'expired';
+  readonly createdAt: number;
+  readonly processedAt: number | null;
+}
+
 export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   private items = new Map<string, SubscriptionItem>();
   private readonly eventHashes = new Map<string, string>();
+  private checkouts = new Map<string, CheckoutRecord>();
 
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
     validateSubscriptionItemInput(input);
     if (this.items.has(input.id)) throw new Error('subscription item already exists');
-    if ([...this.items.values()].some((item) => item.checkoutReference === input.checkoutReference)) {
-      throw new Error('checkout reference already exists');
+    const checkout = this.checkouts.get(input.checkoutReference);
+    if (checkout && (checkout.userId !== input.userId || checkout.status !== 'pending')) {
+      throw new Error('checkout reference belongs to another user or is no longer pending');
     }
     const item: SubscriptionItem = {
       id: input.id,
@@ -32,6 +41,14 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
       createdAt: input.now,
       updatedAt: input.now,
     };
+    if (!checkout) {
+      this.checkouts.set(input.checkoutReference, {
+        userId: input.userId,
+        status: 'pending',
+        createdAt: input.now,
+        processedAt: null,
+      });
+    }
     this.items.set(item.id, item);
     return item;
   }
@@ -40,10 +57,13 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
     return this.items.get(id) ?? null;
   }
 
-  async findPendingByCheckoutReference(reference: string): Promise<SubscriptionItem | null> {
-    return [...this.items.values()].find(
-      (item) => item.provider === 'paystack' && item.checkoutReference === reference && item.status === 'pending',
-    ) ?? null;
+  async listPendingByCheckoutReference(reference: string): Promise<SubscriptionItem[]> {
+    const checkout = this.checkouts.get(reference);
+    if (!checkout || checkout.status !== 'pending') return [];
+    return [...this.items.values()]
+      .filter((item) => item.provider === 'paystack' && item.checkoutReference === reference &&
+        item.userId === checkout.userId && item.status === 'pending')
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
   async listByUser(userId: string): Promise<SubscriptionItem[]> {
@@ -65,15 +85,20 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
 
     // Build a complete next state before committing either records or the receipt.
     const next = new Map(this.items);
+    const nextCheckouts = new Map(this.checkouts);
+    let activatedReference: string | null = null;
     for (const mutation of mutations) {
       validatePaystackMutation(mutation);
       if (mutation.kind === 'activate') {
         if (!event.reference) throw new Error('verified payment event has no checkout reference');
+        const checkout = nextCheckouts.get(event.reference);
         const pending = next.get(mutation.item.id);
-        if (!pending || pending.status !== 'pending' || pending.provider !== 'paystack' ||
-          pending.checkoutReference !== event.reference) {
+        if (!checkout || checkout.status !== 'pending' || !pending || pending.status !== 'pending' ||
+          pending.provider !== 'paystack' || pending.checkoutReference !== event.reference ||
+          checkout.userId !== pending.userId) {
           throw new Error('payment event does not match a pending checkout item');
         }
+        activatedReference = event.reference;
 
         if (pending.itemType === 'base_plan') {
           for (const current of next.values()) {
@@ -130,7 +155,17 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
       }
     }
 
+    if (activatedReference !== null) {
+      const checkout = nextCheckouts.get(activatedReference);
+      if (!checkout || checkout.status !== 'pending') throw new Error('checkout is not pending');
+      nextCheckouts.set(activatedReference, {
+        ...checkout,
+        status: 'completed',
+        processedAt: event.receivedAt,
+      });
+    }
     this.items = next;
+    this.checkouts = nextCheckouts;
     this.eventHashes.set(eventKey, event.payloadHash);
     return { status: 'processed' };
   }
