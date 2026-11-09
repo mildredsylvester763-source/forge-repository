@@ -93,6 +93,14 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
         validatePaystackMutation(mutation);
         if (mutation.kind === 'activate') {
           const item = mutation.item;
+          if (item.itemType === 'base_plan') {
+            await conn.query(`
+              UPDATE subscription_items
+              SET status = 'cancelled', last_provider_event_at = $1, updated_at = $2
+              WHERE user_id = $3 AND item_type = 'base_plan'
+                AND status IN ('trialing', 'active', 'grace', 'legacy')
+            `, [event.occurredAt, event.receivedAt, item.userId]);
+          }
           await conn.query(`
             INSERT INTO subscription_items (
               id, user_id, item_type, item_code, status, provider,
