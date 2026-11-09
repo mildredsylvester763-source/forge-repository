@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
-import { verifyAndParsePaystackEvent, type PlanId } from '../src/modules/plans/index.ts';
+import { verifyAndParsePaystackEvent, type PaystackSubscriptionMutation, type PlanId } from '../src/modules/plans/index.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
@@ -26,7 +26,7 @@ async function purchasePlan(
   const transactionId = `plans_test_${paymentSequence}`;
   const rawBody = Buffer.from(JSON.stringify({
     event: 'charge.success',
-    data: { id: transactionId, created_at: new Date(now).toISOString() },
+    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
   }), 'utf8');
   const timestamp = Math.floor(now / 1000);
   const digest = createHmac('sha512', PAYSTACK_TEST_SECRET)
@@ -41,28 +41,35 @@ async function purchasePlan(
   });
   if (!event) throw new Error('test payment event should verify');
 
-  await h.app.plans.applyPaystackEvent(event, [
-    {
+  const baseId = `base_${paymentSequence}`;
+  await h.app.subscriptionItems.create({
+    id: baseId,
+    userId,
+    itemType: 'base_plan',
+    itemCode: plan,
+    checkoutReference: transactionId,
+    now,
+  });
+  const mutations: PaystackSubscriptionMutation[] = [{
+    kind: 'activate',
+    item: { id: baseId, providerSubscriptionId: `SUB_${paymentSequence}` },
+  }];
+  for (const engine of enginePasses) {
+    const itemId = `pass_${paymentSequence}_${engine}`;
+    await h.app.subscriptionItems.create({
+      id: itemId,
+      userId,
+      itemType: 'engine_pass',
+      itemCode: engine,
+      checkoutReference: transactionId,
+      now,
+    });
+    mutations.push({
       kind: 'activate',
-      item: {
-        id: `base_${paymentSequence}`,
-        userId,
-        itemType: 'base_plan',
-        itemCode: plan,
-        providerSubscriptionId: `SUB_${paymentSequence}`,
-      },
-    },
-    ...enginePasses.map((engine) => ({
-      kind: 'activate' as const,
-      item: {
-        id: `pass_${paymentSequence}_${engine}`,
-        userId,
-        itemType: 'engine_pass' as const,
-        itemCode: engine,
-        providerSubscriptionId: `SUB_${paymentSequence}_${engine}`,
-      },
-    })),
-  ]);
+      item: { id: itemId, providerSubscriptionId: `SUB_${paymentSequence}_${engine}` },
+    });
+  }
+  await h.app.plans.applyPaystackEvent(event, mutations);
 }
 
 async function registerAndSetPlan(h: Harness, email: string, plan: PlanId, enginePasses: readonly string[] = []): Promise<TestUser> {
@@ -248,27 +255,14 @@ describe('plans (PLAN GATE LAW)', () => {
     const h = await startHarness();
     try {
       const user = await freeUser(h, 'plans-event@forge.test');
-      const invalidNow = Date.now();
-      const invalidRaw = Buffer.from(JSON.stringify({
-        event: 'charge.success',
-        data: { id: 'plans_invalid', created_at: new Date(invalidNow).toISOString() },
-      }));
-      const invalidTs = Math.floor(invalidNow / 1000);
-      const invalidDigest = createHmac('sha512', PAYSTACK_TEST_SECRET)
-        .update(`${invalidTs}.`)
-        .update(invalidRaw)
-        .digest('hex');
-      const invalidEvent = verifyAndParsePaystackEvent({
-        rawBody: invalidRaw,
-        signatureHeader: `t=${invalidTs},v1=${PAYSTACK_TEST_KEY_ID}:${invalidDigest}`,
-        secrets: [{ keyId: PAYSTACK_TEST_KEY_ID, secret: PAYSTACK_TEST_SECRET }],
-        nowMs: invalidNow,
-      });
-      assert.ok(invalidEvent);
-      await assert.rejects(h.app.plans.applyPaystackEvent(invalidEvent, [{
-        kind: 'activate',
-        item: { id: 'invalid_plan', userId: user.id, itemType: 'base_plan', itemCode: 'diamond' },
-      }]), /unknown base plan code/);
+      await assert.rejects(h.app.subscriptionItems.create({
+        id: 'invalid_plan',
+        userId: user.id,
+        itemType: 'base_plan',
+        itemCode: 'diamond',
+        checkoutReference: 'invalid-plan-checkout',
+        now: Date.now(),
+      }), /unknown base plan code/);
       assert.equal((await h.app.plans.getPlan(user.id)).plan, 'free');
 
       await purchasePlan(h, user.id, 'pro');
