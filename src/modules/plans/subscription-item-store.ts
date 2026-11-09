@@ -1,5 +1,5 @@
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackChargeForCheckout, validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
 const ACTIVE_STATES: readonly SubscriptionItem['status'][] = ['trialing', 'active', 'grace', 'legacy'];
@@ -9,6 +9,8 @@ interface CheckoutRecord {
   readonly status: 'pending' | 'completed' | 'cancelled' | 'expired';
   readonly createdAt: number;
   readonly processedAt: number | null;
+  readonly expectedAmountMinor: number;
+  readonly currency: string;
 }
 
 export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
@@ -20,7 +22,8 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
     validateSubscriptionItemInput(input);
     if (this.items.has(input.id)) throw new Error('subscription item already exists');
     const checkout = this.checkouts.get(input.checkoutReference);
-    if (checkout && (checkout.userId !== input.userId || checkout.status !== 'pending')) {
+    if (checkout && (checkout.userId !== input.userId || checkout.status !== 'pending' ||
+      checkout.expectedAmountMinor !== input.expectedAmountMinor || checkout.currency !== input.currency)) {
       throw new Error('checkout reference belongs to another user or is no longer pending');
     }
     const item: SubscriptionItem = {
@@ -47,6 +50,8 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
         status: 'pending',
         createdAt: input.now,
         processedAt: null,
+        expectedAmountMinor: input.expectedAmountMinor,
+        currency: input.currency,
       });
     }
     this.items.set(item.id, item);
@@ -93,6 +98,8 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
       if (mutation.kind === 'activate') {
         if (!event.reference) throw new Error('verified payment event has no checkout reference');
         const checkout = nextCheckouts.get(event.reference);
+        validatePaystackChargeForCheckout(event, nextCheckouts.get(event.reference)?.expectedAmountMinor ?? null,
+          nextCheckouts.get(event.reference)?.currency ?? null);
         const pending = next.get(mutation.item.id);
         if (!checkout || checkout.status !== 'pending' || !pending || pending.status !== 'pending' ||
           pending.provider !== 'paystack' || pending.checkoutReference !== event.reference ||
