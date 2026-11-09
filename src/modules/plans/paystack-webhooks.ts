@@ -87,22 +87,31 @@ export function verifyAndParsePaystackEvent(input: PaystackSignatureInput): Veri
   if (typeof record.event !== 'string' || record.event.length === 0 || record.event.length > 128) return null;
   if (record.data === null || typeof record.data !== 'object' || Array.isArray(record.data)) return null;
   const data = record.data as Record<string, unknown>;
-  const rawId = data.id ?? data.reference;
+  const transaction = data.transaction !== null && typeof data.transaction === 'object' && !Array.isArray(data.transaction)
+    ? data.transaction as Record<string, unknown>
+    : null;
+  const rawId = data.id ?? data.invoice_code ?? data.reference ?? transaction?.id ?? transaction?.reference;
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).length === 0 || String(rawId).length > 256) {
     return null;
   }
+
+  const nestedReference = transaction?.reference;
+  const reference = typeof data.reference === 'string' ? data.reference : nestedReference;
+
+  const createdAt = typeof data.created_at === 'string' ? Date.parse(data.created_at) : Number.NaN;
+  const occurredAt = Number.isFinite(createdAt) ? createdAt : input.nowMs;
 
   return Object.freeze({
     [verifiedPaystackEventBrand]: true as const,
     provider: 'paystack' as const,
     eventId: `${record.event}:${String(rawId)}`,
     eventType: record.event,
-    reference: typeof data.reference === 'string' && data.reference.length > 0 && data.reference.length <= 256
-      ? data.reference
+    reference: typeof reference === 'string' && reference.length > 0 && reference.length <= 256
+      ? reference
       : null,
     payloadHash: createHash('sha256').update(input.rawBody).digest('hex'),
     receivedAt: input.nowMs,
-    occurredAt: input.nowMs,
+    occurredAt,
     payload: Object.freeze(record),
   });
 }
