@@ -131,4 +131,16 @@ export const plansMigrations: readonly Migration[] = [
         CHECK (currency IS NULL OR (length(currency) = 3 AND currency = upper(currency)));
     `,
   },
+  {
+    version: 7,
+    name: 'prevent_duplicate_pending_subscription_items',
+    sql: `
+      CREATE UNIQUE INDEX subscription_items_one_pending_base_idx
+        ON subscription_items (user_id)
+        WHERE item_type = 'base_plan' AND status = 'pending';
+      CREATE UNIQUE INDEX subscription_items_one_pending_engine_pass_idx
+        ON subscription_items (user_id, item_code)
+        WHERE item_type = 'engine_pass' AND status = 'pending';
+    `,
+  },
 ];
