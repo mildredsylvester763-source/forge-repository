@@ -100,6 +100,29 @@ export function validateSubscriptionItemInput(input: CreateSubscriptionItem): vo
   }
 }
 
+export function validatePaystackChargeForCheckout(
+  event: VerifiedPaystackEvent,
+  expectedAmountMinor: number | null,
+  expectedCurrency: string | null,
+): void {
+  if (event.eventType !== 'charge.success') throw new Error('only a successful Paystack charge can complete checkout');
+  if (expectedAmountMinor === null || expectedCurrency === null) {
+    throw new Error('checkout has no validated amount and currency quote');
+  }
+  const rawData = event.payload.data;
+  if (rawData === null || typeof rawData !== 'object' || Array.isArray(rawData)) {
+    throw new Error('Paystack charge event has no valid data object');
+  }
+  const data = rawData as Record<string, unknown>;
+  const nestedTransaction = data.transaction;
+  const payment = nestedTransaction !== null && typeof nestedTransaction === 'object' && !Array.isArray(nestedTransaction)
+    ? nestedTransaction as Record<string, unknown>
+    : data;
+  if (payment.status !== 'success' || payment.amount !== expectedAmountMinor || payment.currency !== expectedCurrency) {
+    throw new Error('Paystack charge does not match the stored checkout amount and currency');
+  }
+}
+
 export function validatePaystackEventMutation(
   event: VerifiedPaystackEvent,
   mutation: PaystackSubscriptionMutation,
