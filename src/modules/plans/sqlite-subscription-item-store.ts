@@ -51,6 +51,7 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
   private readonly setStatus;
   private readonly markNotRenewing;
   private readonly insertPaid;
+  private readonly cancelExistingBasePlans;
 
   constructor(db: Database) {
     this.db = db;
@@ -89,7 +90,14 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
       WHERE provider = 'paystack' AND provider_subscription_id = ?
         AND (last_provider_event_at IS NULL OR last_provider_event_at <= ?)
     `);
+    this.cancelExistingBasePlans = db.prepare(`
+      UPDATE subscription_items
+      SET status = 'cancelled', last_provider_event_at = ?, updated_at = ?
+      WHERE user_id = ? AND item_type = 'base_plan'
+        AND status IN ('trialing', 'active', 'grace', 'legacy')
+    `);
     this.insertPaid = db.prepare(`
+
       INSERT INTO subscription_items (
         id, user_id, item_type, item_code, status, provider,
         provider_customer_id, provider_subscription_id, starts_at,
@@ -128,6 +136,9 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
         validatePaystackMutation(mutation);
         if (mutation.kind === 'activate') {
           const item = mutation.item;
+          if (item.itemType === 'base_plan') {
+            this.cancelExistingBasePlans.run(event.occurredAt, event.receivedAt, item.userId);
+          }
           this.insertPaid.run(
             item.id, item.userId, item.itemType, item.itemCode,
             item.providerCustomerId ?? null, item.providerSubscriptionId ?? null,
