@@ -25,7 +25,7 @@ async function purchasePlan(
   const transactionId = `plans_test_${paymentSequence}`;
   const rawBody = Buffer.from(JSON.stringify({
     event: 'charge.success',
-    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
+    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString(), status: 'success', amount: 2500, currency: 'NGN' },
   }), 'utf8');
   const digest = createHmac('sha512', PAYSTACK_TEST_SECRET)
     .update(rawBody)
@@ -45,6 +45,8 @@ async function purchasePlan(
     itemType: 'base_plan',
     itemCode: plan,
     checkoutReference: transactionId,
+    expectedAmountMinor: 2500,
+    currency: 'NGN',
     now,
   });
   const mutations: PaystackSubscriptionMutation[] = [{
@@ -258,6 +260,8 @@ describe('plans (PLAN GATE LAW)', () => {
         itemType: 'base_plan',
         itemCode: 'diamond',
         checkoutReference: 'invalid-plan-checkout',
+        expectedAmountMinor: 2500,
+        currency: 'NGN',
         now: Date.now(),
       }), /unknown base plan code/);
       assert.equal((await h.app.plans.getPlan(user.id)).plan, 'free');
