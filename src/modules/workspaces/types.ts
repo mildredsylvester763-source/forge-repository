@@ -4,6 +4,9 @@
 
 export type WorkspaceRole = 'owner' | 'member' | 'admin';
 
+/** Workspace tenancy is independent of a user's subscription plan. */
+export type WorkspaceType = 'personal' | 'team' | 'studio' | 'enterprise';
+
 export interface WorkspaceRecord {
   readonly id: string;
   readonly slug: string;
@@ -12,6 +15,7 @@ export interface WorkspaceRecord {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly ownerId: string;
+  readonly workspaceType: WorkspaceType;
 }
 
 export interface WorkspaceMemberRecord {
@@ -25,6 +29,7 @@ export interface CreateWorkspaceInput {
   name: string;
   description?: string | null;
   slug?: string | null;
+  workspaceType?: WorkspaceType;
 }
 
 export interface PublicWorkspace {
@@ -36,6 +41,7 @@ export interface PublicWorkspace {
   updatedAt: string;
   isOwner: boolean;
   role: WorkspaceRole | null;
+  workspaceType: WorkspaceType;
 }
 
 export interface PublicWorkspaceMember {
