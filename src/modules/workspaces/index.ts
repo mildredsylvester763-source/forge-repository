@@ -15,6 +15,7 @@ export { pgWorkspaceMigrations } from './migrations.ts';
 
 export type {
   WorkspaceRole,
+  WorkspaceType,
   WorkspaceRecord,
   WorkspaceMemberRecord,
   CreateWorkspaceInput,
