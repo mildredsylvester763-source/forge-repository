@@ -100,7 +100,7 @@ export async function setPlanForTest(
   const transactionId = `forge_test_${testPaymentSequence}`;
   const rawBody = Buffer.from(JSON.stringify({
     event: 'charge.success',
-    data: { id: transactionId, created_at: new Date(now).toISOString() },
+    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
   }), 'utf8');
   const timestamp = Math.floor(now / 1000);
   const digest = createHmac('sha512', TEST_PAYSTACK_SECRET)
@@ -115,24 +115,36 @@ export async function setPlanForTest(
   });
   if (!event) throw new Error('test payment event failed signature verification');
 
+  const baseId = `forge_test_base_${testPaymentSequence}`;
+  await harness.app.subscriptionItems.create({
+    id: baseId,
+    userId,
+    itemType: 'base_plan',
+    itemCode: plan,
+    checkoutReference: transactionId,
+    now,
+  });
   const mutations: PaystackSubscriptionMutation[] = [{
     kind: 'activate',
     item: {
-      id: `forge_test_base_${testPaymentSequence}`,
-      userId,
-      itemType: 'base_plan',
-      itemCode: plan,
+      id: baseId,
       providerSubscriptionId: `forge_test_subscription_${testPaymentSequence}`,
     },
   }];
   for (const engine of enginePasses) {
+    const itemId = `forge_test_pass_${testPaymentSequence}_${engine}`;
+    await harness.app.subscriptionItems.create({
+      id: itemId,
+      userId,
+      itemType: 'engine_pass',
+      itemCode: engine,
+      checkoutReference: transactionId,
+      now,
+    });
     mutations.push({
       kind: 'activate',
       item: {
-        id: `forge_test_pass_${testPaymentSequence}_${engine}`,
-        userId,
-        itemType: 'engine_pass',
-        itemCode: engine,
+        id: itemId,
         providerSubscriptionId: `forge_test_subscription_${testPaymentSequence}_${engine}`,
       },
     });
