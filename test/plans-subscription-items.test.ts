@@ -14,7 +14,6 @@ import {
 } from '../src/modules/plans/index.ts';
 
 const WEBHOOK_SECRET = 'sk_test_0123456789abcdef0123456789abcdef';
-const KEY_ID = 'whk_testkey1';
 
 const pendingItem = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSubscriptionItem => ({
   id: 'pending_1',
