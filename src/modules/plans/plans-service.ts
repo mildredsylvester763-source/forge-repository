@@ -1,6 +1,5 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
-import type { EventStore } from '../../kernel/events.ts';
 import { checkEntitlement, DEFAULT_PLAN, isPlanId, type Entitlement, type GateId, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
 import { FEATURE_GATES } from './engine/feature-gates.ts';
 import { gateForRoute } from './engine/route-gates.ts';
@@ -12,7 +11,6 @@ export interface PlansDeps {
   /** Read-only compatibility fallback for pre-subscription-item records. */
   store: PlanStore;
   subscriptionItems: SubscriptionItemStore;
-  events: EventStore;
   clock: Clock;
 }
 
@@ -24,13 +22,11 @@ export interface PlansDeps {
 export class PlansService {
   private readonly store: PlanStore;
   private readonly subscriptionItems: SubscriptionItemStore;
-  private readonly events: EventStore;
   private readonly clock: Clock;
 
   constructor(deps: PlansDeps) {
     this.store = deps.store;
     this.subscriptionItems = deps.subscriptionItems;
-    this.events = deps.events;
     this.clock = deps.clock;
   }
 
