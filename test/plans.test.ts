@@ -133,14 +133,33 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-check@forge.test');
       const denied = await h.post('/v1/plans/check', { featureId: 'AI-050' }, { cookie: user.cookie });
       assert.equal(denied.status, 200);
-      assert.deepEqual((await denied.json()) as unknown, {
-        entitlement: { allowed: false, feature: 'AI-050', gate: 'plus', plan: 'free', reason: 'plan_too_low' },
-      });
+      const deniedBody = (await denied.json()) as { entitlement: { allowed: boolean; reason: string; accessMode: string; limits: { monthlyCredits: number | null } } };
+      assert.equal(deniedBody.entitlement.allowed, false);
+      assert.equal(deniedBody.entitlement.reason, 'plan_too_low');
+      assert.equal(deniedBody.entitlement.accessMode, 'standard');
+      assert.equal(deniedBody.entitlement.limits.monthlyCredits, 600);
+
       const allowed = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
       assert.equal(allowed.status, 200);
-      assert.deepEqual((await allowed.json()) as unknown, {
-        entitlement: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', reason: 'unlocked' },
-      });
+      const allowedBody = (await allowed.json()) as { entitlement: { allowed: boolean; reason: string; accessMode: string; creditScope: string } };
+      assert.equal(allowedBody.entitlement.allowed, true);
+      assert.equal(allowedBody.entitlement.reason, 'unlocked');
+      assert.equal(allowedBody.entitlement.accessMode, 'standard');
+      assert.equal(allowedBody.entitlement.creditScope, 'general');
+
+      const unpaidEngine = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: user.cookie });
+      assert.equal(unpaidEngine.status, 200);
+      const unpaidBody = (await unpaidEngine.json()) as { entitlement: { allowed: boolean; reason: string; accessMode: string; limits: { creditsPerWindow: number | null; monthlyCredits: number | null; monthlyCostCapUsd: number | null; models: string; quality: string; outputSize: string; paidOnlyFeatures: boolean } } };
+      assert.equal(unpaidBody.entitlement.allowed, true);
+      assert.equal(unpaidBody.entitlement.reason, 'engine_free_limits');
+      assert.equal(unpaidBody.entitlement.accessMode, 'engine_free');
+      assert.equal(unpaidBody.entitlement.limits.creditsPerWindow, 40);
+      assert.equal(unpaidBody.entitlement.limits.monthlyCredits, 600);
+      assert.equal(unpaidBody.entitlement.limits.monthlyCostCapUsd, 0.20);
+      assert.equal(unpaidBody.entitlement.limits.models, 'free_only');
+      assert.equal(unpaidBody.entitlement.limits.quality, 'free');
+      assert.equal(unpaidBody.entitlement.limits.outputSize, 'free');
+      assert.equal(unpaidBody.entitlement.limits.paidOnlyFeatures, false);
       const unknown = await h.post('/v1/plans/check', { featureId: 'XX-999' }, { cookie: user.cookie });
       assert.equal(unknown.status, 404);
       assert.equal(await errorCode(unknown), 'plan_feature_unknown');
@@ -207,17 +226,29 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
-  it('gates engine rows on an owned pass: creative sessions (TQ-027)', async () => {
+  it('keeps unpaid creative routes open at Free limits and grants paid access with the matching pass', async () => {
     const h = await startHarness();
     try {
       const noPass = await registerAndSetPlan(h, 'plans-engine-nopass@forge.test', 'pro');
-      const denied = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: noPass.cookie });
-      assert.equal(denied.status, 402);
-      const body = (await denied.json()) as { error: { details: Record<string, string> } };
-      assert.equal(body.error.details.reason, 'engine_pass_missing');
+      const access = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: noPass.cookie });
+      assert.equal(access.status, 200);
+      const accessBody = (await access.json()) as { entitlement: { allowed: boolean; accessMode: string; reason: string; message: string } };
+      assert.equal(accessBody.entitlement.allowed, true);
+      assert.equal(accessBody.entitlement.accessMode, 'engine_free');
+      assert.equal(accessBody.entitlement.reason, 'engine_free_limits');
+      assert.match(accessBody.entitlement.message, /Creative pass needed/);
+
+      const freeRoute = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: noPass.cookie });
+      assert.notEqual(freeRoute.status, 402);
+
       const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['creative']);
-      const allowed = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: withPass.cookie });
-      assert.notEqual(allowed.status, 402);
+      const paidAccess = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: withPass.cookie });
+      const paidBody = (await paidAccess.json()) as { entitlement: { allowed: boolean; accessMode: string; reason: string } };
+      assert.equal(paidBody.entitlement.allowed, true);
+      assert.equal(paidBody.entitlement.accessMode, 'engine_paid');
+      assert.equal(paidBody.entitlement.reason, 'unlocked');
+      const paidRoute = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: withPass.cookie });
+      assert.notEqual(paidRoute.status, 402);
     } finally {
       await h.close();
     }
