@@ -86,7 +86,7 @@ export const plansMigrations: readonly Migration[] = [
       CREATE INDEX subscription_items_provider_ref_idx
         ON subscription_items (provider, provider_subscription_id);
     `,
-  },,
+  },
   {
     version: 4,
     name: 'subscription_checkout_reference',
