@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
 import {
   parsePaystackSigningSecrets,
+  verifyAndParsePaystackEvent,
   verifyPaystackWebhookSignature,
 } from '../src/modules/plans/paystack-webhooks.ts';
 
@@ -88,4 +89,30 @@ describe('Paystack webhook signature verification', () => {
     assert.throws(() => parsePaystackSigningSecrets('wrong-format'));
     assert.throws(() => parsePaystackSigningSecrets(`${currentSecret},${currentSecret}`));
   });
+  it('parses nested subscription and transaction identifiers from signed Paystack payloads', () => {
+    const receivedAt = 1_800_000_000_000;
+    const rawBody = Buffer.from(JSON.stringify({
+      event: 'invoice.update',
+      data: {
+        id: 901,
+        status: 'success',
+        subscription: { subscription_code: 'SUB_example' },
+        transaction: { reference: 'txn_nested_reference', status: 'success', amount: 2500, currency: 'NGN' },
+        created_at: new Date(receivedAt).toISOString(),
+      },
+    }));
+    const digest = signature(currentSecret, rawBody);
+    const event = verifyAndParsePaystackEvent({
+      rawBody,
+      signatureHeader: digest,
+      secrets: [currentSecret],
+      nowMs: receivedAt + 15_000,
+    });
+    assert.ok(event);
+    assert.equal(event.eventId, 'invoice.update:901');
+    assert.equal(event.reference, 'txn_nested_reference');
+    assert.equal(event.occurredAt, receivedAt);
+    assert.equal(event.eventType, 'invoice.update');
+  });
+
 });
