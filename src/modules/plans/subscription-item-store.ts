@@ -1,5 +1,5 @@
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
 const ACTIVE_STATES: readonly SubscriptionItem['status'][] = ['trialing', 'active', 'grace', 'legacy'];
@@ -89,6 +89,7 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
     let activatedReference: string | null = null;
     for (const mutation of mutations) {
       validatePaystackMutation(mutation);
+      validatePaystackEventMutation(event, mutation);
       if (mutation.kind === 'activate') {
         if (!event.reference) throw new Error('verified payment event has no checkout reference');
         const checkout = nextCheckouts.get(event.reference);
