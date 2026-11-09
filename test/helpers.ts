@@ -99,7 +99,7 @@ export async function setPlanForTest(
   const transactionId = `forge_test_${testPaymentSequence}`;
   const rawBody = Buffer.from(JSON.stringify({
     event: 'charge.success',
-    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
+    data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString(), status: 'success', amount: 2500, currency: 'NGN' },
   }), 'utf8');
   const digest = createHmac('sha512', TEST_PAYSTACK_SECRET)
     .update(rawBody)
@@ -119,6 +119,8 @@ export async function setPlanForTest(
     itemType: 'base_plan',
     itemCode: plan,
     checkoutReference: transactionId,
+    expectedAmountMinor: 2500,
+    currency: 'NGN',
     now,
   });
   const mutations: PaystackSubscriptionMutation[] = [{
