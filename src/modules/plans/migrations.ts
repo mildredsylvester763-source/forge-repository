@@ -96,7 +96,7 @@ export const plansMigrations: readonly Migration[] = [
         ON subscription_items (provider, checkout_reference)
         WHERE checkout_reference IS NOT NULL;
     `,
-  },,
+  },
   {
     version: 5,
     name: 'subscription_checkout_groups',
