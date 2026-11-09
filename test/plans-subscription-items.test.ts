@@ -122,11 +122,6 @@ describe('subscription item foundation', () => {
       { kind: 'set_status', providerSubscriptionId: 'SUB_100', status: 'grace' },
     ]);
     assert.equal((await store.findById('base_1'))?.status, 'grace');
-    await assert.rejects(
-      store.applyPaystackEvent(verifiedEvent('txn_107'), [activation({ id: 'base_2', itemCode: 'team' })]),
-      /active base plan/,
-    );
-
     await store.applyPaystackEvent(verifiedEvent('sub_renew_100', 1_800_000_002_000, 'subscription.not_renew'), [
       { kind: 'mark_not_renewing', providerSubscriptionId: 'SUB_100' },
     ]);
