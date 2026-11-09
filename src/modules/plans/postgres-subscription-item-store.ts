@@ -1,10 +1,10 @@
 import type { SqlPool } from '../../kernel/sql.ts';
 import { withTransaction } from '../../kernel/sql.ts';
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackChargeForCheckout, validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
-interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: string | number; processed_at: string | number | null; }
+interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: string | number; processed_at: string | number | null; expected_amount_minor: string | number | null; currency: string | null; }
 
 interface SubscriptionItemRow {
   id: string;
@@ -56,16 +56,17 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
     validateSubscriptionItemInput(input);
     return withTransaction(this.pool, async (conn) => {
       await conn.query(`
-        INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at)
-        VALUES ($1, $2, 'paystack', 'pending', $3)
+        INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at, expected_amount_minor, currency)
+        VALUES ($1, $2, 'paystack', 'pending', $3, $4, $5)
         ON CONFLICT (reference) DO NOTHING
-      `, [input.checkoutReference, input.userId, input.now]);
+      `, [input.checkoutReference, input.userId, input.now, input.expectedAmountMinor, input.currency]);
       const checkoutResult = await conn.query<CheckoutRow>(
         'SELECT * FROM subscription_checkouts WHERE reference = $1 FOR UPDATE',
         [input.checkoutReference],
       );
       const checkout = checkoutResult.rows[0];
-      if (!checkout || checkout.user_id !== input.userId || checkout.status !== 'pending') {
+      if (!checkout || checkout.user_id !== input.userId || checkout.status !== 'pending' ||
+        Number(checkout.expected_amount_minor) !== input.expectedAmountMinor || checkout.currency !== input.currency) {
         throw new Error('checkout reference belongs to another user or is no longer pending');
       }
       const result = await conn.query<SubscriptionItemRow>(`
@@ -140,6 +141,11 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
             pending.user_id !== checkout.user_id) {
             throw new Error('payment event does not match a pending checkout item');
           }
+          validatePaystackChargeForCheckout(
+            event,
+            checkout.expected_amount_minor === null ? null : Number(checkout.expected_amount_minor),
+            checkout.currency,
+          );
           activatedCheckout = { reference: event.reference, userId: pending.user_id };
           if (pending.item_type === 'base_plan') {
             await conn.query(`
