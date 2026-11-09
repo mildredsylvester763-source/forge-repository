@@ -14,6 +14,28 @@ export interface PlansDeps {
   clock: Clock;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 0 && value.length <= 256) return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  return null;
+}
+
+function paystackSubscriptionCode(data: Record<string, unknown>): string | null {
+  const subscription = record(data.subscription);
+  return textValue(subscription?.subscription_code ?? data.subscription_code);
+}
+
+function paystackCustomerReference(data: Record<string, unknown>): string | null {
+  const customer = record(data.customer);
+  return textValue(customer?.customer_code ?? customer?.id);
+}
+
 /**
  * The effective plan and engine passes are derived from subscription items.
  * The old user_plans table remains a read-only migration fallback; application
@@ -67,6 +89,78 @@ export class PlansService {
     mutations: readonly PaystackSubscriptionMutation[],
   ): Promise<{ status: 'processed' | 'duplicate' }> {
     return this.subscriptionItems.applyPaystackEvent(event, mutations);
+  }
+
+  /**
+   * Converts only documented, signature-verified Paystack events into mutations.
+   * Unknown event types are still recorded idempotently but do not change entitlements.
+   */
+  async handlePaystackWebhook(event: VerifiedPaystackEvent): Promise<{ status: 'processed' | 'duplicate' }> {
+    const data = record(event.payload.data) ?? {};
+    const subscriptionCode = paystackSubscriptionCode(data);
+    const customerReference = paystackCustomerReference(data);
+
+    if (event.eventType === 'charge.success') {
+      const pending = event.reference
+        ? await this.subscriptionItems.listPendingByCheckoutReference(event.reference)
+        : [];
+      if (pending.length > 0) {
+        return this.applyPaystackEvent(event, pending.map((item) => ({
+          kind: 'activate' as const,
+          item: {
+            id: item.id,
+            providerCustomerId: customerReference,
+            providerSubscriptionId: subscriptionCode,
+          },
+        })));
+      }
+      if (subscriptionCode !== null) {
+        return this.applyPaystackEvent(event, [{
+          kind: 'set_status',
+          providerSubscriptionId: subscriptionCode,
+          status: 'active',
+        }]);
+      }
+      return this.applyPaystackEvent(event, []);
+    }
+
+    if (event.eventType === 'invoice.payment_failed' && subscriptionCode !== null) {
+      return this.applyPaystackEvent(event, [{
+        kind: 'set_status',
+        providerSubscriptionId: subscriptionCode,
+        status: 'grace',
+      }]);
+    }
+
+    if (event.eventType === 'subscription.not_renew' && subscriptionCode !== null) {
+      return this.applyPaystackEvent(event, [{
+        kind: 'mark_not_renewing',
+        providerSubscriptionId: subscriptionCode,
+      }]);
+    }
+
+    if (event.eventType === 'subscription.disable' && subscriptionCode !== null) {
+      return this.applyPaystackEvent(event, [{
+        kind: 'set_status',
+        providerSubscriptionId: subscriptionCode,
+        status: data.status === 'complete' ? 'expired' : 'cancelled',
+      }]);
+    }
+
+    if (event.eventType === 'invoice.update' && subscriptionCode !== null) {
+      const status = data.status === 'success' ? 'active' : data.status === 'attention' ? 'grace' : null;
+      if (status !== null) {
+        return this.applyPaystackEvent(event, [{
+          kind: 'set_status',
+          providerSubscriptionId: subscriptionCode,
+          status,
+        }]);
+      }
+    }
+
+    // Other Paystack events (including subscription.create) are acknowledged and
+    // persisted for idempotency, but do not grant or revoke any entitlement.
+    return this.applyPaystackEvent(event, []);
   }
 
   /** The catalog verdict for one feature. Unknown features are refused by name. */
