@@ -355,7 +355,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...searchIntegrityRoutes(searchIntegrity, identity, config.cookie),
     ...aiTrainingRoutes(aiTraining, identity, config.cookie),
     ...trainingDataRoutes(trainingData, identity, config.cookie),
-    ...plansRoutes(plans, identity, config.cookie, config.plans),
+    ...plansRoutes(plans, identity, config.cookie, config.plans, config.payments, clock),
   };
 
   const routes = applyRouteGates(ungated, plans, identity, config.cookie);
