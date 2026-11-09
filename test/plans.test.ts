@@ -275,4 +275,93 @@ describe('plans (PLAN GATE LAW)', () => {
       await h.close();
     }
   });
+  it('activates only the matching checkout after a valid Paystack signature and exact quote match', async () => {
+    const h = await startHarness({ FORGE_PAYSTACK_SECRET_KEYS: PAYSTACK_TEST_SECRET });
+    try {
+      const user = await freeUser(h, 'plans-paystack-webhook@forge.test');
+      const reference = 'forge_checkout_paystack_1';
+      await h.app.subscriptionItems.create({
+        id: 'pending_paystack_plan_1',
+        userId: user.id,
+        itemType: 'base_plan',
+        itemCode: 'pro',
+        checkoutReference: reference,
+        expectedAmountMinor: 2500,
+        currency: 'NGN',
+        now: h.clock.now,
+      });
+
+      const raw = JSON.stringify({
+        event: 'charge.success',
+        data: {
+          id: 9001,
+          reference,
+          status: 'success',
+          amount: 2400,
+          currency: 'NGN',
+          created_at: new Date(h.clock.now).toISOString(),
+          subscription: { subscription_code: 'SUB_PAYSTACK_1' },
+          customer: { customer_code: 'CUS_PAYSTACK_1' },
+        },
+      });
+      const wrongAmountSignature = createHmac('sha512', PAYSTACK_TEST_SECRET).update(raw).digest('hex');
+      const wrongAmount = await h.post('/v1/webhooks/paystack', raw, {
+        headers: { 'x-paystack-signature': wrongAmountSignature },
+      });
+      assert.equal(wrongAmount.status, 500);
+      assert.equal((await h.app.plans.getPlan(user.id)).plan, 'free');
+      assert.equal((await h.app.subscriptionItems.findById('pending_paystack_plan_1'))?.status, 'pending');
+
+      const paidRaw = JSON.stringify({
+        event: 'charge.success',
+        data: {
+          id: 9001,
+          reference,
+          status: 'success',
+          amount: 2500,
+          currency: 'NGN',
+          created_at: new Date(h.clock.now).toISOString(),
+          subscription: { subscription_code: 'SUB_PAYSTACK_1' },
+          customer: { customer_code: 'CUS_PAYSTACK_1' },
+        },
+      });
+      const signature = createHmac('sha512', PAYSTACK_TEST_SECRET).update(paidRaw).digest('hex');
+      const paid = await h.post('/v1/webhooks/paystack', paidRaw, {
+        headers: { 'x-paystack-signature': signature },
+      });
+      assert.equal(paid.status, 200);
+      assert.equal((await h.app.plans.getPlan(user.id)).plan, 'pro');
+      const activated = await h.app.subscriptionItems.findById('pending_paystack_plan_1');
+      assert.equal(activated?.status, 'active');
+      assert.equal(activated?.providerSubscriptionId, 'SUB_PAYSTACK_1');
+      assert.equal(activated?.providerCustomerId, 'CUS_PAYSTACK_1');
+
+      const duplicate = await h.post('/v1/webhooks/paystack', paidRaw, {
+        headers: { 'x-paystack-signature': signature },
+      });
+      assert.equal(duplicate.status, 200);
+      assert.deepEqual(await duplicate.json(), { received: true, duplicate: true });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('rejects Paystack webhook requests without a valid x-paystack-signature', async () => {
+    const h = await startHarness({ FORGE_PAYSTACK_SECRET_KEYS: PAYSTACK_TEST_SECRET });
+    try {
+      const user = await freeUser(h, 'plans-paystack-invalid-signature@forge.test');
+      const raw = JSON.stringify({
+        event: 'charge.success',
+        data: { id: 9002, reference: 'unsigned_reference', status: 'success', amount: 2500, currency: 'NGN' },
+      });
+      const rejected = await h.post('/v1/webhooks/paystack', raw, {
+        headers: { 'x-paystack-signature': '0'.repeat(128) },
+      });
+      assert.equal(rejected.status, 401);
+      assert.equal((await h.app.plans.getPlan(user.id)).plan, 'free');
+    } finally {
+      await h.close();
+    }
+  });
+
 });
