@@ -268,7 +268,9 @@ describe('subscription item foundation', () => {
       await assert.rejects(store.applyPaystackEvent(verifiedEvent('txn_115'), [
         activation({ id: 'pass_creative_2' }),
       ]));
-      assert.equal((await store.listByUser('user_1')).length, 3);
+      const rows = await store.listByUser('user_1');
+      assert.equal(rows.filter((item) => item.status === 'active').length, 3);
+      assert.equal(rows.find((item) => item.id === 'pass_creative_2')?.status, 'pending');
     } finally {
       db.close();
     }
