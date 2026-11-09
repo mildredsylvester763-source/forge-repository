@@ -105,6 +105,58 @@ describe('configuration safety', () => {
     })), ConfigError);
   });
 
+  it('loads Plan Hooks credit limits and the unpaid-engine $0.20 cost cap from config', () => {
+    const defaults = loadConfig({ FORGE_ENV: 'test' }).plans.accessPolicy;
+    assert.deepEqual(defaults.monthlyCreditsByPlan.free, {
+      monthlyCredits: 600,
+      perSeat: false,
+      freeWindowCredits: 40,
+      freeWindowMs: 5 * 60 * 60 * 1000,
+    });
+    assert.equal(defaults.monthlyCreditsByPlan.plus.monthlyCredits, 3000);
+    assert.equal(defaults.monthlyCreditsByPlan.pro.monthlyCredits, 7500);
+    assert.equal(defaults.monthlyCreditsByPlan.studio.monthlyCredits, 18000);
+    assert.equal(defaults.monthlyCreditsByPlan.team.monthlyCredits, 11800);
+    assert.equal(defaults.monthlyCreditsByPlan.team.perSeat, true);
+    assert.equal(defaults.monthlyCreditsByPlan.enterprise.monthlyCredits, null);
+    assert.equal(defaults.freeEngine.creditsPerWindow, 40);
+    assert.equal(defaults.freeEngine.monthlyCredits, 600);
+    assert.equal(defaults.freeEngine.monthlyCostCapUsd, 0.20);
+    assert.deepEqual(defaults.enginesIncludedByPlan, {});
+
+    const configured = loadConfig({
+      FORGE_ENV: 'test',
+      FORGE_FREE_CREDITS_PER_WINDOW: '45',
+      FORGE_FREE_WINDOW_HOURS: '4',
+      FORGE_FREE_MONTHLY_CREDITS: '700',
+      FORGE_FREE_ENGINE_MONTHLY_COST_CAP_USD: '0.15',
+      FORGE_PLAN_ENGINE_INCLUSIONS: '{"pro":["creative","painting"],"studio":["music"]}',
+    }).plans.accessPolicy;
+    assert.equal(configured.monthlyCreditsByPlan.free.freeWindowCredits, 45);
+    assert.equal(configured.monthlyCreditsByPlan.free.freeWindowMs, 4 * 60 * 60 * 1000);
+    assert.equal(configured.freeEngine.monthlyCredits, 600, 'the engine fallback cap has its own setting');
+    assert.equal(configured.freeEngine.monthlyCostCapUsd, 0.15);
+    assert.deepEqual(configured.enginesIncludedByPlan, {
+      pro: ['creative', 'painting'],
+      studio: ['music'],
+    });
+  });
+
+  it('rejects invalid engine inclusion policy configuration', () => {
+    assert.throws(() => loadConfig({
+      FORGE_ENV: 'test',
+      FORGE_PLAN_ENGINE_INCLUSIONS: '{invalid',
+    }), ConfigError);
+    assert.throws(() => loadConfig({
+      FORGE_ENV: 'test',
+      FORGE_PLAN_ENGINE_INCLUSIONS: '{"diamond":["creative"]}',
+    }), ConfigError);
+    assert.throws(() => loadConfig({
+      FORGE_ENV: 'test',
+      FORGE_PLAN_ENGINE_INCLUSIONS: '{"pro":["creative","creative"]}',
+    }), ConfigError);
+  });
+
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
     assert.equal(c.password.currentPepperVersion, 3);
