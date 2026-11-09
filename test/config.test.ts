@@ -78,18 +78,24 @@ describe('configuration safety', () => {
     assert.equal(configured.passkeys.rpName, 'FORGE Workspace');
   });
 
-  it('loads Paystack webhook signing keys without requiring credentials before billing is enabled', () => {
+  it('loads Paystack secret keys without requiring billing credentials before checkout is enabled', () => {
     const c = loadConfig(prod({
-      FORGE_PAYSTACK_WEBHOOK_SECRETS: 'whk_testkey1:whsec_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,whk_testkey2:whsec_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      FORGE_PAYSTACK_SECRET_KEYS: 'sk_test_0123456789abcdef0123456789abcdef,sk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     }));
-    assert.deepEqual(c.payments.paystackWebhookSecrets.map((entry) => entry.keyId), ['whk_testkey1', 'whk_testkey2']);
-    assert.equal(loadConfig({ FORGE_ENV: 'development' }).payments.paystackWebhookSecrets.length, 0);
+    assert.deepEqual(c.payments.paystackSecretKeys, [
+      'sk_test_0123456789abcdef0123456789abcdef',
+      'sk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ]);
+    assert.equal(loadConfig({ FORGE_ENV: 'development' }).payments.paystackSecretKeys.length, 0);
   });
 
-  it('rejects malformed Paystack webhook signing-key configuration', () => {
-    assert.throws(() => loadConfig(prod({ FORGE_PAYSTACK_WEBHOOK_SECRETS: 'wrong-format' })), ConfigError);
+  it('rejects malformed or duplicate Paystack secret-key configuration', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_PAYSTACK_SECRET_KEYS: 'wrong-format' })), ConfigError);
     assert.throws(() => loadConfig(prod({
-      FORGE_PAYSTACK_WEBHOOK_SECRETS: 'whk_testkey:short',
+      FORGE_PAYSTACK_SECRET_KEYS: 'sk_test_too_short',
+    })), ConfigError);
+    assert.throws(() => loadConfig(prod({
+      FORGE_PAYSTACK_SECRET_KEYS: 'sk_test_0123456789abcdef0123456789abcdef,sk_test_0123456789abcdef0123456789abcdef',
     })), ConfigError);
   });
 
