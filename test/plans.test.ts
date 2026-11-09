@@ -12,8 +12,7 @@ interface TestUser {
 }
 
 let paymentSequence = 0;
-const PAYSTACK_TEST_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
-const PAYSTACK_TEST_KEY_ID = 'whk_testkey1';
+const PAYSTACK_TEST_SECRET = 'sk_test_0123456789abcdef0123456789abcdef';
 
 async function purchasePlan(
   h: Harness,
@@ -28,15 +27,13 @@ async function purchasePlan(
     event: 'charge.success',
     data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
   }), 'utf8');
-  const timestamp = Math.floor(now / 1000);
   const digest = createHmac('sha512', PAYSTACK_TEST_SECRET)
-    .update(`${timestamp}.`)
     .update(rawBody)
     .digest('hex');
   const event = verifyAndParsePaystackEvent({
     rawBody,
-    signatureHeader: `t=${timestamp},v1=${PAYSTACK_TEST_KEY_ID}:${digest}`,
-    secrets: [{ keyId: PAYSTACK_TEST_KEY_ID, secret: PAYSTACK_TEST_SECRET }],
+    signatureHeader: digest,
+    secrets: [PAYSTACK_TEST_SECRET],
     nowMs: now,
   });
   if (!event) throw new Error('test payment event should verify');
