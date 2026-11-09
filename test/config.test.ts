@@ -80,11 +80,11 @@ describe('configuration safety', () => {
 
   it('loads Paystack secret keys without requiring billing credentials before checkout is enabled', () => {
     const c = loadConfig(prod({
-      FORGE_PAYSTACK_SECRET_KEYS: 'sk_test_0123456789abcdef0123456789abcdef,sk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      FORGE_PAYSTACK_SECRET_KEYS: 'sk_live_FORGE_TEST_CONFIG_PLACEHOLDER_ALPHA,sk_live_FORGE_TEST_CONFIG_PLACEHOLDER_BRAVO',
     }));
     assert.deepEqual(c.payments.paystackSecretKeys, [
-      'sk_test_0123456789abcdef0123456789abcdef',
-      'sk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'sk_live_FORGE_TEST_CONFIG_PLACEHOLDER_ALPHA',
+      'sk_live_FORGE_TEST_CONFIG_PLACEHOLDER_BRAVO',
     ]);
     assert.equal(loadConfig({ FORGE_ENV: 'development' }).payments.paystackSecretKeys.length, 0);
   });
