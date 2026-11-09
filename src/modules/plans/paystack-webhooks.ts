@@ -90,7 +90,10 @@ export function verifyAndParsePaystackEvent(input: PaystackSignatureInput): Veri
   const transaction = data.transaction !== null && typeof data.transaction === 'object' && !Array.isArray(data.transaction)
     ? data.transaction as Record<string, unknown>
     : null;
-  const rawId = data.id ?? data.invoice_code ?? data.reference ?? transaction?.id ?? transaction?.reference;
+  const subscription = data.subscription !== null && typeof data.subscription === 'object' && !Array.isArray(data.subscription)
+    ? data.subscription as Record<string, unknown>
+    : null;
+  const rawId = data.id ?? data.invoice_code ?? data.reference ?? transaction?.id ?? transaction?.reference ?? subscription?.subscription_code;
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).length === 0 || String(rawId).length > 256) {
     return null;
   }
