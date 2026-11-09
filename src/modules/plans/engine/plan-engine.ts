@@ -160,7 +160,7 @@ export function canUse(
 ): Entitlement {
   const { featureId, planFrom } = feature;
   const engineTag = feature.engineTag ?? null;
-  const creditScope = engineTag === null ? 'general' : `engine:${engineTag}`;
+  const creditScope: Entitlement['creditScope'] = engineTag === null ? 'general' : `engine:${engineTag}`;
 
   if (planFrom === 'internal') {
     return {
@@ -178,19 +178,10 @@ export function canUse(
     };
   }
 
-  if (planFrom === 'engine') {
-    if (engineTag === null || engineTag.length === 0) {
-      return {
-        allowed: false, feature: featureId, gate: planFrom, plan: record.plan,
-        reason: 'engine_configuration_missing', message: 'Engine access is not configured.',
-        accessMode: 'engine_free', engineTag, creditScope, limits: {
-          monthlyCredits: 0, monthlyCreditsPerSeat: false, creditsPerWindow: 0, windowMs: policy.freeEngine.windowMs,
-          monthlyCostCapUsd: 0, models: 'free_only', quality: 'free', outputSize: 'free',
-          paidOnlyFeatures: false, mainAppOnlyCostCap: true,
-        },
-      };
-    }
-
+  // An engine tag makes this an engine feature regardless of its Plan from
+  // label. Its paid access is evaluated by plan inclusion or its exact pass;
+  // without either, it remains available at Free limits instead of hard-denying.
+  if (engineTag !== null) {
     const includedByPlan = policy.enginesIncludedByPlan[record.plan] ?? [];
     const paidByPlan = includedByPlan.includes(engineTag);
     const paidByPass = record.enginePasses.includes(engineTag);
@@ -221,6 +212,19 @@ export function canUse(
         outputSize: free.outputSize,
         paidOnlyFeatures: free.paidOnlyFeatures,
         mainAppOnlyCostCap: free.mainAppOnlyCostCap,
+      },
+    };
+  }
+
+  if (planFrom === 'engine') {
+    return {
+      allowed: false, feature: featureId, gate: planFrom, plan: record.plan,
+      reason: 'engine_configuration_missing', message: 'Engine access is not configured.',
+      accessMode: 'engine_free', engineTag, creditScope, limits: {
+        monthlyCredits: 0, monthlyCreditsPerSeat: false, creditsPerWindow: 0,
+        windowMs: policy.freeEngine.windowMs, monthlyCostCapUsd: 0,
+        models: 'free_only', quality: 'free', outputSize: 'free',
+        paidOnlyFeatures: false, mainAppOnlyCostCap: true,
       },
     };
   }
