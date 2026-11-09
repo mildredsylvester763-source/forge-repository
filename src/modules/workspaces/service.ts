@@ -23,7 +23,7 @@ import { MAX_WORKSPACES_PER_USER, RESERVED_SLUGS, type CreateWorkspaceInput, typ
 import type { WorkspaceStore } from './store.ts';
 
 export class WorkspaceServiceError extends Error {
-  readonly code: 'workspace_exists' | 'invalid_slug' | 'reserved_slug' | 'user_not_found' | 'workspace_not_found' | 'member_not_found' | 'workspace_limit_reached' | 'already_member' | 'permission_denied';
+  readonly code: 'workspace_exists' | 'invalid_slug' | 'reserved_slug' | 'user_not_found' | 'workspace_not_found' | 'member_not_found' | 'workspace_limit_reached' | 'already_member' | 'permission_denied' | 'invalid_workspace_type';
 
   constructor(code: WorkspaceServiceError['code'], message: string) {
     super(message);
@@ -348,7 +348,7 @@ export class WorkspaceService {
       description: workspace.description,
       createdAt: new Date(workspace.createdAt).toISOString(),
       updatedAt: new Date(workspace.updatedAt).toISOString(),
-      isOwner: workspace.ownerId === role ? true : false,
+      isOwner: role === 'owner',
       role,
       workspaceType: workspace.workspaceType,
     };
