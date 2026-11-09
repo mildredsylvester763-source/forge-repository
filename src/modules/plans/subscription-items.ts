@@ -147,7 +147,8 @@ export function validatePaystackEventMutation(
     const validEvent =
       (mutation.status === 'active' &&
         (event.eventType === 'charge.success' || event.eventType === 'invoice.update') && successfulPayment) ||
-      (mutation.status === 'grace' && event.eventType === 'invoice.payment_failed') ||
+      (mutation.status === 'grace' && (event.eventType === 'invoice.payment_failed' ||
+        (event.eventType === 'invoice.update' && data.status === 'attention'))) ||
       (mutation.status === 'cancelled' && event.eventType === 'subscription.disable' && data.status !== 'complete') ||
       (mutation.status === 'expired' && event.eventType === 'subscription.disable' && data.status === 'complete');
     if (!validEvent) throw new Error('provider event type or payment status cannot apply this subscription status');
