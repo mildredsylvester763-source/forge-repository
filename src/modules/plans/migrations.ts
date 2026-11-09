@@ -72,5 +72,19 @@ export const plansMigrations: readonly Migration[] = [
         0, created_at, updated_at
       FROM user_plans, json_each(user_plans.engine_passes) AS engine;
     `,
+  },,
+  {
+    version: 3,
+    name: 'subscription_item_provider_source',
+    sql: `
+      ALTER TABLE subscription_items RENAME COLUMN product_id TO item_code;
+      ALTER TABLE subscription_items RENAME COLUMN current_period_start TO starts_at;
+      ALTER TABLE subscription_items RENAME COLUMN current_period_end TO ends_at;
+      ALTER TABLE subscription_items ADD COLUMN source TEXT;
+      ALTER TABLE subscription_items ADD COLUMN last_provider_event_at INTEGER;
+      UPDATE subscription_items SET source = 'legacy_migration' WHERE status = 'legacy';
+      CREATE INDEX subscription_items_provider_ref_idx
+        ON subscription_items (provider, provider_subscription_id);
+    `,
   },
 ];
