@@ -55,6 +55,15 @@ describe('subscription item foundation', () => {
     assert.equal(active.status, 'active');
   });
 
+  it('keeps a grace-period subscription in its slot and releases it when cancelled', async () => {
+    const store = new InMemorySubscriptionItemStore();
+    await store.create(item({ id: 'grace', status: 'grace' }));
+    await assert.rejects(store.create(item({ id: 'replacement', productId: 'team' })), /active base plan/);
+    const cancelled = await store.create(item({ id: 'cancelled', itemType: 'engine_pass', productId: 'painting', status: 'cancelled' }));
+    assert.equal(cancelled.status, 'cancelled');
+    await store.create(item({ id: 'painting-replacement', itemType: 'engine_pass', productId: 'painting' }));
+  });
+
   it('backfills existing plan records without deleting or rewriting them', () => {
     const db = openDatabase(':memory:');
     try {
