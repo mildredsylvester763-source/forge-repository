@@ -87,7 +87,7 @@ export function plansRoutes(
         if (typeof body.featureId !== 'string' || body.featureId.length === 0 || body.featureId.length > 16) {
           throw invalidField('featureId', 'invalid');
         }
-        const entitlement = await plans.checkFeature(user.id, body.featureId);
+        const entitlement = await plans.canUse(user.id, body.featureId);
         return { status: 200, body: { entitlement } };
       },
     },
