@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
-import { checkEntitlement, DEFAULT_PLAN, isPlanId, type Entitlement, type GateId, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
+import { canUse, DEFAULT_PLAN, ENGINE_BY_FEATURE, isPlanId, type Entitlement, type GateId, type PlanAccessPolicy, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
 import { FEATURE_GATES } from './engine/feature-gates.ts';
 import { gateForRoute } from './engine/route-gates.ts';
 import type { PlanStore } from './plans-store.ts';
@@ -11,6 +11,7 @@ export interface PlansDeps {
   /** Read-only compatibility fallback for pre-subscription-item records. */
   store: PlanStore;
   subscriptionItems: SubscriptionItemStore;
+  accessPolicy: PlanAccessPolicy;
   clock: Clock;
 }
 
@@ -44,11 +45,13 @@ function paystackCustomerReference(data: Record<string, unknown>): string | null
 export class PlansService {
   private readonly store: PlanStore;
   private readonly subscriptionItems: SubscriptionItemStore;
+  private readonly accessPolicy: PlanAccessPolicy;
   private readonly clock: Clock;
 
   constructor(deps: PlansDeps) {
     this.store = deps.store;
     this.subscriptionItems = deps.subscriptionItems;
+    this.accessPolicy = deps.accessPolicy;
     this.clock = deps.clock;
   }
 
@@ -163,12 +166,19 @@ export class PlansService {
     return this.applyPaystackEvent(event, []);
   }
 
-  /** The catalog verdict for one feature. Unknown features are refused by name. */
-  async checkFeature(userId: string, feature: string): Promise<Entitlement> {
-    const gate = FEATURE_GATES[feature];
-    if (gate === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
+  /**
+   * The single access authority for every catalog feature.
+   * The feature's Plan from gate and engine tag are resolved together here.
+   */
+  async canUse(userId: string, featureId: string): Promise<Entitlement> {
+    const planFrom = FEATURE_GATES[featureId];
+    if (planFrom === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
     const record = await this.getPlan(userId);
-    return checkEntitlement(record, feature, gate);
+    return canUse(record, {
+      featureId,
+      planFrom,
+      ...(ENGINE_BY_FEATURE[featureId] === undefined ? {} : { engineTag: ENGINE_BY_FEATURE[featureId] }),
+    }, this.accessPolicy);
   }
 
   /** The gate a wired route enforces, or null when the route has no catalog entry. */
