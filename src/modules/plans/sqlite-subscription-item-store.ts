@@ -1,9 +1,9 @@
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackChargeForCheckout, validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
-interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: number; processed_at: number | null; }
+interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: number; processed_at: number | null; expected_amount_minor: number | null; currency: string | null; }
 
 interface SubscriptionItemRow {
   id: string;
@@ -64,8 +64,8 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
   constructor(db: Database) {
     this.db = db;
     this.insertCheckout = db.prepare(`
-      INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at)
-      VALUES (?, ?, 'paystack', 'pending', ?)
+      INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at, expected_amount_minor, currency)
+      VALUES (?, ?, 'paystack', 'pending', ?, ?, ?)
       ON CONFLICT (reference) DO NOTHING
     `);
     this.byCheckout = db.prepare('SELECT * FROM subscription_checkouts WHERE reference = ?');
@@ -132,9 +132,10 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
     validateSubscriptionItemInput(input);
     return transaction(this.db, () => {
-      this.insertCheckout.run(input.checkoutReference, input.userId, input.now);
+      this.insertCheckout.run(input.checkoutReference, input.userId, input.now, input.expectedAmountMinor, input.currency);
       const checkout = this.byCheckout.get(input.checkoutReference) as unknown as CheckoutRow | undefined;
-      if (!checkout || checkout.user_id !== input.userId || checkout.status !== 'pending') {
+      if (!checkout || checkout.user_id !== input.userId || checkout.status !== 'pending' ||
+        checkout.expected_amount_minor !== input.expectedAmountMinor || checkout.currency !== input.currency) {
         throw new Error('checkout reference belongs to another user or is no longer pending');
       }
       this.insertPending.run(
@@ -182,6 +183,7 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
             pending.user_id !== checkout.user_id) {
             throw new Error('payment event does not match a pending checkout item');
           }
+          validatePaystackChargeForCheckout(event, checkout.expected_amount_minor, checkout.currency);
           activatedCheckout = { reference: event.reference, userId: pending.user_id };
           if (pending.item_type === 'base_plan') {
             this.cancelExistingBasePlans.run(event.occurredAt, event.receivedAt, pending.user_id);
