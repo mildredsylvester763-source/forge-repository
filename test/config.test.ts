@@ -78,6 +78,21 @@ describe('configuration safety', () => {
     assert.equal(configured.passkeys.rpName, 'FORGE Workspace');
   });
 
+  it('loads Paystack webhook signing keys without requiring credentials before billing is enabled', () => {
+    const c = loadConfig(prod({
+      FORGE_PAYSTACK_WEBHOOK_SECRETS: 'whk_testkey1:whsec_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,whk_testkey2:whsec_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    }));
+    assert.deepEqual(c.payments.paystackWebhookSecrets.map((entry) => entry.keyId), ['whk_testkey1', 'whk_testkey2']);
+    assert.equal(loadConfig({ FORGE_ENV: 'development' }).payments.paystackWebhookSecrets.length, 0);
+  });
+
+  it('rejects malformed Paystack webhook signing-key configuration', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_PAYSTACK_WEBHOOK_SECRETS: 'wrong-format' })), ConfigError);
+    assert.throws(() => loadConfig(prod({
+      FORGE_PAYSTACK_WEBHOOK_SECRETS: 'whk_testkey:short',
+    })), ConfigError);
+  });
+
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
     assert.equal(c.password.currentPepperVersion, 3);
