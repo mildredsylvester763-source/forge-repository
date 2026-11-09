@@ -18,6 +18,7 @@ interface WorkspaceRow {
   created_at: number;
   updated_at: number;
   owner_id: string;
+  workspace_type: WorkspaceRecord['workspaceType'];
 }
 
 interface WorkspaceMemberRow {
@@ -36,6 +37,7 @@ function toWorkspaceRecord(row: WorkspaceRow): WorkspaceRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ownerId: row.owner_id,
+    workspaceType: row.workspace_type,
   };
 }
 
@@ -60,7 +62,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
     return transaction(this.db, () => {
       // Insert workspace
       this.db.prepare(
-        'INSERT INTO workspaces (id, slug, name, description, created_at, updated_at, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO workspaces (id, slug, name, description, created_at, updated_at, owner_id, workspace_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(
         workspace.id,
         workspace.slug,
@@ -69,6 +71,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
         workspace.createdAt,
         workspace.updatedAt,
         workspace.ownerId,
+        workspace.workspaceType,
       );
 
       // Insert owner as member (atomic within transaction)

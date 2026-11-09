@@ -1,13 +1,13 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { AppError } from '../src/kernel/errors.ts';
-import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
+import { GOOD_PASSWORD, sessionCookie, setPlanForTest, startHarness, type Harness } from './helpers.ts';
 
 async function signedInUser(h: Harness, email: string): Promise<string> {
   const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'WS Tester' });
   assert.equal(register.status, 201);
   const registered = (await register.json()) as { user: { id: string } };
-  await h.app.plans.setPlan(registered.user.id, 'team');
+  await setPlanForTest(h, registered.user.id, 'team');
   const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
   assert.equal(signIn.status, 200);
   return sessionCookie(signIn);

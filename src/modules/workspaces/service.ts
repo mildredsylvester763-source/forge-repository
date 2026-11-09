@@ -19,11 +19,11 @@ import type { Clock } from '../../kernel/clock.ts';
 import type { Logger } from '../../kernel/logger.ts';
 import type { UserStore } from '../identity/user-store.ts';
 import { generateSlug, generateUniqueSlug, validateSlug } from './slug.ts';
-import { MAX_WORKSPACES_PER_USER, RESERVED_SLUGS, type CreateWorkspaceInput, type PublicWorkspace, type PublicWorkspaceMember, type WorkspaceRecord, type WorkspaceRole } from './types.ts';
+import { MAX_WORKSPACES_PER_USER, RESERVED_SLUGS, type CreateWorkspaceInput, type PublicWorkspace, type PublicWorkspaceMember, type WorkspaceRecord, type WorkspaceRole, type WorkspaceType } from './types.ts';
 import type { WorkspaceStore } from './store.ts';
 
 export class WorkspaceServiceError extends Error {
-  readonly code: 'workspace_exists' | 'invalid_slug' | 'reserved_slug' | 'user_not_found' | 'workspace_not_found' | 'member_not_found' | 'workspace_limit_reached' | 'already_member' | 'permission_denied';
+  readonly code: 'workspace_exists' | 'invalid_slug' | 'reserved_slug' | 'user_not_found' | 'workspace_not_found' | 'member_not_found' | 'workspace_limit_reached' | 'already_member' | 'permission_denied' | 'invalid_workspace_type';
 
   constructor(code: WorkspaceServiceError['code'], message: string) {
     super(message);
@@ -70,6 +70,12 @@ export class WorkspaceService {
    * Fix 9: Block reserved slugs
    */
   async create(input: CreateWorkspaceInput, ownerId: string): Promise<PublicWorkspace> {
+    // Keep workspace tenancy separate from the subscription plan.
+    const workspaceType: WorkspaceType = input.workspaceType ?? 'personal';
+    if (!['personal', 'team', 'studio', 'enterprise'].includes(workspaceType)) {
+      throw new WorkspaceServiceError('invalid_workspace_type', 'Unknown workspace type.');
+    }
+
     // Check if user exists
     const user = await this.userStore.findById(ownerId);
     if (!user || user.status !== 'active') {
@@ -118,6 +124,7 @@ export class WorkspaceService {
       createdAt: now,
       updatedAt: now,
       ownerId,
+      workspaceType,
     };
 
     // Atomic creation: workspace + owner as member
@@ -341,8 +348,9 @@ export class WorkspaceService {
       description: workspace.description,
       createdAt: new Date(workspace.createdAt).toISOString(),
       updatedAt: new Date(workspace.updatedAt).toISOString(),
-      isOwner: workspace.ownerId === role ? true : false,
+      isOwner: role === 'owner',
       role,
+      workspaceType: workspace.workspaceType,
     };
   }
 }

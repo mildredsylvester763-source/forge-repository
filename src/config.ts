@@ -3,6 +3,8 @@ import type { LogLevel } from './kernel/logger.ts';
 import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
+import { parsePaystackSigningSecrets } from './modules/plans/paystack-webhooks.ts';
+import { PLAN_IDS, type PlanAccessPolicy, type PlanEngineInclusions } from './modules/plans/engine/plan-engine.ts';
 
 export type Environment = 'development' | 'test' | 'production';
 
@@ -24,6 +26,7 @@ export interface ForgeConfig {
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
   passkeys: { rpId: string | null; origins: readonly string[]; rpName: string };
+  payments: { paystackSecretKeys: readonly string[] };
   plans: {
     plusUsdPerMonth: number;
     proUsdPerMonth: number;
@@ -31,6 +34,7 @@ export interface ForgeConfig {
     teamUsdPerSeatPerMonth: number;
     teamMinSeats: number;
     enterpriseFromUsdPerMonth: number;
+    accessPolicy: PlanAccessPolicy;
   };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
@@ -71,6 +75,35 @@ function money(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new ConfigError(`${name} must be a number between 0 and 1000000`);
   return n;
+}
+
+function parsePlanEngineInclusions(raw: string | undefined): PlanEngineInclusions {
+  if (raw === undefined || raw.trim() === '') return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ConfigError('FORGE_PLAN_ENGINE_INCLUSIONS must be a JSON object');
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ConfigError('FORGE_PLAN_ENGINE_INCLUSIONS must be a JSON object');
+  }
+
+  const result: Partial<Record<(typeof PLAN_IDS)[number], readonly string[]>> = {};
+  for (const [plan, engines] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!(PLAN_IDS as readonly string[]).includes(plan)) {
+      throw new ConfigError(`FORGE_PLAN_ENGINE_INCLUSIONS contains unknown plan ${plan}`);
+    }
+    if (!Array.isArray(engines) || engines.some((engine) =>
+      typeof engine !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(engine))) {
+      throw new ConfigError(`FORGE_PLAN_ENGINE_INCLUSIONS.${plan} must be an array of engine codes`);
+    }
+    if (new Set(engines).size !== engines.length) {
+      throw new ConfigError(`FORGE_PLAN_ENGINE_INCLUSIONS.${plan} contains duplicate engines`);
+    }
+    result[plan as (typeof PLAN_IDS)[number]] = [...engines] as string[];
+  }
+  return result;
 }
 
 function secret(raw: string, name: string): Buffer {
@@ -186,6 +219,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
 
   const currentPepperVersion = Math.max(...peppers.keys());
+  let paystackSecretKeys: string[];
+  try {
+    paystackSecretKeys = parsePaystackSigningSecrets(env.FORGE_PAYSTACK_SECRET_KEYS);
+  } catch (error) {
+    throw new ConfigError(error instanceof Error ? error.message : 'FORGE_PAYSTACK_SECRET_KEYS is invalid');
+  }
+  if (production && paystackSecretKeys.some((secret) => secret.startsWith('sk_test_'))) {
+    throw new ConfigError('FORGE_PAYSTACK_SECRET_KEYS must contain live Paystack secret keys in production');
+  }
+  const freeMonthlyCredits = int(env, 'FORGE_FREE_MONTHLY_CREDITS', 600, 0, 1_000_000_000);
+  const freeCreditsPerWindow = int(env, 'FORGE_FREE_CREDITS_PER_WINDOW', 40, 0, 1_000_000);
+  const freeWindowHours = int(env, 'FORGE_FREE_WINDOW_HOURS', 5, 1, 168);
 
   return {
     env: mode,
@@ -218,6 +263,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       origins: webAuthnOrigins,
       rpName: webAuthnRpName,
     },
+    payments: { paystackSecretKeys },
     plans: {
       plusUsdPerMonth: money(env, 'FORGE_PLUS_USD_PER_MONTH', 9.99),
       proUsdPerMonth: money(env, 'FORGE_PRO_USD_PER_MONTH', 24.99),
@@ -225,6 +271,50 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       teamUsdPerSeatPerMonth: money(env, 'FORGE_TEAM_USD_PER_SEAT_PER_MONTH', 39),
       teamMinSeats: int(env, 'FORGE_TEAM_MIN_SEATS', 3, 1, 10_000),
       enterpriseFromUsdPerMonth: money(env, 'FORGE_ENTERPRISE_FROM_USD_PER_MONTH', 1000),
+      accessPolicy: {
+        monthlyCreditsByPlan: {
+          free: {
+            monthlyCredits: freeMonthlyCredits,
+            perSeat: false,
+            freeWindowCredits: freeCreditsPerWindow,
+            freeWindowMs: freeWindowHours * HOUR,
+          },
+          plus: {
+            monthlyCredits: int(env, 'FORGE_PLUS_MONTHLY_CREDITS', 3000, 0, 1_000_000_000),
+            perSeat: false, freeWindowCredits: null, freeWindowMs: null,
+          },
+          pro: {
+            monthlyCredits: int(env, 'FORGE_PRO_MONTHLY_CREDITS', 7500, 0, 1_000_000_000),
+            perSeat: false, freeWindowCredits: null, freeWindowMs: null,
+          },
+          studio: {
+            monthlyCredits: int(env, 'FORGE_STUDIO_MONTHLY_CREDITS', 18000, 0, 1_000_000_000),
+            perSeat: false, freeWindowCredits: null, freeWindowMs: null,
+          },
+          team: {
+            monthlyCredits: int(env, 'FORGE_TEAM_MONTHLY_CREDITS_PER_SEAT', 11800, 0, 1_000_000_000),
+            perSeat: true, freeWindowCredits: null, freeWindowMs: null,
+          },
+          enterprise: {
+            monthlyCredits: env.FORGE_ENTERPRISE_MONTHLY_CREDITS === undefined
+              ? null
+              : int(env, 'FORGE_ENTERPRISE_MONTHLY_CREDITS', 0, 0, 1_000_000_000),
+            perSeat: false, freeWindowCredits: null, freeWindowMs: null,
+          },
+        },
+        freeEngine: {
+          creditsPerWindow: freeCreditsPerWindow,
+          windowMs: freeWindowHours * HOUR,
+          monthlyCredits: freeMonthlyCredits,
+          monthlyCostCapUsd: money(env, 'FORGE_FREE_ENGINE_MONTHLY_COST_CAP_USD', 0.20),
+          models: 'free_only',
+          quality: 'free',
+          outputSize: 'free',
+          paidOnlyFeatures: false,
+          mainAppOnlyCostCap: true,
+        },
+        enginesIncludedByPlan: parsePlanEngineInclusions(env.FORGE_PLAN_ENGINE_INCLUSIONS),
+      },
     },
     storage: {
       databaseUrl,

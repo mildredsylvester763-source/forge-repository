@@ -18,8 +18,11 @@ export interface RequestContext {
   readonly userAgent: string;
   readonly method: string;
   readonly path: string;
+  /** Access decision attached by the central route gate, if this route is catalogued. */
+  readonly access?: unknown;
   header(name: string): string | undefined;
   cookie(name: string): string | undefined;
+  rawBody(): Promise<Buffer>;
   json(): Promise<Record<string, unknown>>;
 }
 
@@ -156,7 +159,12 @@ export function createHttpHandler(options: HttpOptions) {
       if (STATE_CHANGING.has(method)) enforceSameOrigin(req, options.allowedOrigins);
 
       const cookies = parseCookies(req.headers.cookie);
+      let rawBodyPromise: Promise<Buffer> | undefined;
       let bodyPromise: Promise<Record<string, unknown>> | undefined;
+      const rawBody = (): Promise<Buffer> => {
+        rawBodyPromise ??= readBody(req, maxBody);
+        return rawBodyPromise;
+      };
       const ctx: RequestContext = {
         requestId,
         ip,
@@ -168,13 +176,14 @@ export function createHttpHandler(options: HttpOptions) {
           return Array.isArray(v) ? v[0] : v;
         },
         cookie: (name) => cookies.get(name),
+        rawBody,
         json: () => {
           bodyPromise ??= (async () => {
             const type = String(req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
             if (type !== 'application/json') {
               throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json.');
             }
-            const raw = await readBody(req, maxBody);
+            const raw = await rawBody();
             if (raw.length === 0) throw new AppError(400, 'invalid_request', 'A JSON body is required.');
             let parsed: unknown;
             try {

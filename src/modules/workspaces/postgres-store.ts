@@ -18,6 +18,7 @@ interface WorkspaceRow {
   created_at: number;
   updated_at: number;
   owner_id: string;
+  workspace_type: WorkspaceRecord['workspaceType'];
 }
 
 interface WorkspaceMemberRow {
@@ -36,6 +37,7 @@ function toWorkspaceRecord(row: WorkspaceRow): WorkspaceRecord {
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
     ownerId: row.owner_id,
+    workspaceType: row.workspace_type,
   };
 }
 
@@ -63,8 +65,8 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
       // Insert workspace
       await client.query(
-        'INSERT INTO workspaces (id, slug, name, description, created_at, updated_at, owner_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [workspace.id, workspace.slug, workspace.name, workspace.description, workspace.createdAt, workspace.updatedAt, workspace.ownerId],
+        'INSERT INTO workspaces (id, slug, name, description, created_at, updated_at, owner_id, workspace_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [workspace.id, workspace.slug, workspace.name, workspace.description, workspace.createdAt, workspace.updatedAt, workspace.ownerId, workspace.workspaceType],
       );
 
       // Insert owner as member (atomic within transaction)
