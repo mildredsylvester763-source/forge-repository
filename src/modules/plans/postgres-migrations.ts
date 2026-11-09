@@ -73,5 +73,19 @@ export const pgPlansMigrations: readonly Migration[] = [
       FROM user_plans
       CROSS JOIN LATERAL jsonb_array_elements_text(user_plans.engine_passes) AS engine(value);
     `,
+  },,
+  {
+    version: 3,
+    name: 'subscription_item_provider_source',
+    sql: `
+      ALTER TABLE subscription_items RENAME COLUMN product_id TO item_code;
+      ALTER TABLE subscription_items RENAME COLUMN current_period_start TO starts_at;
+      ALTER TABLE subscription_items RENAME COLUMN current_period_end TO ends_at;
+      ALTER TABLE subscription_items ADD COLUMN source TEXT;
+      ALTER TABLE subscription_items ADD COLUMN last_provider_event_at BIGINT;
+      UPDATE subscription_items SET source = 'legacy_migration' WHERE status = 'legacy';
+      CREATE INDEX subscription_items_provider_ref_idx
+        ON subscription_items (provider, provider_subscription_id);
+    `,
   },
 ];
