@@ -61,6 +61,8 @@ async function purchasePlan(
       itemType: 'engine_pass',
       itemCode: engine,
       checkoutReference: transactionId,
+      expectedAmountMinor: 2500,
+      currency: 'NGN',
       now,
     });
     mutations.push({
