@@ -339,7 +339,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const trainingData = new TrainingDataService({ store: storage.trainingData, events, clock });
 
-  const plans = new PlansService({ store: storage.userPlans, subscriptionItems: storage.subscriptionItems, events, clock });
+  const plans = new PlansService({ store: storage.userPlans, subscriptionItems: storage.subscriptionItems, clock });
 
   const ungated: RouteTable = {
     ...healthRoutes(events, logger),
