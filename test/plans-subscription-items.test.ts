@@ -127,14 +127,36 @@ describe('subscription item foundation', () => {
     ]);
   });
 
-  it('does not let a pending item occupy the active subscription slot', async () => {
+  it('rejects duplicate pending base-plan and same-engine checkouts', async () => {
     const store = new InMemorySubscriptionItemStore();
-    const pending = await store.create(pendingItem());
-    assert.equal(pending.status, 'pending');
-    const event = verifiedEvent('txn_105');
+    await preparePending(store, 'pending_base', 'pro', 'checkout_base_1');
+    await assert.rejects(
+      preparePending(store, 'pending_base_2', 'team', 'checkout_base_2'),
+      /pending base-plan checkout/,
+    );
+    await preparePending(store, 'pending_creative', 'creative', 'checkout_creative_1', 'engine_pass');
+    await assert.rejects(
+      preparePending(store, 'pending_creative_2', 'creative', 'checkout_creative_2', 'engine_pass'),
+      /engine-pass checkout pending/,
+    );
+    await preparePending(store, 'pending_vision', 'vision', 'checkout_vision', 'engine_pass');
+  });
+
+  it('allows an active base plan and one pending upgrade without treating the pending item as an entitlement', async () => {
+    const store = new InMemorySubscriptionItemStore();
     await preparePending(store, 'active_base', 'pro', 'txn_105');
-    await store.applyPaystackEvent(event, [activation({ id: 'active_base', itemCode: 'pro' })]);
-    assert.equal((await store.listByUser('user_1')).find((x) => x.id === 'active_base')?.status, 'active');
+    await store.applyPaystackEvent(verifiedEvent('txn_105'), [activation({ id: 'active_base' })]);
+
+    const pending = await store.create(pendingItem({
+      id: 'pending_upgrade',
+      itemCode: 'team',
+      checkoutReference: 'checkout_upgrade',
+    }));
+    assert.equal(pending.status, 'pending');
+    const rows = await store.listByUser('user_1');
+    assert.equal(rows.find((x) => x.id === 'active_base')?.status, 'active');
+    assert.equal(rows.find((x) => x.id === 'pending_upgrade')?.status, 'pending');
+    assert.equal(rows.filter((x) => ['trialing', 'active', 'grace', 'legacy'].includes(x.status)).length, 1);
   });
 
   it('changes lifecycle state only through verified provider events and releases cancelled slots', async () => {
