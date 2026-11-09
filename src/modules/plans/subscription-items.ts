@@ -74,7 +74,7 @@ export interface SubscriptionItemStore {
   /** Creates only a pending Paystack checkout item; callers cannot grant a paid entitlement. */
   create(input: CreateSubscriptionItem): Promise<SubscriptionItem>;
   findById(id: string): Promise<SubscriptionItem | null>;
-  findPendingByCheckoutReference(reference: string): Promise<SubscriptionItem | null>;
+  listPendingByCheckoutReference(reference: string): Promise<SubscriptionItem[]>;
   listByUser(userId: string): Promise<SubscriptionItem[]>;
   /** Records the verified event and all its mutations in one database transaction. */
   applyPaystackEvent(
