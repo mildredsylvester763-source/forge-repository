@@ -51,7 +51,6 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
   private readonly pendingByCheckout;
   private readonly completeCheckout;
   private readonly byId;
-  private readonly byCheckoutReference;
   private readonly byUser;
   private readonly insertReceipt;
   private readonly findReceipt;
@@ -88,9 +87,6 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
       ) VALUES (?, ?, ?, ?, 'pending', 'paystack', ?, NULL, NULL, ?, ?, ?, NULL, NULL, ?, ?)
     `);
     this.byId = db.prepare('SELECT * FROM subscription_items WHERE id = ?');
-    this.byCheckoutReference = db.prepare(
-      "SELECT * FROM subscription_items WHERE provider = 'paystack' AND checkout_reference = ? AND status = 'pending'",
-    );
     this.byUser = db.prepare('SELECT * FROM subscription_items WHERE user_id = ? ORDER BY created_at, id');
     this.insertReceipt = db.prepare(`
       INSERT INTO subscription_provider_events (provider, event_id, payload_hash, received_at)
