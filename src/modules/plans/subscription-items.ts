@@ -66,7 +66,7 @@ export interface ActivateSubscriptionItem {
 
 export type PaystackSubscriptionMutation =
   | { readonly kind: 'activate'; readonly item: ActivateSubscriptionItem }
-  | { readonly kind: 'set_status'; readonly providerSubscriptionId: string; readonly status: 'grace' | 'cancelled' | 'expired' }
+  | { readonly kind: 'set_status'; readonly providerSubscriptionId: string; readonly status: 'active' | 'grace' | 'cancelled' | 'expired' }
   | { readonly kind: 'mark_not_renewing'; readonly providerSubscriptionId: string };
 
 export interface ApplyPaystackEventResult {
@@ -134,11 +134,23 @@ export function validatePaystackEventMutation(
     throw new Error('only a subscription.not_renew event can mark a subscription as not renewing');
   }
   if (mutation.kind === 'set_status') {
+    const rawData = event.payload.data;
+    const data = rawData !== null && typeof rawData === 'object' && !Array.isArray(rawData)
+      ? rawData as Record<string, unknown>
+      : {};
+    const rawTransaction = data.transaction;
+    const transaction = rawTransaction !== null && typeof rawTransaction === 'object' && !Array.isArray(rawTransaction)
+      ? rawTransaction as Record<string, unknown>
+      : {};
+    const successfulPayment = data.status === 'success' || data.paid === true || data.paid === 1 ||
+      transaction.status === 'success';
     const validEvent =
+      (mutation.status === 'active' &&
+        (event.eventType === 'charge.success' || event.eventType === 'invoice.update') && successfulPayment) ||
       (mutation.status === 'grace' && event.eventType === 'invoice.payment_failed') ||
-      ((mutation.status === 'cancelled' || mutation.status === 'expired') &&
-        (event.eventType === 'subscription.disable' || event.eventType === 'invoice.payment_failed'));
-    if (!validEvent) throw new Error('provider event type cannot apply this subscription status');
+      (mutation.status === 'cancelled' && event.eventType === 'subscription.disable' && data.status !== 'complete') ||
+      (mutation.status === 'expired' && event.eventType === 'subscription.disable' && data.status === 'complete');
+    if (!validEvent) throw new Error('provider event type or payment status cannot apply this subscription status');
   }
 }
 
