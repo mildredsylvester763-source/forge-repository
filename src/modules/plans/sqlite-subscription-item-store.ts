@@ -1,6 +1,6 @@
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
 interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: number; processed_at: number | null; }
@@ -172,6 +172,7 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
       let activatedCheckout: { reference: string; userId: string } | null = null;
       for (const mutation of mutations) {
         validatePaystackMutation(mutation);
+      validatePaystackEventMutation(event, mutation);
         if (mutation.kind === 'activate') {
           if (!event.reference) throw new Error('verified payment event has no checkout reference');
           const checkout = this.byCheckout.get(event.reference) as unknown as CheckoutRow | undefined;
