@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface PaystackSigningSecret {
   readonly keyId: string;
@@ -91,4 +91,59 @@ export function parsePaystackSigningSecrets(raw: string | undefined): PaystackSi
     result.push({ keyId, secret });
   }
   return result;
+}
+
+const verifiedPaystackEventBrand: unique symbol = Symbol('verified-paystack-event');
+
+export interface VerifiedPaystackEvent {
+  readonly [verifiedPaystackEventBrand]: true;
+  readonly provider: 'paystack';
+  /** Event type + stable transaction/resource id; unique within Paystack. */
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly payloadHash: string;
+  readonly receivedAt: number;
+  readonly occurredAt: number;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Verifies the signature before parsing the JSON, then returns a branded
+ * event that can be accepted by the subscription store. Invalid or
+ * unidentifiable events return null and must not mutate billing state.
+ */
+export function verifyAndParsePaystackEvent(input: PaystackSignatureInput): VerifiedPaystackEvent | null {
+  if (!verifyPaystackWebhookSignature(input)) return null;
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(input.rawBody.toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null;
+
+  const record = payload as Record<string, unknown>;
+  if (typeof record.event !== 'string' || record.event.length === 0 || record.event.length > 128) return null;
+  if (record.data === null || typeof record.data !== 'object' || Array.isArray(record.data)) return null;
+  const data = record.data as Record<string, unknown>;
+  const rawId = data.id ?? data.reference;
+  if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).length === 0 || String(rawId).length > 256) {
+    return null;
+  }
+
+  const createdAt = data.created_at;
+  const parsedCreatedAt = typeof createdAt === 'string' ? Date.parse(createdAt) : Number.NaN;
+  const occurredAt = Number.isFinite(parsedCreatedAt) ? parsedCreatedAt : input.nowMs;
+
+  return Object.freeze({
+    [verifiedPaystackEventBrand]: true as const,
+    provider: 'paystack' as const,
+    eventId: `${record.event}:${String(rawId)}`,
+    eventType: record.event,
+    payloadHash: createHash('sha256').update(input.rawBody).digest('hex'),
+    receivedAt: input.nowMs,
+    occurredAt,
+    payload: Object.freeze(record),
+  });
 }
