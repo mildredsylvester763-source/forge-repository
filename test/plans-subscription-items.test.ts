@@ -13,7 +13,7 @@ import {
   type SubscriptionItemStore,
 } from '../src/modules/plans/index.ts';
 
-const WEBHOOK_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
+const WEBHOOK_SECRET = 'sk_test_0123456789abcdef0123456789abcdef';
 const KEY_ID = 'whk_testkey1';
 
 const pendingItem = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSubscriptionItem => ({
@@ -36,15 +36,13 @@ function verifiedEvent(
     event: eventType,
     data: { id, reference: id, created_at: new Date(receivedAt).toISOString(), ...extraData },
   }), 'utf8');
-  const timestamp = Math.floor(receivedAt / 1000);
   const digest = createHmac('sha512', WEBHOOK_SECRET)
-    .update(`${timestamp}.`)
     .update(rawBody)
     .digest('hex');
   const verified = verifyAndParsePaystackEvent({
     rawBody,
-    signatureHeader: `t=${timestamp},v1=${KEY_ID}:${digest}`,
-    secrets: [{ keyId: KEY_ID, secret: WEBHOOK_SECRET }],
+    signatureHeader: digest,
+    secrets: [WEBHOOK_SECRET],
     nowMs: receivedAt,
   });
   if (!verified) throw new Error('test Paystack event should verify');
