@@ -1,7 +1,7 @@
 import type { SqlPool } from '../../kernel/sql.ts';
 import { withTransaction } from '../../kernel/sql.ts';
 import type { CreateSubscriptionItem, PaystackSubscriptionMutation, SubscriptionItem, SubscriptionItemStore } from './subscription-items.ts';
-import { validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
+import { validatePaystackEventMutation, validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
 interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: string | number; processed_at: string | number | null; }
@@ -122,6 +122,7 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
       let activatedCheckout: { reference: string; userId: string } | null = null;
       for (const mutation of mutations) {
         validatePaystackMutation(mutation);
+      validatePaystackEventMutation(event, mutation);
         if (mutation.kind === 'activate') {
           if (!event.reference) throw new Error('verified payment event has no checkout reference');
           const checkoutResult = await conn.query<CheckoutRow>(
