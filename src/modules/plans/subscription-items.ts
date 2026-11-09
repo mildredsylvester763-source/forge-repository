@@ -95,6 +95,25 @@ export function validateSubscriptionItemInput(input: CreateSubscriptionItem): vo
   }
 }
 
+export function validatePaystackEventMutation(
+  event: VerifiedPaystackEvent,
+  mutation: PaystackSubscriptionMutation,
+): void {
+  if (mutation.kind === 'activate' && event.eventType !== 'charge.success') {
+    throw new Error('only a signed charge.success event can activate a checkout');
+  }
+  if (mutation.kind === 'mark_not_renewing' && event.eventType !== 'subscription.not_renew') {
+    throw new Error('only a subscription.not_renew event can mark a subscription as not renewing');
+  }
+  if (mutation.kind === 'set_status') {
+    const validEvent =
+      (mutation.status === 'grace' && event.eventType === 'invoice.payment_failed') ||
+      ((mutation.status === 'cancelled' || mutation.status === 'expired') &&
+        (event.eventType === 'subscription.disable' || event.eventType === 'invoice.payment_failed'));
+    if (!validEvent) throw new Error('provider event type cannot apply this subscription status');
+  }
+}
+
 export function validatePaystackMutation(mutation: PaystackSubscriptionMutation): void {
   if (mutation.kind === 'activate') {
     if (!mutation.item.id || mutation.item.id.length > 128) {
