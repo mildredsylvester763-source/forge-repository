@@ -43,6 +43,7 @@ on:
       - 'test/co-100-offline-sync.test.ts'
       - 'test/co-100-offline-sync-postgres.test.ts'
       - 'test/co-100-offline-sync-routes.test.ts'
+      - 'test/co-100-offline-sync-app.test.ts'
       - '.github/workflows/co-verification.yml'
   pull_request:
     branches:
@@ -112,6 +113,7 @@ jobs:
             test/co-100-offline-sync.test.ts \
             test/co-100-offline-sync-postgres.test.ts \
             test/co-100-offline-sync-routes.test.ts \
+            test/co-100-offline-sync-app.test.ts \
             test/postgres.test.ts \
             2>&1 | tee co-test.log
       - name: Surface failing tests as annotations
