@@ -14,7 +14,7 @@ export function applyRouteGates(routes: RouteTable, plans: PlansService, identit
   const wrapped: RouteTable = {};
   for (const [path, entry] of Object.entries(routes)) {
     const decision = gateForRoute(path);
-    if (decision === null || decision.gate === 'free' || decision.gate === 'internal') {
+    if (decision === null || decision.gate === 'free' || decision.gate === 'internal' || decision.gate === 'not_tiered') {
       wrapped[path] = entry;
       continue;
     }
@@ -25,7 +25,7 @@ export function applyRouteGates(routes: RouteTable, plans: PlansService, identit
       gated[method] = async (ctx) => {
         const auth = await identity.authenticate(ctx.cookie(cookie.name));
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
-        const entitlement = await plans.checkFeature(auth.user.id, decision.feature);
+        const entitlement = await plans.canUse(auth.user.id, decision.feature);
         if (!entitlement.allowed) {
           throw new AppError(
             402,
@@ -34,7 +34,7 @@ export function applyRouteGates(routes: RouteTable, plans: PlansService, identit
             { details: { feature: decision.feature, gate: decision.gate, plan: entitlement.plan, reason: entitlement.reason } },
           );
         }
-        return handler(ctx);
+        return handler({ ...ctx, access: entitlement });
       };
     }
     wrapped[path] = gated;
