@@ -86,5 +86,15 @@ export const plansMigrations: readonly Migration[] = [
       CREATE INDEX subscription_items_provider_ref_idx
         ON subscription_items (provider, provider_subscription_id);
     `,
+  },,
+  {
+    version: 4,
+    name: 'subscription_checkout_reference',
+    sql: `
+      ALTER TABLE subscription_items ADD COLUMN checkout_reference TEXT;
+      CREATE UNIQUE INDEX subscription_items_checkout_reference_idx
+        ON subscription_items (provider, checkout_reference)
+        WHERE checkout_reference IS NOT NULL;
+    `,
   },
 ];
