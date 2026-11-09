@@ -92,6 +92,12 @@ These are missing source-material inputs for accurate catalogue reconciliation, 
 - **CO-097:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED because no safe feature-specific implementation can be attributed to this ID.
 - **CO-098:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED for the same reason.
 - **CO-099:** supply the exact original Part 01 feature title, description and acceptance criteria. Until recovered, it remains MISSING / OWNER-BLOCKED for the same reason.
-- **CO-100:** the exact original Part 01 wording is still needed for formal acceptance reconciliation, but it does not block the documented baseline. The provider-neutral engine, SQLite/PostgreSQL stores and version-2 migrations are now partially implemented on `mistral`; application composition/HTTP authentication wiring and native PostgreSQL CI verification remain. No owner design approval or external credential is required for that remaining backend work.
+- **CO-100:** the exact original Part 01 wording is still needed for formal acceptance reconciliation, but it does not block the documented baseline. The provider-neutral engine, SQLite/PostgreSQL stores, version-2 migrations, authenticated routes and application composition are now wired on `mistral`. Route-boundary tests and in-memory/SQLite application-composition tests are added. The new repository CI/native PostgreSQL result is not yet verified; no owner design approval or provider credential is required for the remaining verification.
 
 The CO-097–CO-100 branch evidence and current verification boundary are recorded in `docs/PROGRESS.md` under the 2026-11-07 sequential follow-up audit.
+
+
+## Additional CO-100 decision input (2026-11-09)
+
+- **CO-100 With-Plans gate:** `CO-100` has no entry in `src/modules/plans/engine/feature-gates.ts`, and the new `/v1/sync/*` paths have no entries in `src/modules/plans/engine/route-gates.ts`. The current gate middleware intentionally leaves routes without a catalog entry ungated. Supply the exact With-Plans catalog row and gate before a paid-plan restriction is assigned. Do not infer or invent a tier. Session authentication remains enforced independently.
+- **CO status source conflict:** `docs/BUILD_NOTES.md` states CO-001–CO-080 and CO-096 are implemented, while the detailed evidence in `docs/PROGRESS.md` records partial/not-started/owner-blocked states for some of the same ranges. Owner reconciliation is needed to decide which status statement is authoritative. Until then, retain per-feature evidence classifications and do not bulk-promote.
