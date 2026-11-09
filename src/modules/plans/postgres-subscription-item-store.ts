@@ -11,6 +11,7 @@ interface SubscriptionItemRow {
   item_code: string;
   status: SubscriptionItem['status'];
   provider: string | null;
+  checkout_reference: string | null;
   provider_customer_id: string | null;
   provider_subscription_id: string | null;
   starts_at: string | number | null;
@@ -30,6 +31,7 @@ const toRecord = (row: SubscriptionItemRow): SubscriptionItem => ({
   itemCode: row.item_code,
   status: row.status,
   provider: row.provider,
+  checkoutReference: row.checkout_reference,
   providerCustomerId: row.provider_customer_id,
   providerSubscriptionId: row.provider_subscription_id,
   startsAt: num(row.starts_at),
@@ -52,19 +54,27 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
     validateSubscriptionItemInput(input);
     const result = await this.pool.query<SubscriptionItemRow>(`
       INSERT INTO subscription_items (
-        id, user_id, item_type, item_code, status, provider,
+        id, user_id, item_type, item_code, status, provider, checkout_reference,
         provider_customer_id, provider_subscription_id, starts_at,
         ends_at, cancel_at_period_end, source, last_provider_event_at, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, 'pending', NULL, NULL, NULL, $5, $6, $7, NULL, NULL, $8, $8)
+      ) VALUES ($1, $2, $3, $4, 'pending', 'paystack', $5, NULL, NULL, $6, $7, $8, NULL, NULL, $9, $9)
       RETURNING *
     `, [
-      input.id, input.userId, input.itemType, input.itemCode,
+      input.id, input.userId, input.itemType, input.itemCode, input.checkoutReference,
       input.startsAt ?? null, input.endsAt ?? null,
       input.cancelAtPeriodEnd ?? false, input.now,
     ]);
     const row = result.rows[0];
     if (!row) throw new Error('subscription item insert failed');
     return toRecord(row);
+  }
+
+  async findPendingByCheckoutReference(reference: string): Promise<SubscriptionItem | null> {
+    const result = await this.pool.query<SubscriptionItemRow>(
+      "SELECT * FROM subscription_items WHERE provider = 'paystack' AND checkout_reference = $1 AND status = 'pending'",
+      [reference],
+    );
+    return result.rows[0] ? toRecord(result.rows[0]) : null;
   }
 
   async applyPaystackEvent(
@@ -92,32 +102,46 @@ export class PostgresSubscriptionItemStore implements SubscriptionItemStore {
       for (const mutation of mutations) {
         validatePaystackMutation(mutation);
         if (mutation.kind === 'activate') {
-          const item = mutation.item;
-          if (item.itemType === 'base_plan') {
+          if (!event.reference) throw new Error('verified payment event has no checkout reference');
+          const pendingResult = await conn.query<SubscriptionItemRow>(
+            "SELECT * FROM subscription_items WHERE id = $1 FOR UPDATE",
+            [mutation.item.id],
+          );
+          const pending = pendingResult.rows[0];
+          if (!pending || pending.status !== 'pending' || pending.provider !== 'paystack' ||
+            pending.checkout_reference !== event.reference) {
+            throw new Error('payment event does not match a pending checkout item');
+          }
+          if (pending.item_type === 'base_plan') {
             await conn.query(`
               UPDATE subscription_items
               SET status = 'cancelled', last_provider_event_at = $1, updated_at = $2
               WHERE user_id = $3 AND item_type = 'base_plan'
                 AND status IN ('trialing', 'active', 'grace', 'legacy')
-            `, [event.occurredAt, event.receivedAt, item.userId]);
+            `, [event.occurredAt, event.receivedAt, pending.user_id]);
           }
-          await conn.query(`
-            INSERT INTO subscription_items (
-              id, user_id, item_type, item_code, status, provider,
-              provider_customer_id, provider_subscription_id, starts_at,
-              ends_at, cancel_at_period_end, source, last_provider_event_at, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, 'active', 'paystack', $5, $6, $7, $8, $9, $10, $11, $12, $12)
+          const updated = await conn.query<{ id: string }>(`
+            UPDATE subscription_items
+            SET status = 'active', provider_customer_id = $1, provider_subscription_id = $2,
+                starts_at = $3, ends_at = $4, cancel_at_period_end = $5, source = $6,
+                last_provider_event_at = $7, updated_at = $8
+            WHERE id = $9 AND provider = 'paystack' AND checkout_reference = $10 AND status = 'pending'
+            RETURNING id
           `, [
-            item.id, item.userId, item.itemType, item.itemCode,
-            item.providerCustomerId ?? null, item.providerSubscriptionId ?? null,
-            item.startsAt ?? null, item.endsAt ?? null, item.cancelAtPeriodEnd ?? false,
+            mutation.item.providerCustomerId ?? null,
+            mutation.item.providerSubscriptionId ?? null,
+            mutation.item.startsAt ?? (pending.starts_at === null ? null : Number(pending.starts_at)),
+            mutation.item.endsAt ?? (pending.ends_at === null ? null : Number(pending.ends_at)),
+            mutation.item.cancelAtPeriodEnd ?? false,
             event.eventId, event.occurredAt, event.receivedAt,
+            pending.id, event.reference,
           ]);
+          if (updated.rows.length !== 1) throw new Error('pending checkout item could not be activated');
           continue;
         }
 
-        const matches = await conn.query<{ id: string; last_provider_event_at: string | number | null }>(
-          "SELECT id, last_provider_event_at FROM subscription_items WHERE provider = 'paystack' AND provider_subscription_id = $1",
+        const matches = await conn.query<{ id: string }>(
+          "SELECT id FROM subscription_items WHERE provider = 'paystack' AND provider_subscription_id = $1",
           [mutation.providerSubscriptionId],
         );
         if (matches.rows.length === 0) throw new Error('subscription provider reference not found');
