@@ -89,6 +89,12 @@ describe('configuration safety', () => {
     assert.equal(loadConfig({ FORGE_ENV: 'development' }).payments.paystackSecretKeys.length, 0);
   });
 
+  it('rejects test-mode Paystack credentials in production', () => {
+    assert.throws(() => loadConfig(prod({
+      FORGE_PAYSTACK_SECRET_KEYS: 'sk_test_FORGE_TEST_KEY_PLACEHOLDER_ALPHA',
+    })), ConfigError);
+  });
+
   it('rejects malformed or duplicate Paystack secret-key configuration', () => {
     assert.throws(() => loadConfig(prod({ FORGE_PAYSTACK_SECRET_KEYS: 'wrong-format' })), ConfigError);
     assert.throws(() => loadConfig(prod({
