@@ -24,7 +24,7 @@ export const plansMigrations: readonly Migration[] = [
         user_id                  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
         item_type                TEXT NOT NULL CHECK (item_type IN ('base_plan', 'engine_pass')),
         product_id               TEXT NOT NULL,
-        status                   TEXT NOT NULL CHECK (status IN ('pending', 'trialing', 'active', 'past_due', 'canceled', 'expired', 'legacy')),
+        status                   TEXT NOT NULL CHECK (status IN ('pending', 'trialing', 'active', 'grace', 'cancelled', 'expired', 'legacy')),
         provider                 TEXT,
         provider_customer_id     TEXT,
         provider_subscription_id TEXT,
@@ -39,10 +39,10 @@ export const plansMigrations: readonly Migration[] = [
       CREATE INDEX subscription_items_user_idx ON subscription_items (user_id, created_at, id);
       CREATE UNIQUE INDEX subscription_items_one_base_plan_idx
         ON subscription_items (user_id)
-        WHERE item_type = 'base_plan' AND status IN ('trialing', 'active', 'past_due', 'legacy');
+        WHERE item_type = 'base_plan' AND status IN ('trialing', 'active', 'grace', 'legacy');
       CREATE UNIQUE INDEX subscription_items_one_engine_pass_idx
         ON subscription_items (user_id, product_id)
-        WHERE item_type = 'engine_pass' AND status IN ('trialing', 'active', 'past_due', 'legacy');
+        WHERE item_type = 'engine_pass' AND status IN ('trialing', 'active', 'grace', 'legacy');
 
       CREATE TABLE subscription_provider_events (
         provider       TEXT NOT NULL,
