@@ -101,6 +101,7 @@ export interface VerifiedPaystackEvent {
   /** Event type + stable transaction/resource id; unique within Paystack. */
   readonly eventId: string;
   readonly eventType: string;
+  readonly reference: string | null;
   readonly payloadHash: string;
   readonly receivedAt: number;
   readonly occurredAt: number;
@@ -141,6 +142,9 @@ export function verifyAndParsePaystackEvent(input: PaystackSignatureInput): Veri
     provider: 'paystack' as const,
     eventId: `${record.event}:${String(rawId)}`,
     eventType: record.event,
+    reference: typeof data.reference === 'string' && data.reference.length > 0 && data.reference.length <= 256
+      ? data.reference
+      : null,
     payloadHash: createHash('sha256').update(input.rawBody).digest('hex'),
     receivedAt: input.nowMs,
     occurredAt,
