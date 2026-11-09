@@ -298,4 +298,25 @@ describe('subscription item foundation', () => {
       db.close();
     }
   });
+  it('enforces pending checkout uniqueness in SQLite', async () => {
+    const db = openDatabase(':memory:');
+    try {
+      db.exec('CREATE TABLE users (id TEXT PRIMARY KEY) STRICT');
+      db.prepare('INSERT INTO users (id) VALUES (?)').run('user_1');
+      migrate(db, 'plans', plansMigrations);
+      const store = new SqliteSubscriptionItemStore(db);
+
+      await preparePending(store, 'pending_base', 'pro', 'checkout_base');
+      await assert.rejects(preparePending(store, 'pending_base_2', 'team', 'checkout_base_2'));
+
+      await preparePending(store, 'pending_creative', 'creative', 'checkout_creative', 'engine_pass');
+      await assert.rejects(preparePending(store, 'pending_creative_2', 'creative', 'checkout_creative_2', 'engine_pass'));
+      await preparePending(store, 'pending_vision', 'vision', 'checkout_vision', 'engine_pass');
+
+      assert.equal((await store.listByUser('user_1')).length, 3);
+    } finally {
+      db.close();
+    }
+  });
+
 });
