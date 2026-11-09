@@ -4,7 +4,13 @@
  * Plans are cumulative (Free < Plus < Pro < Team < Enterprise). Studio is Pro access with
  * bigger pools and three seats, and it also satisfies Team-gated rows. Internal rows are
  * forge machinery: never sold, never enforced. Engine rows follow the engine rule — the
- * account must own a pass for the named engine. Prices live in config only, never here.
+ * account must own a pass for one of the feature's engines. Prices live in config only.
+ *
+ * 9 Nov 2026 — the engine tags from the With-Plans catalog are now the law: the creative
+ * engines are manhwa, music, voice, video and 3d. A feature row names every engine it
+ * belongs to; any owned pass among them unlocks the strict gate check. The Hooks law
+ * (canUse in access-engine.ts) layers the free-level fallback on top of this primitive:
+ * an unpaid engine is never locked out, it runs at free level.
  */
 export type PlanId = 'free' | 'plus' | 'pro' | 'studio' | 'team' | 'enterprise';
 export type GateId = 'free' | 'plus' | 'pro' | 'team' | 'enterprise' | 'internal' | 'engine';
@@ -18,8 +24,17 @@ export const DEFAULT_PLAN: PlanId = 'free';
 const PLAN_RANK: Record<PlanId, number> = { free: 0, plus: 1, pro: 2, studio: 3, team: 3, enterprise: 4 };
 const GATE_RANK: Record<GateId, number> = { free: 0, plus: 1, pro: 2, team: 3, enterprise: 4, internal: -1, engine: -1 };
 
-/** Engine rows name their engine here; the plan record must own a pass with that exact name. */
-export const ENGINE_BY_FEATURE: Readonly<Record<string, string>> = { 'TQ-027': 'creative' };
+/** The creative engines from the With-Plans catalog. A pass is bought per engine, alone or bundled. */
+export const ENGINES: readonly string[] = ['manhwa', 'music', 'voice', 'video', '3d'];
+
+export function isEngineCode(value: unknown): value is string {
+  return typeof value === 'string' && (ENGINES as readonly string[]).includes(value);
+}
+
+/** Engine rows name their engines here — the catalog's engine tags, one row to many engines. */
+export const ENGINE_BY_FEATURE: Readonly<Record<string, readonly string[]>> = {
+  'TQ-027': ['manhwa', '3d', 'music'],
+};
 
 export interface PlanRecord {
   readonly userId: string;
@@ -28,7 +43,7 @@ export interface PlanRecord {
   readonly updatedAt: number;
 }
 
-/** The verdict of a gate check; serializable as-is (it is served by /v1/plans/check). */
+/** The verdict of a gate check; serializable as-is. */
 export interface Entitlement {
   readonly allowed: boolean;
   readonly feature: string;
@@ -56,8 +71,8 @@ export function checkEntitlement(record: Pick<PlanRecord, 'plan' | 'enginePasses
   const plan = record.plan;
   if (gate === 'internal') return { allowed: true, feature, gate, plan, reason: 'internal' };
   if (gate === 'engine') {
-    const engine = ENGINE_BY_FEATURE[feature];
-    const owned = engine !== undefined && record.enginePasses.includes(engine);
+    const engines = ENGINE_BY_FEATURE[feature];
+    const owned = engines !== undefined && engines.some((engine) => record.enginePasses.includes(engine));
     return { allowed: owned, feature, gate, plan, reason: owned ? 'unlocked' : 'engine_pass_missing' };
   }
   const allowed = GATE_RANK[gate] <= PLAN_RANK[plan];
