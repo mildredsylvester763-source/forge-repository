@@ -22,6 +22,8 @@ const pendingItem = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSub
   itemType: 'base_plan',
   itemCode: 'pro',
   checkoutReference: 'pending-checkout',
+  expectedAmountMinor: 2500,
+  currency: 'NGN',
   now: 1_800_000_000_000,
   ...overrides,
 });
@@ -34,7 +36,7 @@ function verifiedEvent(
 ): VerifiedPaystackEvent {
   const rawBody = Buffer.from(JSON.stringify({
     event: eventType,
-    data: { id, reference: id, created_at: new Date(receivedAt).toISOString(), ...extraData },
+    data: { id, reference: id, created_at: new Date(receivedAt).toISOString(), status: 'success', amount: 2500, currency: 'NGN', ...extraData },
   }), 'utf8');
   const digest = createHmac('sha512', WEBHOOK_SECRET)
     .update(rawBody)
@@ -63,6 +65,8 @@ async function preparePending(
     itemType,
     itemCode,
     checkoutReference: reference,
+    expectedAmountMinor: 2500,
+    currency: 'NGN',
     now: 1_800_000_000_000,
   });
 }
