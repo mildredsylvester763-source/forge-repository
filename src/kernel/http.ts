@@ -18,6 +18,8 @@ export interface RequestContext {
   readonly userAgent: string;
   readonly method: string;
   readonly path: string;
+  /** Access decision attached by the central route gate, if this route is catalogued. */
+  readonly access?: unknown;
   header(name: string): string | undefined;
   cookie(name: string): string | undefined;
   rawBody(): Promise<Buffer>;
