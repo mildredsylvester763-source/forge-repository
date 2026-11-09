@@ -10,8 +10,8 @@ export type SubscriptionItemStatus =
   | 'pending'
   | 'trialing'
   | 'active'
-  | 'past_due'
-  | 'canceled'
+  | 'grace'
+  | 'cancelled'
   | 'expired'
   | 'legacy';
 
@@ -58,7 +58,7 @@ export function validateSubscriptionItemInput(input: CreateSubscriptionItem): vo
   if (!input.userId || input.userId.length > 128) throw new Error('subscription item user id must be 1 to 128 characters');
   if (!input.productId || input.productId.length > 128) throw new Error('subscription item product id must be 1 to 128 characters');
   if (input.itemType !== 'base_plan' && input.itemType !== 'engine_pass') throw new Error('invalid subscription item type');
-  if (!['pending', 'trialing', 'active', 'past_due', 'canceled', 'expired', 'legacy'].includes(input.status)) {
+  if (!['pending', 'trialing', 'active', 'grace', 'cancelled', 'expired', 'legacy'].includes(input.status)) {
     throw new Error('invalid subscription item status');
   }
   if (input.currentPeriodStart != null && input.currentPeriodEnd != null && input.currentPeriodEnd <= input.currentPeriodStart) {
