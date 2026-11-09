@@ -1,7 +1,8 @@
+import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
-import type { PlanId } from '../src/modules/plans/index.ts';
+import { verifyAndParsePaystackEvent, type PlanId } from '../src/modules/plans/index.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
@@ -10,11 +11,65 @@ interface TestUser {
   id: string;
 }
 
+let paymentSequence = 0;
+const PAYSTACK_TEST_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
+const PAYSTACK_TEST_KEY_ID = 'whk_testkey1';
+
+async function purchasePlan(
+  h: Harness,
+  userId: string,
+  plan: PlanId,
+  enginePasses: readonly string[] = [],
+): Promise<void> {
+  paymentSequence += 1;
+  const now = Date.now();
+  const transactionId = `plans_test_${paymentSequence}`;
+  const rawBody = Buffer.from(JSON.stringify({
+    event: 'charge.success',
+    data: { id: transactionId, created_at: new Date(now).toISOString() },
+  }), 'utf8');
+  const timestamp = Math.floor(now / 1000);
+  const digest = createHmac('sha512', PAYSTACK_TEST_SECRET)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+  const event = verifyAndParsePaystackEvent({
+    rawBody,
+    signatureHeader: `t=${timestamp},v1=${PAYSTACK_TEST_KEY_ID}:${digest}`,
+    secrets: [{ keyId: PAYSTACK_TEST_KEY_ID, secret: PAYSTACK_TEST_SECRET }],
+    nowMs: now,
+  });
+  if (!event) throw new Error('test payment event should verify');
+
+  await h.app.plans.applyPaystackEvent(event, [
+    {
+      kind: 'activate',
+      item: {
+        id: `base_${paymentSequence}`,
+        userId,
+        itemType: 'base_plan',
+        itemCode: plan,
+        providerSubscriptionId: `SUB_${paymentSequence}`,
+      },
+    },
+    ...enginePasses.map((engine) => ({
+      kind: 'activate' as const,
+      item: {
+        id: `pass_${paymentSequence}_${engine}`,
+        userId,
+        itemType: 'engine_pass' as const,
+        itemCode: engine,
+        providerSubscriptionId: `SUB_${paymentSequence}_${engine}`,
+      },
+    })),
+  ]);
+}
+
 async function registerAndSetPlan(h: Harness, email: string, plan: PlanId, enginePasses: readonly string[] = []): Promise<TestUser> {
   const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'Plans Tester' });
   assert.equal(register.status, 201);
   const registered = (await register.json()) as { user: { id: string } };
-  await h.app.plans.setPlan(registered.user.id, plan, enginePasses);
+  await purchasePlan(h, registered.user.id, plan, enginePasses);
   const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
   assert.equal(signIn.status, 200);
   return { cookie: sessionCookie(signIn), id: registered.user.id };
@@ -104,7 +159,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const body = (await denied.json()) as { error: { code: string; details: Record<string, string> } };
       assert.equal(body.error.code, 'plan_required');
       assert.deepEqual(body.error.details, { feature: 'AI-050', gate: 'plus', plan: 'free', reason: 'plan_too_low' });
-      await h.app.plans.setPlan(user.id, 'plus');
+      await purchasePlan(h, user.id, 'plus');
       const allowed = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
       assert.notEqual(allowed.status, 402);
     } finally {
@@ -189,18 +244,38 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
-  it('rejects unknown plan ids and records every change as an event', async () => {
+  it('rejects unknown base-plan codes and upgrades only from a verified payment event', async () => {
     const h = await startHarness();
     try {
       const user = await freeUser(h, 'plans-event@forge.test');
-      await assert.rejects(h.app.plans.setPlan(user.id, 'diamond' as PlanId));
-      await h.app.plans.setPlan(user.id, 'enterprise');
-      const record = await h.app.plans.getPlan(user.id);
-      assert.equal(record.plan, 'enterprise');
-      const events = await h.app.events.readFrom(0, 500);
-      const changed = events.find((e) => e.type === 'plans.plan.changed' && e.subject.id === user.id);
-      assert.ok(changed);
-      assert.equal((changed.payload as Record<string, unknown>).plan, 'enterprise');
+      const invalidNow = Date.now();
+      const invalidRaw = Buffer.from(JSON.stringify({
+        event: 'charge.success',
+        data: { id: 'plans_invalid', created_at: new Date(invalidNow).toISOString() },
+      }));
+      const invalidTs = Math.floor(invalidNow / 1000);
+      const invalidDigest = createHmac('sha512', PAYSTACK_TEST_SECRET)
+        .update(`${invalidTs}.`)
+        .update(invalidRaw)
+        .digest('hex');
+      const invalidEvent = verifyAndParsePaystackEvent({
+        rawBody: invalidRaw,
+        signatureHeader: `t=${invalidTs},v1=${PAYSTACK_TEST_KEY_ID}:${invalidDigest}`,
+        secrets: [{ keyId: PAYSTACK_TEST_KEY_ID, secret: PAYSTACK_TEST_SECRET }],
+        nowMs: invalidNow,
+      });
+      assert.ok(invalidEvent);
+      await assert.rejects(h.app.plans.applyPaystackEvent(invalidEvent, [{
+        kind: 'activate',
+        item: { id: 'invalid_plan', userId: user.id, itemType: 'base_plan', itemCode: 'diamond' },
+      }]), /unknown base plan code/);
+      assert.equal((await h.app.plans.getPlan(user.id)).plan, 'free');
+
+      await purchasePlan(h, user.id, 'pro');
+      assert.equal((await h.app.plans.getPlan(user.id)).plan, 'pro');
+      await purchasePlan(h, user.id, 'enterprise');
+      const upgraded = await h.app.plans.getPlan(user.id);
+      assert.equal(upgraded.plan, 'enterprise');
     } finally {
       await h.close();
     }
