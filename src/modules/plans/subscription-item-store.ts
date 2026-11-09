@@ -2,6 +2,8 @@ import type { CreateSubscriptionItem, PaystackSubscriptionMutation, Subscription
 import { validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
+const ACTIVE_STATES: readonly SubscriptionItem['status'][] = ['trialing', 'active', 'grace', 'legacy'];
+
 export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   private items = new Map<string, SubscriptionItem>();
   private readonly eventHashes = new Map<string, string>();
@@ -9,13 +11,17 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
     validateSubscriptionItemInput(input);
     if (this.items.has(input.id)) throw new Error('subscription item already exists');
+    if ([...this.items.values()].some((item) => item.checkoutReference === input.checkoutReference)) {
+      throw new Error('checkout reference already exists');
+    }
     const item: SubscriptionItem = {
       id: input.id,
       userId: input.userId,
       itemType: input.itemType,
       itemCode: input.itemCode,
       status: 'pending',
-      provider: null,
+      provider: 'paystack',
+      checkoutReference: input.checkoutReference,
       providerCustomerId: null,
       providerSubscriptionId: null,
       startsAt: input.startsAt ?? null,
@@ -32,6 +38,12 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
 
   async findById(id: string): Promise<SubscriptionItem | null> {
     return this.items.get(id) ?? null;
+  }
+
+  async findPendingByCheckoutReference(reference: string): Promise<SubscriptionItem | null> {
+    return [...this.items.values()].find(
+      (item) => item.provider === 'paystack' && item.checkoutReference === reference && item.status === 'pending',
+    ) ?? null;
   }
 
   async listByUser(userId: string): Promise<SubscriptionItem[]> {
@@ -56,12 +68,20 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
     for (const mutation of mutations) {
       validatePaystackMutation(mutation);
       if (mutation.kind === 'activate') {
-        const input = mutation.item;
-        if (next.has(input.id)) throw new Error('subscription item already exists');
-        if (input.itemType === 'base_plan') {
+        if (!event.reference) throw new Error('verified payment event has no checkout reference');
+        const pending = next.get(mutation.item.id);
+        if (!pending || pending.status !== 'pending' || pending.provider !== 'paystack' ||
+          pending.checkoutReference !== event.reference) {
+          throw new Error('payment event does not match a pending checkout item');
+        }
+
+        if (pending.itemType === 'base_plan') {
           for (const current of next.values()) {
-            if (current.userId === input.userId && current.itemType === 'base_plan' &&
-              ['trialing', 'active', 'grace', 'legacy'].includes(current.status)) {
+            if (current.userId === pending.userId && current.itemType === 'base_plan' &&
+              ACTIVE_STATES.includes(current.status)) {
+              if (current.lastProviderEventAt !== null && current.lastProviderEventAt > event.occurredAt) {
+                throw new Error('stale base plan activation event');
+              }
               next.set(current.id, {
                 ...current,
                 status: 'cancelled',
@@ -70,26 +90,28 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
               });
             }
           }
+        } else {
+          const duplicate = [...next.values()].some((current) =>
+            current.userId === pending.userId &&
+            current.itemType === 'engine_pass' &&
+            current.itemCode === pending.itemCode &&
+            ACTIVE_STATES.includes(current.status),
+          );
+          if (duplicate) throw new Error('user already has this active engine pass');
         }
-        this.assertUniqueActiveItem(next, input.userId, input.itemType, input.itemCode);
-        const item: SubscriptionItem = {
-          id: input.id,
-          userId: input.userId,
-          itemType: input.itemType,
-          itemCode: input.itemCode,
+
+        next.set(pending.id, {
+          ...pending,
           status: 'active',
-          provider: 'paystack',
-          providerCustomerId: input.providerCustomerId ?? null,
-          providerSubscriptionId: input.providerSubscriptionId ?? null,
-          startsAt: input.startsAt ?? null,
-          endsAt: input.endsAt ?? null,
-          cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+          providerCustomerId: mutation.item.providerCustomerId ?? null,
+          providerSubscriptionId: mutation.item.providerSubscriptionId ?? null,
+          startsAt: mutation.item.startsAt ?? pending.startsAt,
+          endsAt: mutation.item.endsAt ?? pending.endsAt,
+          cancelAtPeriodEnd: mutation.item.cancelAtPeriodEnd ?? false,
           source: event.eventId,
           lastProviderEventAt: event.occurredAt,
-          createdAt: event.receivedAt,
           updatedAt: event.receivedAt,
-        };
-        next.set(item.id, item);
+        });
         continue;
       }
 
@@ -111,20 +133,5 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
     this.items = next;
     this.eventHashes.set(eventKey, event.payloadHash);
     return { status: 'processed' };
-  }
-
-  private assertUniqueActiveItem(
-    items: Map<string, SubscriptionItem>,
-    userId: string,
-    itemType: SubscriptionItem['itemType'],
-    itemCode: string,
-  ): void {
-    for (const item of items.values()) {
-      if (item.userId !== userId || !['trialing', 'active', 'grace', 'legacy'].includes(item.status)) continue;
-      if (itemType === 'base_plan' && item.itemType === 'base_plan') throw new Error('user already has an active base plan');
-      if (itemType === 'engine_pass' && item.itemType === 'engine_pass' && item.itemCode === itemCode) {
-        throw new Error('user already has this active engine pass');
-      }
-    }
   }
 }
