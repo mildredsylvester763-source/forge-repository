@@ -3,6 +3,7 @@ import type { LogLevel } from './kernel/logger.ts';
 import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
+import { parsePaystackSigningSecrets, type PaystackSigningSecret } from './modules/plans/paystack-webhooks.ts';
 
 export type Environment = 'development' | 'test' | 'production';
 
@@ -24,6 +25,7 @@ export interface ForgeConfig {
   };
   breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
   passkeys: { rpId: string | null; origins: readonly string[]; rpName: string };
+  payments: { paystackWebhookSecrets: readonly PaystackSigningSecret[] };
   plans: {
     plusUsdPerMonth: number;
     proUsdPerMonth: number;
@@ -186,6 +188,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
 
   const currentPepperVersion = Math.max(...peppers.keys());
+  let paystackWebhookSecrets: PaystackSigningSecret[];
+  try {
+    paystackWebhookSecrets = parsePaystackSigningSecrets(env.FORGE_PAYSTACK_WEBHOOK_SECRETS);
+  } catch (error) {
+    throw new ConfigError(error instanceof Error ? error.message : 'FORGE_PAYSTACK_WEBHOOK_SECRETS is invalid');
+  }
 
   return {
     env: mode,
@@ -218,6 +226,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       origins: webAuthnOrigins,
       rpName: webAuthnRpName,
     },
+    payments: { paystackWebhookSecrets },
     plans: {
       plusUsdPerMonth: money(env, 'FORGE_PLUS_USD_PER_MONTH', 9.99),
       proUsdPerMonth: money(env, 'FORGE_PRO_USD_PER_MONTH', 24.99),
