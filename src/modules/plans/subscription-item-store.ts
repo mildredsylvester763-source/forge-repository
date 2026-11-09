@@ -21,6 +21,15 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
     validateSubscriptionItemInput(input);
     if (this.items.has(input.id)) throw new Error('subscription item already exists');
+    for (const existing of this.items.values()) {
+      if (existing.userId !== input.userId || existing.status !== 'pending') continue;
+      if (input.itemType === 'base_plan' && existing.itemType === 'base_plan') {
+        throw new Error('user already has a pending base-plan checkout');
+      }
+      if (input.itemType === 'engine_pass' && existing.itemType === 'engine_pass' && existing.itemCode === input.itemCode) {
+        throw new Error('user already has this engine-pass checkout pending');
+      }
+    }
     const checkout = this.checkouts.get(input.checkoutReference);
     if (checkout && (checkout.userId !== input.userId || checkout.status !== 'pending' ||
       checkout.expectedAmountMinor !== input.expectedAmountMinor || checkout.currency !== input.currency)) {
