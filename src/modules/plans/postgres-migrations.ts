@@ -120,4 +120,16 @@ export const pgPlansMigrations: readonly Migration[] = [
       GROUP BY checkout_reference, user_id;
     `,
   },
+  {
+    version: 6,
+    name: 'subscription_checkout_price_quote',
+    sql: `
+      ALTER TABLE subscription_checkouts
+        ADD COLUMN expected_amount_minor BIGINT
+        CHECK (expected_amount_minor IS NULL OR expected_amount_minor > 0);
+      ALTER TABLE subscription_checkouts
+        ADD COLUMN currency TEXT
+        CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$');
+    `,
+  },
 ];
