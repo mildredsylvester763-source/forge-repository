@@ -97,5 +97,27 @@ export const pgPlansMigrations: readonly Migration[] = [
         ON subscription_items (provider, checkout_reference)
         WHERE checkout_reference IS NOT NULL;
     `,
+  },,
+  {
+    version: 5,
+    name: 'subscription_checkout_groups',
+    sql: `
+      DROP INDEX subscription_items_checkout_reference_idx;
+      CREATE INDEX subscription_items_checkout_reference_lookup_idx
+        ON subscription_items (provider, checkout_reference, status);
+      CREATE TABLE subscription_checkouts (
+        reference    TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        provider     TEXT NOT NULL CHECK (provider = 'paystack'),
+        status       TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'cancelled', 'expired')),
+        created_at   BIGINT NOT NULL,
+        processed_at BIGINT
+      );
+      INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at)
+      SELECT checkout_reference, user_id, 'paystack', 'pending', MIN(created_at)
+      FROM subscription_items
+      WHERE checkout_reference IS NOT NULL AND provider = 'paystack'
+      GROUP BY checkout_reference, user_id;
+    `,
   },
 ];
