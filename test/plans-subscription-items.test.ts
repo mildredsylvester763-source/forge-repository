@@ -24,10 +24,15 @@ const pendingItem = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSub
   ...overrides,
 });
 
-function verifiedEvent(id: string, receivedAt = 1_800_000_000_000, eventType = 'charge.success'): VerifiedPaystackEvent {
+function verifiedEvent(
+  id: string,
+  receivedAt = 1_800_000_000_000,
+  eventType = 'charge.success',
+  extraData: Record<string, unknown> = {},
+): VerifiedPaystackEvent {
   const rawBody = Buffer.from(JSON.stringify({
     event: eventType,
-    data: { id, created_at: new Date(receivedAt).toISOString() },
+    data: { id, created_at: new Date(receivedAt).toISOString(), ...extraData },
   }), 'utf8');
   const timestamp = Math.floor(receivedAt / 1000);
   const digest = createHmac('sha512', WEBHOOK_SECRET)
@@ -45,7 +50,13 @@ function verifiedEvent(id: string, receivedAt = 1_800_000_000_000, eventType = '
 }
 
 const activation = (
-  item: Partial<PaystackSubscriptionMutation> & { id: string; itemCode: string; itemType?: 'base_plan' | 'engine_pass'; userId?: string; providerSubscriptionId?: string },
+  item: {
+    id: string;
+    itemCode: string;
+    itemType?: 'base_plan' | 'engine_pass';
+    userId?: string;
+    providerSubscriptionId?: string;
+  },
 ): PaystackSubscriptionMutation => ({
   kind: 'activate',
   item: {
@@ -73,16 +84,15 @@ describe('subscription item foundation', () => {
     assert.ok(rows.every((x) => x.status === 'active' && x.source === event.eventId && x.provider === 'paystack'));
   });
 
-  it('rejects a second active base plan and a duplicate active engine pass', async () => {
+  it('rotates the single active base plan and rejects duplicate active engine passes', async () => {
     const store = new InMemorySubscriptionItemStore();
     await store.applyPaystackEvent(verifiedEvent('txn_101'), [
       activation({ id: 'base_1', itemCode: 'pro' }),
       activation({ id: 'pass_1', itemType: 'engine_pass', itemCode: 'creative' }),
     ]);
-    await assert.rejects(
-      store.applyPaystackEvent(verifiedEvent('txn_102'), [activation({ id: 'base_2', itemCode: 'team' })]),
-      /active base plan/,
-    );
+    await store.applyPaystackEvent(verifiedEvent('txn_102'), [activation({ id: 'base_2', itemCode: 'team' })]);
+    assert.equal((await store.findById('base_1'))?.status, 'cancelled');
+    assert.equal((await store.findById('base_2'))?.status, 'active');
     await assert.rejects(
       store.applyPaystackEvent(verifiedEvent('txn_103'), [
         activation({ id: 'pass_2', itemType: 'engine_pass', itemCode: 'creative' }),
@@ -155,13 +165,8 @@ describe('subscription item foundation', () => {
     const mutations = [activation({ id: 'base_1', itemCode: 'pro' })];
     assert.equal((await store.applyPaystackEvent(event, mutations)).status, 'processed');
     assert.equal((await store.applyPaystackEvent(event, mutations)).status, 'duplicate');
-    const altered = verifyAndParsePaystackEvent({
-      rawBody: Buffer.from(JSON.stringify({ event: 'charge.success', data: { id: 'txn_110', amount: 900 } })),
-      signatureHeader: undefined,
-      secrets: [{ keyId: KEY_ID, secret: WEBHOOK_SECRET }],
-      nowMs: event.receivedAt,
-    });
-    assert.equal(altered, null, 'an altered body cannot be verified without its signature');
+    const altered = verifiedEvent('txn_110', event.receivedAt, 'charge.success', { amount: 900 });
+    await assert.rejects(store.applyPaystackEvent(altered, []), /different payload/);
     assert.equal((await store.listByUser('user_1')).length, 1);
   });
 
@@ -207,14 +212,14 @@ describe('subscription item foundation', () => {
       assert.equal((await store.applyPaystackEvent(first, [activation({ id: 'base_1', itemCode: 'pro' })])).status, 'duplicate');
 
       const conflict = verifiedEvent('txn_112');
+      await store.applyPaystackEvent(conflict, [activation({ id: 'pass_1', itemType: 'engine_pass', itemCode: 'creative' })]);
+      const duplicatePassEvent = verifiedEvent('txn_113');
       await assert.rejects(
-        store.applyPaystackEvent(conflict, [activation({ id: 'base_2', itemCode: 'team' })]),
+        store.applyPaystackEvent(duplicatePassEvent, [activation({ id: 'pass_2', itemType: 'engine_pass', itemCode: 'creative' })]),
       );
-      // The receipt was rolled back with the failed entitlement insertion.
-      await assert.rejects(
-        store.applyPaystackEvent(conflict, [activation({ id: 'base_2', itemCode: 'team' })]),
-      );
-      assert.equal((await store.listByUser('user_1')).length, 1);
+      // The receipt was rolled back with the failed engine-pass insertion.
+      assert.equal((await store.applyPaystackEvent(duplicatePassEvent, [activation({ id: 'pass_2', itemType: 'engine_pass', itemCode: 'vision' })])).status, 'processed');
+      assert.equal((await store.listByUser('user_1')).length, 3);
     } finally {
       db.close();
     }
