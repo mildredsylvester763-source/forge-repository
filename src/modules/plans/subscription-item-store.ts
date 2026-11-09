@@ -38,9 +38,9 @@ export class InMemorySubscriptionItemStore implements SubscriptionItemStore {
   }
 
   private assertUniqueActiveItem(userId: string, itemType: SubscriptionItem['itemType'], productId: string, status: SubscriptionItem['status']): void {
-    if (!['trialing', 'active', 'past_due', 'legacy'].includes(status)) return;
+    if (!['trialing', 'active', 'grace', 'legacy'].includes(status)) return;
     for (const item of this.items.values()) {
-      if (item.userId !== userId || !['trialing', 'active', 'past_due', 'legacy'].includes(item.status)) continue;
+      if (item.userId !== userId || !['trialing', 'active', 'grace', 'legacy'].includes(item.status)) continue;
       if (itemType === 'base_plan' && item.itemType === 'base_plan') throw new Error('user already has an active base plan');
       if (itemType === 'engine_pass' && item.itemType === 'engine_pass' && item.productId === productId) {
         throw new Error('user already has this active engine pass');
