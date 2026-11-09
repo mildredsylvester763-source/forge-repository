@@ -47,15 +47,6 @@ export const workspaceMigrations: Migration[] = [
         CHECK (workspace_type IN ('personal', 'team', 'studio', 'enterprise'));
     `,
   },
-  {
-    version: 2,
-    description: 'Separate workspace type from subscription plan',
-    sql: `
-      ALTER TABLE workspaces
-        ADD COLUMN workspace_type TEXT NOT NULL DEFAULT 'personal'
-        CHECK (workspace_type IN ('personal', 'team', 'studio', 'enterprise'));
-    `,
-  },
 ];
 
 // PostgreSQL migrations
@@ -89,6 +80,16 @@ export const pgWorkspaceMigrations: { version: number; description: string; sql:
       CREATE INDEX IF NOT EXISTS idx_workspaces_slug ON workspaces(slug);
       CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON workspace_members(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(user_id);
+    `,
+  },,
+
+  {
+    version: 2,
+    description: 'Separate workspace type from subscription plan',
+    sql: `
+      ALTER TABLE workspaces
+        ADD COLUMN workspace_type TEXT NOT NULL DEFAULT 'personal'
+        CHECK (workspace_type IN ('personal', 'team', 'studio', 'enterprise'));
     `,
   },
 ];
