@@ -81,7 +81,7 @@ export const pgWorkspaceMigrations: { version: number; description: string; sql:
       CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_id ON workspace_members(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(user_id);
     `,
-  },,
+  },
 
   {
     version: 2,
