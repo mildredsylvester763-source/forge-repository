@@ -239,7 +239,7 @@ describe('subscription item foundation', () => {
       await preparePending(store, 'pass_2', 'vision', 'txn_113', 'engine_pass');
       const retryEvent = verifiedEvent('txn_113');
       await assert.rejects(store.applyPaystackEvent(retryEvent, [
-        activation('pending_item_missing'),
+        activation({ id: 'pending_item_missing' }),
       ]), /does not match a pending checkout item/);
       // The failed event receipt rolls back with the failed mutation.
       assert.equal((await store.applyPaystackEvent(retryEvent, [activation({ id: 'pass_2' })])).status, 'processed');
