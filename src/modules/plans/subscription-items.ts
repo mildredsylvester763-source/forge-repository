@@ -1,4 +1,5 @@
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
+import { isPlanId } from './engine/plan-engine.ts';
 
 /**
  * A user's commercial entitlement is a set of independently purchased items.
@@ -100,6 +101,7 @@ export function validatePaystackMutation(mutation: PaystackSubscriptionMutation)
     if (!item.userId || item.userId.length > 128) throw new Error('subscription item user id must be 1 to 128 characters');
     if (!item.itemCode || item.itemCode.length > 128) throw new Error('subscription item code must be 1 to 128 characters');
     if (item.itemType !== 'base_plan' && item.itemType !== 'engine_pass') throw new Error('invalid subscription item type');
+    if (item.itemType === 'base_plan' && !isPlanId(item.itemCode)) throw new Error('unknown base plan code');
     if (item.startsAt != null && item.endsAt != null && item.endsAt <= item.startsAt) {
       throw new Error('subscription item end date must be after start date');
     }
