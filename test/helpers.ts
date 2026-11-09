@@ -82,8 +82,7 @@ export function sessionCookie(res: Response): string {
 
 
 let testPaymentSequence = 0;
-const TEST_PAYSTACK_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
-const TEST_PAYSTACK_KEY_ID = 'whk_testkey1';
+const TEST_PAYSTACK_SECRET = 'sk_test_0123456789abcdef0123456789abcdef';
 
 /**
  * Grants test entitlements through the same verified provider-event path used
@@ -102,15 +101,13 @@ export async function setPlanForTest(
     event: 'charge.success',
     data: { id: transactionId, reference: transactionId, created_at: new Date(now).toISOString() },
   }), 'utf8');
-  const timestamp = Math.floor(now / 1000);
   const digest = createHmac('sha512', TEST_PAYSTACK_SECRET)
-    .update(`${timestamp}.`)
     .update(rawBody)
     .digest('hex');
   const event = verifyAndParsePaystackEvent({
     rawBody,
-    signatureHeader: `t=${timestamp},v1=${TEST_PAYSTACK_KEY_ID}:${digest}`,
-    secrets: [{ keyId: TEST_PAYSTACK_KEY_ID, secret: TEST_PAYSTACK_SECRET }],
+    signatureHeader: digest,
+    secrets: [TEST_PAYSTACK_SECRET],
     nowMs: now,
   });
   if (!event) throw new Error('test payment event failed signature verification');
