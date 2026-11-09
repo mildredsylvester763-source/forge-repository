@@ -1,70 +1,171 @@
+import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { describe, it } from 'node:test';
-import { strict as assert } from 'node:assert';
 import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
 import {
   InMemorySubscriptionItemStore,
   SqliteSubscriptionItemStore,
   plansMigrations,
+  verifyAndParsePaystackEvent,
   type CreateSubscriptionItem,
+  type PaystackSubscriptionMutation,
+  type VerifiedPaystackEvent,
 } from '../src/modules/plans/index.ts';
 
-const item = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSubscriptionItem => ({
-  id: 'sub_1',
+const WEBHOOK_SECRET = 'whsec_0123456789abcdef0123456789abcdef';
+const KEY_ID = 'whk_testkey1';
+
+const pendingItem = (overrides: Partial<CreateSubscriptionItem> = {}): CreateSubscriptionItem => ({
+  id: 'pending_1',
   userId: 'user_1',
   itemType: 'base_plan',
-  productId: 'pro',
-  status: 'active',
-  provider: 'test',
+  itemCode: 'pro',
   now: 1_800_000_000_000,
   ...overrides,
 });
 
-describe('subscription item foundation', () => {
-  it('allows one base plan and multiple independent engine passes', async () => {
-    const store = new InMemorySubscriptionItemStore();
-    const base = await store.create(item());
-    const creative = await store.create(item({
-      id: 'sub_2', itemType: 'engine_pass', productId: 'creative',
-    }));
-    const vision = await store.create(item({
-      id: 'sub_3', itemType: 'engine_pass', productId: 'vision',
-    }));
+function verifiedEvent(id: string, receivedAt = 1_800_000_000_000, eventType = 'charge.success'): VerifiedPaystackEvent {
+  const rawBody = Buffer.from(JSON.stringify({
+    event: eventType,
+    data: { id, created_at: new Date(receivedAt).toISOString() },
+  }), 'utf8');
+  const timestamp = Math.floor(receivedAt / 1000);
+  const digest = createHmac('sha512', WEBHOOK_SECRET)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest('hex');
+  const verified = verifyAndParsePaystackEvent({
+    rawBody,
+    signatureHeader: `t=${timestamp},v1=${KEY_ID}:${digest}`,
+    secrets: [{ keyId: KEY_ID, secret: WEBHOOK_SECRET }],
+    nowMs: receivedAt,
+  });
+  if (!verified) throw new Error('test Paystack event should verify');
+  return verified;
+}
 
-    assert.equal(base.itemType, 'base_plan');
-    assert.equal(creative.productId, 'creative');
-    assert.equal(vision.productId, 'vision');
-    assert.deepEqual((await store.listByUser('user_1')).map((x) => x.id), ['sub_1', 'sub_2', 'sub_3']);
+const activation = (
+  item: Partial<PaystackSubscriptionMutation> & { id: string; itemCode: string; itemType?: 'base_plan' | 'engine_pass'; userId?: string; providerSubscriptionId?: string },
+): PaystackSubscriptionMutation => ({
+  kind: 'activate',
+  item: {
+    id: item.id,
+    userId: item.userId ?? 'user_1',
+    itemType: item.itemType ?? 'base_plan',
+    itemCode: item.itemCode,
+    providerSubscriptionId: item.providerSubscriptionId,
+  },
+});
+
+describe('subscription item foundation', () => {
+  it('allows one base plan and multiple independent engine passes from a verified event', async () => {
+    const store = new InMemorySubscriptionItemStore();
+    const event = verifiedEvent('txn_100');
+    const result = await store.applyPaystackEvent(event, [
+      activation({ id: 'base_1', itemCode: 'pro' }),
+      activation({ id: 'pass_1', itemType: 'engine_pass', itemCode: 'creative' }),
+      activation({ id: 'pass_2', itemType: 'engine_pass', itemCode: 'vision' }),
+    ]);
+
+    assert.equal(result.status, 'processed');
+    const rows = await store.listByUser('user_1');
+    assert.deepEqual(rows.map((x) => x.id), ['base_1', 'pass_1', 'pass_2']);
+    assert.ok(rows.every((x) => x.status === 'active' && x.source === event.eventId && x.provider === 'paystack'));
   });
 
-  it('rejects a second active base plan and duplicate active pass for the same engine', async () => {
+  it('rejects a second active base plan and a duplicate active engine pass', async () => {
     const store = new InMemorySubscriptionItemStore();
-    await store.create(item());
-    await assert.rejects(store.create(item({ id: 'sub_2', productId: 'team' })), /active base plan/);
-    await store.create(item({ id: 'sub_3', itemType: 'engine_pass', productId: 'creative' }));
+    await store.applyPaystackEvent(verifiedEvent('txn_101'), [
+      activation({ id: 'base_1', itemCode: 'pro' }),
+      activation({ id: 'pass_1', itemType: 'engine_pass', itemCode: 'creative' }),
+    ]);
     await assert.rejects(
-      store.create(item({ id: 'sub_4', itemType: 'engine_pass', productId: 'creative' })),
+      store.applyPaystackEvent(verifiedEvent('txn_102'), [activation({ id: 'base_2', itemCode: 'team' })]),
+      /active base plan/,
+    );
+    await assert.rejects(
+      store.applyPaystackEvent(verifiedEvent('txn_103'), [
+        activation({ id: 'pass_2', itemType: 'engine_pass', itemCode: 'creative' }),
+      ]),
       /active engine pass/,
     );
-    await store.create(item({ id: 'sub_5', itemType: 'engine_pass', productId: 'vision' }));
+    await store.applyPaystackEvent(verifiedEvent('txn_104'), [
+      activation({ id: 'pass_3', itemType: 'engine_pass', itemCode: 'vision' }),
+    ]);
   });
 
   it('does not let a pending item occupy the active subscription slot', async () => {
     const store = new InMemorySubscriptionItemStore();
-    await store.create(item({ id: 'pending', status: 'pending' }));
-    const active = await store.create(item({ id: 'active' }));
-    assert.equal(active.status, 'active');
+    const pending = await store.create(pendingItem());
+    assert.equal(pending.status, 'pending');
+    const event = verifiedEvent('txn_105');
+    await store.applyPaystackEvent(event, [activation({ id: 'active_base', itemCode: 'pro' })]);
+    assert.equal((await store.listByUser('user_1')).find((x) => x.id === 'active_base')?.status, 'active');
   });
 
-  it('keeps a grace-period subscription in its slot and releases it when cancelled', async () => {
+  it('changes lifecycle state only through verified provider events and releases cancelled slots', async () => {
     const store = new InMemorySubscriptionItemStore();
-    await store.create(item({ id: 'grace', status: 'grace' }));
-    await assert.rejects(store.create(item({ id: 'replacement', productId: 'team' })), /active base plan/);
-    const cancelled = await store.create(item({ id: 'cancelled', itemType: 'engine_pass', productId: 'painting', status: 'cancelled' }));
-    assert.equal(cancelled.status, 'cancelled');
-    await store.create(item({ id: 'painting-replacement', itemType: 'engine_pass', productId: 'painting' }));
+    await store.applyPaystackEvent(verifiedEvent('txn_106'), [
+      activation({ id: 'base_1', itemCode: 'pro', providerSubscriptionId: 'SUB_100' }),
+    ]);
+    await store.applyPaystackEvent(verifiedEvent('inv_100', 1_800_000_001_000, 'invoice.payment_failed'), [
+      { kind: 'set_status', providerSubscriptionId: 'SUB_100', status: 'grace' },
+    ]);
+    assert.equal((await store.findById('base_1'))?.status, 'grace');
+    await assert.rejects(
+      store.applyPaystackEvent(verifiedEvent('txn_107'), [activation({ id: 'base_2', itemCode: 'team' })]),
+      /active base plan/,
+    );
+
+    await store.applyPaystackEvent(verifiedEvent('sub_renew_100', 1_800_000_002_000, 'subscription.not_renew'), [
+      { kind: 'mark_not_renewing', providerSubscriptionId: 'SUB_100' },
+    ]);
+    assert.equal((await store.findById('base_1'))?.cancelAtPeriodEnd, true);
+
+    await store.applyPaystackEvent(verifiedEvent('sub_disabled_100', 1_800_000_003_000, 'subscription.disable'), [
+      { kind: 'set_status', providerSubscriptionId: 'SUB_100', status: 'cancelled' },
+    ]);
+    assert.equal((await store.findById('base_1'))?.status, 'cancelled');
+    await store.applyPaystackEvent(verifiedEvent('txn_108', 1_800_000_004_000), [
+      activation({ id: 'base_2', itemCode: 'team' }),
+    ]);
+    assert.equal((await store.findById('base_2'))?.status, 'active');
   });
 
-  it('backfills existing plan records without deleting or rewriting them', () => {
+  it('ignores stale provider status events and rejects a missing provider subscription reference', async () => {
+    const store = new InMemorySubscriptionItemStore();
+    await store.applyPaystackEvent(verifiedEvent('txn_109', 1_800_000_010_000), [
+      activation({ id: 'base_1', itemCode: 'pro', providerSubscriptionId: 'SUB_101' }),
+    ]);
+    await store.applyPaystackEvent(verifiedEvent('sub_cancel_101', 1_800_000_009_000, 'subscription.disable'), [
+      { kind: 'set_status', providerSubscriptionId: 'SUB_101', status: 'cancelled' },
+    ]);
+    assert.equal((await store.findById('base_1'))?.status, 'active');
+    await assert.rejects(
+      store.applyPaystackEvent(verifiedEvent('unknown_subscription', 1_800_000_011_000, 'subscription.disable'), [
+        { kind: 'set_status', providerSubscriptionId: 'SUB_UNKNOWN', status: 'cancelled' },
+      ]),
+      /provider reference not found/,
+    );
+  });
+
+  it('makes provider event processing idempotent and detects event-id payload collisions', async () => {
+    const store = new InMemorySubscriptionItemStore();
+    const event = verifiedEvent('txn_110');
+    const mutations = [activation({ id: 'base_1', itemCode: 'pro' })];
+    assert.equal((await store.applyPaystackEvent(event, mutations)).status, 'processed');
+    assert.equal((await store.applyPaystackEvent(event, mutations)).status, 'duplicate');
+    const altered = verifyAndParsePaystackEvent({
+      rawBody: Buffer.from(JSON.stringify({ event: 'charge.success', data: { id: 'txn_110', amount: 900 } })),
+      signatureHeader: undefined,
+      secrets: [{ keyId: KEY_ID, secret: WEBHOOK_SECRET }],
+      nowMs: event.receivedAt,
+    });
+    assert.equal(altered, null, 'an altered body cannot be verified without its signature');
+    assert.equal((await store.listByUser('user_1')).length, 1);
+  });
+
+  it('backfills existing plan records without rewriting them and marks their source', () => {
     const db = openDatabase(':memory:');
     try {
       db.exec('CREATE TABLE users (id TEXT PRIMARY KEY) STRICT');
@@ -81,30 +182,59 @@ describe('subscription item foundation', () => {
       assert.deepEqual({ ...legacyPlan }, { plan: 'pro', engine_passes: '["creative","vision"]', updated_at: 200 });
 
       const rows = db.prepare(
-        `SELECT item_type, product_id, status, provider FROM subscription_items WHERE user_id = ? ORDER BY CASE item_type WHEN 'base_plan' THEN 0 ELSE 1 END, product_id`,
-      ).all('user_legacy') as Array<{ item_type: string; product_id: string; status: string; provider: string }>;
+        `SELECT item_type, item_code, status, provider, source FROM subscription_items WHERE user_id = ? ORDER BY CASE item_type WHEN 'base_plan' THEN 0 ELSE 1 END, item_code`,
+      ).all('user_legacy') as Array<{ item_type: string; item_code: string; status: string; provider: string; source: string }>;
       assert.deepEqual(rows.map((row) => ({ ...row })), [
-        { item_type: 'base_plan', product_id: 'pro', status: 'legacy', provider: 'legacy_migration' },
-        { item_type: 'engine_pass', product_id: 'creative', status: 'legacy', provider: 'legacy_migration' },
-        { item_type: 'engine_pass', product_id: 'vision', status: 'legacy', provider: 'legacy_migration' },
+        { item_type: 'base_plan', item_code: 'pro', status: 'legacy', provider: 'legacy_migration', source: 'legacy_migration' },
+        { item_type: 'engine_pass', item_code: 'creative', status: 'legacy', provider: 'legacy_migration', source: 'legacy_migration' },
+        { item_type: 'engine_pass', item_code: 'vision', status: 'legacy', provider: 'legacy_migration', source: 'legacy_migration' },
       ]);
     } finally {
       db.close();
     }
   });
 
-  it('enforces subscription uniqueness in SQLite as well as in application code', async () => {
+  it('applies SQLite event receipts and subscription changes atomically with uniqueness enforced', async () => {
     const db = openDatabase(':memory:');
     try {
       db.exec('CREATE TABLE users (id TEXT PRIMARY KEY) STRICT');
       db.prepare('INSERT INTO users (id) VALUES (?)').run('user_1');
       migrate(db, 'plans', plansMigrations);
       const store = new SqliteSubscriptionItemStore(db);
-      await store.create(item());
-      await assert.rejects(store.create(item({ id: 'duplicate-base', productId: 'team' })));
-      await store.create(item({ id: 'creative', itemType: 'engine_pass', productId: 'creative' }));
-      await store.create(item({ id: 'vision', itemType: 'engine_pass', productId: 'vision' }));
-      await assert.rejects(store.create(item({ id: 'duplicate-creative', itemType: 'engine_pass', productId: 'creative' })));
+
+      const first = verifiedEvent('txn_111');
+      await store.applyPaystackEvent(first, [activation({ id: 'base_1', itemCode: 'pro' })]);
+      assert.equal((await store.applyPaystackEvent(first, [activation({ id: 'base_1', itemCode: 'pro' })])).status, 'duplicate');
+
+      const conflict = verifiedEvent('txn_112');
+      await assert.rejects(
+        store.applyPaystackEvent(conflict, [activation({ id: 'base_2', itemCode: 'team' })]),
+      );
+      // The receipt was rolled back with the failed entitlement insertion.
+      await assert.rejects(
+        store.applyPaystackEvent(conflict, [activation({ id: 'base_2', itemCode: 'team' })]),
+      );
+      assert.equal((await store.listByUser('user_1')).length, 1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('enforces one active engine pass per engine while allowing different passes in SQLite', async () => {
+    const db = openDatabase(':memory:');
+    try {
+      db.exec('CREATE TABLE users (id TEXT PRIMARY KEY) STRICT');
+      db.prepare('INSERT INTO users (id) VALUES (?)').run('user_1');
+      migrate(db, 'plans', plansMigrations);
+      const store = new SqliteSubscriptionItemStore(db);
+      await store.applyPaystackEvent(verifiedEvent('txn_113'), [
+        activation({ id: 'base_1', itemCode: 'pro' }),
+        activation({ id: 'pass_creative', itemType: 'engine_pass', itemCode: 'creative' }),
+        activation({ id: 'pass_vision', itemType: 'engine_pass', itemCode: 'vision' }),
+      ]);
+      await assert.rejects(store.applyPaystackEvent(verifiedEvent('txn_114'), [
+        activation({ id: 'pass_creative_2', itemType: 'engine_pass', itemCode: 'creative' }),
+      ]));
       assert.equal((await store.listByUser('user_1')).length, 3);
     } finally {
       db.close();
