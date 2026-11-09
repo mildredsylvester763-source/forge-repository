@@ -73,7 +73,7 @@ export const pgPlansMigrations: readonly Migration[] = [
       FROM user_plans
       CROSS JOIN LATERAL jsonb_array_elements_text(user_plans.engine_passes) AS engine(value);
     `,
-  },,
+  },
   {
     version: 3,
     name: 'subscription_item_provider_source',
