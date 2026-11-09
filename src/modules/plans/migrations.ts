@@ -72,7 +72,7 @@ export const plansMigrations: readonly Migration[] = [
         0, created_at, updated_at
       FROM user_plans, json_each(user_plans.engine_passes) AS engine;
     `,
-  },,
+  },
   {
     version: 3,
     name: 'subscription_item_provider_source',
