@@ -3,6 +3,8 @@ import type { CreateSubscriptionItem, PaystackSubscriptionMutation, Subscription
 import { validatePaystackMutation, validateSubscriptionItemInput } from './subscription-items.ts';
 import type { VerifiedPaystackEvent } from './paystack-webhooks.ts';
 
+interface CheckoutRow { reference: string; user_id: string; provider: string; status: string; created_at: number; processed_at: number | null; }
+
 interface SubscriptionItemRow {
   id: string;
   user_id: string;
@@ -44,6 +46,10 @@ const toRecord = (row: SubscriptionItemRow): SubscriptionItem => ({
 export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
   private readonly db: Database;
   private readonly insertPending;
+  private readonly insertCheckout;
+  private readonly byCheckout;
+  private readonly pendingByCheckout;
+  private readonly completeCheckout;
   private readonly byId;
   private readonly byCheckoutReference;
   private readonly byUser;
@@ -58,6 +64,22 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
 
   constructor(db: Database) {
     this.db = db;
+    this.insertCheckout = db.prepare(`
+      INSERT INTO subscription_checkouts (reference, user_id, provider, status, created_at)
+      VALUES (?, ?, 'paystack', 'pending', ?)
+      ON CONFLICT (reference) DO NOTHING
+    `);
+    this.byCheckout = db.prepare('SELECT * FROM subscription_checkouts WHERE reference = ?');
+    this.pendingByCheckout = db.prepare(`
+      SELECT * FROM subscription_items
+      WHERE provider = 'paystack' AND checkout_reference = ? AND status = 'pending'
+      ORDER BY created_at, id
+    `);
+    this.completeCheckout = db.prepare(`
+      UPDATE subscription_checkouts
+      SET status = 'completed', processed_at = ?
+      WHERE reference = ? AND user_id = ? AND status = 'pending'
+    `);
     this.insertPending = db.prepare(`
       INSERT INTO subscription_items (
         id, user_id, item_type, item_code, status, provider, checkout_reference,
@@ -113,19 +135,28 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
 
   async create(input: CreateSubscriptionItem): Promise<SubscriptionItem> {
     validateSubscriptionItemInput(input);
-    this.insertPending.run(
-      input.id, input.userId, input.itemType, input.itemCode, input.checkoutReference,
-      input.startsAt ?? null, input.endsAt ?? null, input.cancelAtPeriodEnd ? 1 : 0,
-      input.now, input.now,
-    );
-    const row = this.byId.get(input.id) as unknown as SubscriptionItemRow | undefined;
-    if (!row) throw new Error('subscription item insert failed');
-    return toRecord(row);
+    return transaction(this.db, () => {
+      this.insertCheckout.run(input.checkoutReference, input.userId, input.now);
+      const checkout = this.byCheckout.get(input.checkoutReference) as unknown as CheckoutRow | undefined;
+      if (!checkout || checkout.user_id !== input.userId || checkout.status !== 'pending') {
+        throw new Error('checkout reference belongs to another user or is no longer pending');
+      }
+      this.insertPending.run(
+        input.id, input.userId, input.itemType, input.itemCode, input.checkoutReference,
+        input.startsAt ?? null, input.endsAt ?? null, input.cancelAtPeriodEnd ? 1 : 0,
+        input.now, input.now,
+      );
+      const row = this.byId.get(input.id) as unknown as SubscriptionItemRow | undefined;
+      if (!row) throw new Error('subscription item insert failed');
+      return toRecord(row);
+    });
   }
 
-  async findPendingByCheckoutReference(reference: string): Promise<SubscriptionItem | null> {
-    const row = this.byCheckoutReference.get(reference) as unknown as SubscriptionItemRow | undefined;
-    return row ? toRecord(row) : null;
+  async listPendingByCheckoutReference(reference: string): Promise<SubscriptionItem[]> {
+    const checkout = this.byCheckout.get(reference) as unknown as CheckoutRow | undefined;
+    if (!checkout || checkout.status !== 'pending') return [];
+    const rows = this.pendingByCheckout.all(reference) as unknown as SubscriptionItemRow[];
+    return rows.filter((row) => row.user_id === checkout.user_id).map(toRecord);
   }
 
   async applyPaystackEvent(
@@ -142,15 +173,19 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
         return { status: 'duplicate' };
       }
 
+      let activatedCheckout: { reference: string; userId: string } | null = null;
       for (const mutation of mutations) {
         validatePaystackMutation(mutation);
         if (mutation.kind === 'activate') {
           if (!event.reference) throw new Error('verified payment event has no checkout reference');
+          const checkout = this.byCheckout.get(event.reference) as unknown as CheckoutRow | undefined;
           const pending = this.byId.get(mutation.item.id) as unknown as SubscriptionItemRow | undefined;
-          if (!pending || pending.status !== 'pending' || pending.provider !== 'paystack' ||
-            pending.checkout_reference !== event.reference) {
+          if (!checkout || checkout.status !== 'pending' || !pending || pending.status !== 'pending' ||
+            pending.provider !== 'paystack' || pending.checkout_reference !== event.reference ||
+            pending.user_id !== checkout.user_id) {
             throw new Error('payment event does not match a pending checkout item');
           }
+          activatedCheckout = { reference: event.reference, userId: pending.user_id };
           if (pending.item_type === 'base_plan') {
             this.cancelExistingBasePlans.run(event.occurredAt, event.receivedAt, pending.user_id);
           }
@@ -177,6 +212,10 @@ export class SqliteSubscriptionItemStore implements SubscriptionItemStore {
         } else {
           this.markNotRenewing.run(event.occurredAt, event.receivedAt, mutation.providerSubscriptionId, event.occurredAt);
         }
+      }
+      if (activatedCheckout !== null) {
+        const completed = this.completeCheckout.run(event.receivedAt, activatedCheckout.reference, activatedCheckout.userId);
+        if (completed.changes !== 1) throw new Error('checkout could not be completed');
       }
       this.markReceiptProcessed.run(event.receivedAt, event.eventId);
       return { status: 'processed' };
