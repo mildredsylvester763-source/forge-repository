@@ -1643,7 +1643,7 @@ typecheck pass, npm test pass, zero failing-test annotations.
 
 ### Branch comparison and scope
 - Repository: `mildredsylvester763-source/forge-repository`; destination: `mistral`; comparison: `main`.
-- Comparison immediately before this CO-100 implementation increment: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral start head `d640031143ee278d001ec59ae20200c434c46907`; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`; Mistral 591 commits ahead and 1 behind. Final post-change comparison: Mistral head `7d3b72f0c1a79bb148301969cfa78b84095da528`, 599 ahead and 1 behind. Branches remain diverged. No merge, reset, force-push or main write occurred.
+- Comparison immediately before this CO-100 implementation increment: main `ec6716fb5ba6c42e940b748581990df9194a2a2b`; Mistral start head `d640031143ee278d001ec59ae20200c434c46907`; merge base `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`; Mistral 591 commits ahead and 1 behind. Final application-code comparison: Mistral head `7d3b72f0c1a79bb148301969cfa78b84095da528`, 599 ahead and 1 behind. After the two durable documentation commits, current Mistral head is `c0fce0f823308c426b856c4736af246f305ced3b`, 601 ahead and 1 behind. Branches remain diverged. No merge, reset, force-push or main write occurred.
 - The exact owner-supplied Part 01 CO-100 wording was not recovered from the repository or project-context retrieval. The implementation below is measured only against the explicit baseline in this file and `docs/CO_APPROVAL_NEEDED.md`; formal catalogue acceptance remains unverified.
 
 ### Classification: PARTIAL
