@@ -194,6 +194,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   } catch (error) {
     throw new ConfigError(error instanceof Error ? error.message : 'FORGE_PAYSTACK_SECRET_KEYS is invalid');
   }
+  if (production && paystackSecretKeys.some((secret) => secret.startsWith('sk_test_'))) {
+    throw new ConfigError('FORGE_PAYSTACK_SECRET_KEYS must contain live Paystack secret keys in production');
+  }
 
   return {
     env: mode,
