@@ -134,7 +134,9 @@ describe('configuration safety', () => {
     }).plans.accessPolicy;
     assert.equal(configured.monthlyCreditsByPlan.free.freeWindowCredits, 45);
     assert.equal(configured.monthlyCreditsByPlan.free.freeWindowMs, 4 * 60 * 60 * 1000);
-    assert.equal(configured.freeEngine.monthlyCredits, 600, 'the engine fallback cap has its own setting');
+    assert.equal(configured.freeEngine.monthlyCredits, 700, 'unpaid engines use the same configured Free monthly cap');
+    assert.equal(configured.freeEngine.creditsPerWindow, 45);
+    assert.equal(configured.freeEngine.windowMs, 4 * 60 * 60 * 1000);
     assert.equal(configured.freeEngine.monthlyCostCapUsd, 0.15);
     assert.deepEqual(configured.enginesIncludedByPlan, {
       pro: ['creative', 'painting'],
