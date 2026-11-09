@@ -228,6 +228,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   if (production && paystackSecretKeys.some((secret) => secret.startsWith('sk_test_'))) {
     throw new ConfigError('FORGE_PAYSTACK_SECRET_KEYS must contain live Paystack secret keys in production');
   }
+  const freeMonthlyCredits = int(env, 'FORGE_FREE_MONTHLY_CREDITS', 600, 0, 1_000_000_000);
+  const freeCreditsPerWindow = int(env, 'FORGE_FREE_CREDITS_PER_WINDOW', 40, 0, 1_000_000);
+  const freeWindowHours = int(env, 'FORGE_FREE_WINDOW_HOURS', 5, 1, 168);
 
   return {
     env: mode,
@@ -271,10 +274,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       accessPolicy: {
         monthlyCreditsByPlan: {
           free: {
-            monthlyCredits: int(env, 'FORGE_FREE_MONTHLY_CREDITS', 600, 0, 1_000_000_000),
+            monthlyCredits: freeMonthlyCredits,
             perSeat: false,
-            freeWindowCredits: int(env, 'FORGE_FREE_CREDITS_PER_WINDOW', 40, 0, 1_000_000),
-            freeWindowMs: int(env, 'FORGE_FREE_WINDOW_HOURS', 5, 1, 168) * HOUR,
+            freeWindowCredits: freeCreditsPerWindow,
+            freeWindowMs: freeWindowHours * HOUR,
           },
           plus: {
             monthlyCredits: int(env, 'FORGE_PLUS_MONTHLY_CREDITS', 3000, 0, 1_000_000_000),
@@ -300,9 +303,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
           },
         },
         freeEngine: {
-          creditsPerWindow: int(env, 'FORGE_FREE_ENGINE_CREDITS_PER_WINDOW', 40, 0, 1_000_000),
-          windowMs: int(env, 'FORGE_FREE_ENGINE_WINDOW_HOURS', 5, 1, 168) * HOUR,
-          monthlyCredits: int(env, 'FORGE_FREE_ENGINE_MONTHLY_CREDITS', 600, 0, 1_000_000_000),
+          creditsPerWindow: freeCreditsPerWindow,
+          windowMs: freeWindowHours * HOUR,
+          monthlyCredits: freeMonthlyCredits,
           monthlyCostCapUsd: money(env, 'FORGE_FREE_ENGINE_MONTHLY_COST_CAP_USD', 0.20),
           models: 'free_only',
           quality: 'free',
