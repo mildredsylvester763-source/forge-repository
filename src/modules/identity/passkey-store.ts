@@ -137,7 +137,7 @@ export class InMemoryPasskeyStore implements PasskeyStore {
     return this.exclusive(async () => {
       const current = this.credentials.get(args.credentialId);
       if (!current || current.userId !== args.userId) return false;
-      if (current.signCount > 0 && args.signCount > 0 && args.signCount <= current.signCount) return false;
+      if ((current.signCount > 0 || args.signCount > 0) && args.signCount <= current.signCount) return false;
       if (args.backedUp && !current.backupEligible) return false;
       await this.events.append(args.event);
       this.credentials.set(args.credentialId, {
@@ -214,7 +214,7 @@ export class SqlitePasskeyStore implements PasskeyStore {
     this.updateCredential = this.db.prepare(
       'UPDATE passkey_credentials ' +
       'SET sign_count = CASE WHEN ? > sign_count THEN ? ELSE sign_count END, backed_up = ?, last_used_at = ? ' +
-      'WHERE credential_id = ? AND user_id = ? AND (? = 0 OR sign_count = 0 OR sign_count < ?) ' +
+      'WHERE credential_id = ? AND user_id = ? AND ((? = 0 AND sign_count = 0) OR ? > sign_count) ' +
       'AND (backup_eligible = 1 OR ? = 0)',
     );
     this.deleteCredential = this.db.prepare('DELETE FROM passkey_credentials WHERE credential_id = ? AND user_id = ?');
@@ -356,7 +356,7 @@ export class PostgresPasskeyStore implements PasskeyStore {
       const result = await conn.query(
         'UPDATE passkey_credentials ' +
         'SET sign_count = CASE WHEN $1 > sign_count THEN $1 ELSE sign_count END, backed_up = $2, last_used_at = $3 ' +
-        'WHERE credential_id = $4 AND user_id = $5 AND ($1 = 0 OR sign_count = 0 OR sign_count < $1) AND (backup_eligible OR NOT $2)',
+        'WHERE credential_id = $4 AND user_id = $5 AND (($1 = 0 AND sign_count = 0) OR $1 > sign_count) AND (backup_eligible OR NOT $2)',
         [args.signCount, args.backedUp, args.now, args.credentialId, args.userId],
       );
       if (result.rowCount === 1) committed = await this.events.appendIn(conn, args.event);

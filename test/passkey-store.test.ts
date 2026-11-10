@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { kernelMigrations } from '../src/kernel/migrations.ts';
-import { InMemoryEventStore } from '../src/kernel/events.ts';
+import { InMemoryEventStore, type EventDraft } from '../src/kernel/events.ts';
+import { PostgresEventStore } from '../src/kernel/postgres-events.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { SqliteEventStore } from '../src/kernel/sqlite-events.ts';
 import { migrate, openDatabase } from '../src/kernel/sqlite.ts';
@@ -10,10 +11,12 @@ import { identityMigrations } from '../src/modules/identity/migrations.ts';
 import {
   InMemoryPasskeyStore,
   PasskeyCredentialExistsError,
+  PostgresPasskeyStore,
   SqlitePasskeyStore,
   type PasskeyChallengeRecord,
   type PasskeyCredentialRecord,
 } from '../src/modules/identity/passkey-store.ts';
+import { makeTestPool, REAL_POSTGRES_URL } from './pg-helpers.ts';
 
 const now = 1_800_000_000_000;
 const event = (type: 'identity.passkey.registered' | 'identity.passkey.authenticated' | 'identity.passkey.removed', userId: string) => ({
@@ -80,7 +83,8 @@ describe('CO-002 passkey storage', () => {
     assert.equal(await store.updateAfterAssertion({ userId: 'user-b', credentialId: record.credentialId, signCount: 1, backedUp: false, now: now + 1, event: event('identity.passkey.authenticated', 'user-b') }), false);
     assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: true, now: now + 2, event: event('identity.passkey.authenticated', 'user-a') }), false, 'a non-backup-eligible credential cannot become backed up');
     assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: false, now: now + 2, event: event('identity.passkey.authenticated', 'user-a') }), true);
-    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 2, backedUp: false, now: now + 3, event: event('identity.passkey.authenticated', 'user-a') }), false);
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 0, backedUp: false, now: now + 3, event: event('identity.passkey.authenticated', 'user-a') }), false, 'a counter-enabled authenticator cannot reset its counter to zero');
+    assert.equal(await store.updateAfterAssertion({ userId: 'user-a', credentialId: record.credentialId, signCount: 2, backedUp: false, now: now + 4, event: event('identity.passkey.authenticated', 'user-a') }), false);
     assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 3);
     assert.equal(await store.deleteCredentialForUser('user-b', record.credentialId, event('identity.passkey.removed', 'user-b')), false);
     assert.equal(await store.deleteCredentialForUser('user-a', record.credentialId, event('identity.passkey.removed', 'user-a')), true);
@@ -137,12 +141,67 @@ describe('CO-002 passkey storage', () => {
         event: event('identity.passkey.authenticated', 'user-a'),
       }), true);
       assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 4);
+      assert.equal(await store.updateAfterAssertion({
+        userId: 'user-a', credentialId: record.credentialId, signCount: 0, backedUp: false, now: now + 11,
+        event: event('identity.passkey.authenticated', 'user-a'),
+      }), false, 'SQLite must reject a zero counter after a positive counter');
+      assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 4);
       assert.equal(await store.deleteCredentialForUser('user-a', record.credentialId, event('identity.passkey.removed', 'user-a')), true);
       assert.equal(await store.findCredentialById(record.credentialId), null);
       assert.equal((await events.readFrom(1, 20)).length, 3);
       assert.equal((await events.verify()).ok, true);
     } finally {
       db.close();
+    }
+  });
+});
+
+
+describe('CO-002 PostgreSQL passkey storage', { skip: !REAL_POSTGRES_URL }, () => {
+  it('enforces counter rollback and commits credential/audit changes atomically', async () => {
+    const testPool = await makeTestPool();
+    try {
+      const pool = testPool.pool;
+      await pool.query(
+        'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+        ['user-a', 'owner@example.test', 'Owner', 'hash', 'active', now, now, now, null, 1],
+      );
+      const events = new PostgresEventStore({ pool, clock: () => now, logger: silentLogger });
+      const store = new PostgresPasskeyStore({ pool, events });
+      const pending = challenge('postgres-registration', 'registration', 'user-a');
+      await store.createChallenge(pending);
+      assert.equal(await store.consumeChallenge(pending.challengeHash, 'authentication', null, now), null);
+      assert.equal((await store.consumeChallenge(pending.challengeHash, 'registration', 'user-a', now))?.userId, 'user-a');
+      assert.equal(await store.consumeChallenge(pending.challengeHash, 'registration', 'user-a', now), null);
+
+      const record = credential('user-a');
+      await store.createCredential(record, event('identity.passkey.registered', 'user-a'));
+      assert.equal(await store.updateAfterAssertion({
+        userId: 'user-a', credentialId: record.credentialId, signCount: 3, backedUp: false, now: now + 1,
+        event: event('identity.passkey.authenticated', 'user-a'),
+      }), true);
+      assert.equal(await store.updateAfterAssertion({
+        userId: 'user-a', credentialId: record.credentialId, signCount: 0, backedUp: false, now: now + 2,
+        event: event('identity.passkey.authenticated', 'user-a'),
+      }), false, 'PostgreSQL must reject a zero counter after a positive counter');
+      assert.equal((await store.findCredentialById(record.credentialId))?.signCount, 3);
+
+      const rejected = credential('user-a');
+      const invalidEvent = { ...event('identity.passkey.registered', 'user-a'), type: 'INVALID EVENT TYPE' } as unknown as EventDraft;
+      await assert.rejects(() => store.createCredential(rejected, invalidEvent), /invalid event type/);
+      assert.equal(await store.findCredentialById(rejected.credentialId), null, 'failed audit append must roll back the credential');
+
+      assert.equal(await store.deleteCredentialForUser('user-a', record.credentialId, event('identity.passkey.removed', 'user-a')), true);
+      const audit = await events.readFrom(1, 20);
+      assert.deepEqual(audit.map((entry) => entry.type), [
+        'identity.passkey.registered',
+        'identity.passkey.authenticated',
+        'identity.passkey.removed',
+      ]);
+      assert.equal((await events.verify()).ok, true);
+    } finally {
+      await testPool.pool.end();
+      await testPool.cleanup();
     }
   });
 });

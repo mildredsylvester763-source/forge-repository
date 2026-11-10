@@ -496,7 +496,7 @@ export function verifyPasskeyAssertion(
   const authenticatorData = canonicalBase64Url(response.response.authenticatorData, 'authenticatorData', MAX_CBOR_BYTES);
   const parsed = parseAuthenticatorData(authenticatorData, input.config.rpId, 'authentication');
   if (parsed.backupEligible !== input.credential.backupEligible) fail('backup_eligibility_changed', 'Credential backup eligibility changed unexpectedly');
-  if (input.credential.signCount > 0 && parsed.signCount > 0 && parsed.signCount <= input.credential.signCount) {
+  if ((input.credential.signCount > 0 || parsed.signCount > 0) && parsed.signCount <= input.credential.signCount) {
     fail('signature_counter_rollback', 'Authenticator signature counter did not advance');
   }
   const signature = canonicalBase64Url(response.response.signature, 'signature', 1024);

@@ -161,6 +161,60 @@ describe('CO-002 passkey service lifecycle', () => {
     await assertAppError(() => service.completeAuthentication(response, meta), 401, 'invalid_credentials');
   });
 
+  it('rejects a zero authenticator counter after a non-zero stored counter', async () => {
+    const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
+    const store = new InMemoryPasskeyStore(events);
+    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const credentialId = randomBytes(32).toString('base64url');
+    const stored: StoredPasskey = {
+      credentialId,
+      publicKeySpki: publicKey.export({ format: 'der', type: 'spki' }).toString('base64'),
+      algorithm: -7,
+      signCount: 1,
+      backupEligible: false,
+      backedUp: false,
+      userHandle: user.id,
+    };
+    await store.createCredential({
+      ...stored,
+      userId: user.id,
+      transports: ['internal'],
+      createdAt: now,
+      lastUsedAt: null,
+    }, {
+      type: IdentityEvents.PasskeyRegistered,
+      version: 1,
+      actor: { kind: 'user', id: user.id },
+      subject: { type: 'user', id: user.id },
+      payload: { credentialRef: 'test' },
+      correlationId: 'co-002-counter-reset',
+    });
+
+    const identity = {
+      signInWithPasskey: async () => { throw new Error('counter rollback must be rejected before session creation'); },
+    } as unknown as IdentityService;
+    const service = new PasskeyService({ store, identity, throttle, clock: () => now + 1000, config });
+    const options = await service.beginAuthentication(meta);
+    const client = clientData(options.challenge);
+    const authData = authenticatorData(config.rpId, 0);
+    const signature = sign('sha256', Buffer.concat([authData, hash(client)]), privateKey).toString('base64url');
+    const response = {
+      id: credentialId,
+      rawId: credentialId,
+      type: 'public-key',
+      response: {
+        clientDataJSON: client.toString('base64url'),
+        authenticatorData: authData.toString('base64url'),
+        signature,
+        userHandle: Buffer.from(user.id).toString('base64url'),
+      },
+    };
+
+    await assertAppError(() => service.completeAuthentication(response, meta), 401, 'invalid_credentials');
+    assert.equal((await store.findCredentialById(credentialId))?.signCount, 1);
+    assert.equal((await events.readFrom(1, 10)).filter((entry) => entry.type === IdentityEvents.PasskeyAuthenticated).length, 0);
+  });
+
   it('lists only public credential metadata and removes only credentials owned by the user', async () => {
     const events = new InMemoryEventStore({ clock: () => now, logger: silentLogger });
     const store = new InMemoryPasskeyStore(events);
