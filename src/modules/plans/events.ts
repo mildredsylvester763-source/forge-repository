@@ -1,16 +1,1 @@
-/**
- * The plans module's published event contract (a small schema registry).
- * Billing, audit and product surfaces subscribe to these; they never reach into plans internals.
- * Payloads never contain secrets — a plan change is public metadata. The event store is
- * append-only, so these types double as the plan audit log (Hook 10).
- */
-export const PlansEvents = {
-  PlanChanged: 'plans.plan.changed',
-  SubscriptionsChanged: 'plans.subscriptions.changed',
-  PaymentEventProcessed: 'plans.payment_event.processed',
-  CreditsGranted: 'plans.credits.granted',
-  CreditsSpent: 'plans.credits.spent',
-} as const;
-
-export type PlansEventType = (typeof PlansEvents)[keyof typeof PlansEvents];
-export const PLANS_EVENT_VERSION = 1;
+successfully downloaded text file (SHA: f19adfa45498b0718194951c8af19f065fcd5a57)
