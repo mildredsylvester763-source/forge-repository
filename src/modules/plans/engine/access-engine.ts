@@ -43,7 +43,8 @@ export type AccessLevel = 'paid' | 'free';
 export interface AccessDecision {
   readonly allowed: boolean;
   readonly feature: string;
-  readonly gate: GateId;
+  /** undefined only for a feature missing from the catalog; the service refuses those by name first. */
+  readonly gate: GateId | undefined;
   readonly plan: PlanId;
   readonly passes: readonly string[];
   /** The feature's engine tags; null for general features. */
@@ -86,6 +87,8 @@ export function canUse(input: AccessInput): AccessDecision {
     if (owned) return { ...shape, engine: engines, allowed: true, level: 'paid', reason: 'engine_paid' };
     return { ...shape, engine: engines, allowed: true, level: 'free', reason: 'engine_free_level', limits: input.config.freeEngineLimits };
   }
+  // Unreachable through the service (unknown features are refused by name); kept fail-closed.
+  if (gate === undefined) return { ...shape, allowed: false, reason: 'plan_too_low' };
   const verdict = checkEntitlement({ plan, enginePasses: passes }, input.feature, gate);
   return { ...shape, allowed: verdict.allowed, reason: verdict.allowed ? 'unlocked' : 'plan_too_low' };
 }

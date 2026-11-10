@@ -5,6 +5,10 @@
  */
 export const PlansEvents = {
   PlanChanged: 'plans.plan.changed',
+  SubscriptionsChanged: 'plans.subscriptions.changed',
+  PaymentEventProcessed: 'plans.payment_event.processed',
+  CreditsGranted: 'plans.credits.granted',
+  CreditsSpent: 'plans.credits.spent',
 } as const;
 
 export type PlansEventType = (typeof PlansEvents)[keyof typeof PlansEvents];
