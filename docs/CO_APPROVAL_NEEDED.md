@@ -2,7 +2,7 @@
 
 **This is not an engineering approval queue.** Internal FORGE architecture, schemas, migrations, APIs, algorithms, security controls, tests, retry policies, recovery procedures, and provider-neutral adapters are to be designed and implemented in the repository without waiting for owner approval.
 
-Last reviewed: 2026-11-07
+Last reviewed: 2026-11-10
 Repository: mildredsylvester763-source/forge-repository
 Implementation branch: mistral
 
@@ -101,3 +101,13 @@ The CO-097–CO-100 branch evidence and current verification boundary are record
 
 - **CO-100 With-Plans gate:** `CO-100` has no entry in `src/modules/plans/engine/feature-gates.ts`, and the new `/v1/sync/*` paths have no entries in `src/modules/plans/engine/route-gates.ts`. The current gate middleware intentionally leaves routes without a catalog entry ungated. Supply the exact With-Plans catalog row and gate before a paid-plan restriction is assigned. Do not infer or invent a tier. Session authentication remains enforced independently.
 - **CO status source conflict:** `docs/BUILD_NOTES.md` states CO-001–CO-080 and CO-096 are implemented, while the detailed evidence in `docs/PROGRESS.md` records partial/not-started/owner-blocked states for some of the same ranges. Owner reconciliation is needed to decide which status statement is authoritative. Until then, retain per-feature evidence classifications and do not bulk-promote.
+
+
+## CO-002 passkey production activation and remaining dependency (2026-11-10)
+
+- **Exact Part 01 acceptance text:** the original owner-supplied CO-002 title/description/acceptance wording has not been recovered from the repository or the retrieved Library audit. It is needed only for formal acceptance reconciliation; the repository's `docs/features/CO-002.md` remains a provisional engineering dossier, not a claim that it is the verbatim catalogue.
+- **Production relying-party configuration:** the deploying organization must supply and validate `FORGE_WEBAUTHN_RP_ID`, exact `FORGE_WEBAUTHN_ORIGINS`, and the approved relying-party display name. These are deployment values; do not invent them.
+- **Security policy approval:** the organization must approve the attestation posture, accepted authenticator/algorithm policy, discoverable-credential behavior and treatment of backup-eligible credentials before production activation. The implementation already validates ceremonies and rejects counter rollback; this owner policy input does not block backend work.
+- **Shared/distributed throttling:** passkey ceremony throttling is currently backed by the in-memory `LoginThrottle`. Shared atomic PostgreSQL rate limiting is an internal CO-093 engineering dependency, not an owner approval or credential request. Implement it provider-neutrally before claiming consistent multi-replica enforcement.
+- **PostgreSQL CI:** the CO-focused workflow now provisions a disposable PostgreSQL 16 service and the CO-002 Postgres store regression passed in run [42790413916](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42790413916). No owner database credential is required for this CI verification.
+- **Approval state:** NOT GRANTED for production RP/domain configuration and authenticator policy. No live provider or production activation is claimed.

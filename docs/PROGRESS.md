@@ -1675,3 +1675,32 @@ typecheck pass, npm test pass, zero failing-test annotations.
 - `docs/BUILD_NOTES.md` (commit `d640031143ee278d001ec59ae20200c434c46907`) summarizes `CO-001–CO-080` and `CO-096` as implemented.
 - The detailed feature-by-feature evidence in this `docs/PROGRESS.md` still records partial, not-started or owner-blocked classifications across several of those ranges. The build-notes summary does not supply the per-feature source/test/migration evidence needed to promote each item.
 - Until the owner reconciles these two statements, preserve the detailed evidence-backed classifications and do not bulk-promote features based only on the summary.
+
+
+## CO-002 passkey counter rollback correction and native PostgreSQL verification (2026-11-10)
+
+### Branch comparison and evidence
+- Repository: `mildredsylvester763-source/forge-repository`; destination: `mistral`; comparison: `main`.
+- Before the CO-002 change, main head was `ec6716fb5ba6c42e940b748581990df9194a2a2b`, Mistral head was `e16f8f56f82818bafd701c7b6b165043ebca409e`, and merge base was `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`. Mistral was 603 commits ahead and 1 behind.
+- Mistral contains `docs/features/CO-002.md`, `src/modules/identity/webauthn.ts`, `src/modules/identity/passkey-service.ts`, `src/modules/identity/passkey-store.ts`, `src/modules/identity/passkey-routes.ts`, and the passkey tests. The same WebAuthn/passkey source, tests and CO-002 feature document are absent on main (404 when checked). The Mistral identity migrations include passkey challenge/credential schema version 2 in both `src/modules/identity/migrations.ts` and `src/modules/identity/postgres-migrations.ts`.
+- The earlier 2026-11-05 identity audit's CO-002 "missing" classification is a historical snapshot. The later Mistral feature dossier and code establish a provisional backend implementation; the exact owner-supplied Part 01 wording is still not available in the repository or retrieved Library audit.
+
+### Classification and defect
+- CO-002 remains **PARTIAL**, not fully implemented: the ceremony, credential lifecycle, browser/native completion, SQLite/PostgreSQL stores, audit coupling and migrations exist; production RP/origin/policy activation and shared/distributed throttling remain outstanding.
+- Defect found in `verifyPasskeyAssertion()` and all three store adapters: a positive stored authenticator counter could be reset to zero because the previous condition only rejected rollback when both old and new counters were positive.
+- WebAuthn Level 3 §6.1.1 says that if either the stored or received counter is non-zero, a received value less than or equal to the stored value is a signal of possible cloning, malfunction or an assertion-processing race. The code now rejects zero/reset and all non-increasing values after a positive stored counter, while continuing to accept authenticators whose counters remain zero. Source: https://www.w3.org/TR/webauthn-3/#sctn-sign-counter
+- Fixed `src/modules/identity/webauthn.ts` and `src/modules/identity/passkey-store.ts` consistently across in-memory, SQLite and PostgreSQL implementations.
+- Added a signed-assertion regression in `test/passkey-service.test.ts`; added zero-reset regressions in `test/passkey-store.test.ts`; added a real PostgreSQL passkey-store test covering challenge one-time use, counter rollback, audit transaction rollback and event-chain verification.
+
+### Commits and verification
+- Code and regression tests: `99004b33e25bad7d4bce7a6c8635ddb8d2a65e14`.
+- CO typecheck isolation: `af411381cf8309d7094bc62a872660e205ed7883`. The focused typecheck no longer includes `test/postgres.test.ts`, whose full application harness pulls in the non-CO plans module. That PostgreSQL integration file remains in the workflow's test execution step; it was not removed from testing.
+- Actual type-check command: `npx tsc -p tsconfig.co.json --noEmit` — passed in [CO focused workflow 42790413916](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42790413916).
+- Actual test command: the `node --test` command in `.github/workflows/co-verification.yml` (the CO kernel, identity, offline-sync, PostgreSQL and passkey test list) — **181 passed, 0 failed, 0 skipped**. The log confirms the native `CO-002 PostgreSQL passkey storage` test ran and passed.
+- Full CI [42790414116](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42790414116) failed at `npm run typecheck` before the general test step. Exact out-of-scope errors: `src/modules/plans/engine/access-engine.ts` lines 78, 79, 80, 86, 87, 89 and 90 (TS2322/TS2345), and `test/plans-engines.test.ts` lines 285, 289 and 290 (TS2339: `GrantParseResult.grant`). No CO change was made to those plan/TQ-adjacent files; no AI/TQ source was changed. The CO-focused workflow is the passing verification for this run.
+
+### Remaining work
+- Implement the shared atomic rate-limit abstraction under CO-093 and connect passkey ceremonies to it; do not claim multi-replica passkey throttling before that dependency is complete.
+- Keep production RP ID, exact allowed origins, RP display name, attestation posture, authenticator/algorithm policy, discoverable-credential policy and backup-eligible credential treatment as deployment/owner policy inputs. Backend code remains provider-neutral and testable without those production values.
+- Exact Part 01 wording remains required for formal catalogue acceptance; no wording has been invented.
+- No AI/TQ files, features or branches were modified.
