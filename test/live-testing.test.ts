@@ -11,7 +11,7 @@ async function signedInUser(h: Harness, email: string): Promise<TestUser> {
   const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'LT Tester' });
   assert.equal(register.status, 201);
   const created = (await register.json()) as { user: { id: string } };
-  await h.app.plans.setPlan(created.user.id, 'pro', ['creative']);
+  await h.app.plans.setPlan(created.user.id, 'pro', ['manhwa']);
   const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
   assert.equal(signIn.status, 200);
   return { cookie: sessionCookie(signIn), id: created.user.id };

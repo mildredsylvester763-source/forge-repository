@@ -152,7 +152,7 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(denied.status, 402);
       const body = (await denied.json()) as { error: { details: Record<string, string> } };
       assert.equal(body.error.details.reason, 'engine_pass_missing');
-      const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['creative']);
+      const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['music']);
       const allowed = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: withPass.cookie });
       assert.notEqual(allowed.status, 402);
     } finally {
