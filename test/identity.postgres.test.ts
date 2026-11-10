@@ -1,1 +1,4 @@
-successfully downloaded text file (SHA: c042bdb9e251ce8939ba8aed745fc2a3d04cde6d)
+// Runs the whole identity suite again against the PostgreSQL adapters
+// (real PostgreSQL when FORGE_TEST_POSTGRES_URL is set, otherwise the SQLite-backed stand-in).
+process.env.FORGE_TEST_STORAGE = 'postgres';
+await import('./identity.test.ts');
