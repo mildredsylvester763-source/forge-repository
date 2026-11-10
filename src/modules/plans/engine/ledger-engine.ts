@@ -24,6 +24,8 @@ export interface LedgerEntry {
   readonly amount: number;
   readonly expiresAt: number | null;
   readonly jobId: string | null;
+  /** For spend entries: the grant entry this spend drew from. Null on grants. */
+  readonly sourceEntryId: string | null;
   /** The job's real cost to Forge, whole micro-dollars. */
   readonly costUsdMicros: number | null;
   readonly createdAt: number;
@@ -75,6 +77,7 @@ export function appendGrant(entries: readonly LedgerEntry[], userId: string, gra
     amount: grant.amount,
     expiresAt: grant.expiresAt,
     jobId: grant.jobId,
+    sourceEntryId: null,
     costUsdMicros: null,
     createdAt: now,
   };
@@ -131,10 +134,17 @@ export type SpendResult =
  * uncovered spend writes nothing. The caller's array is never mutated.
  */
 export function spend(entries: readonly LedgerEntry[], userId: string, input: SpendInput, now: number): SpendResult {
+  const spentBySource = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.amount < 0 && entry.sourceEntryId !== null) {
+      spentBySource.set(entry.sourceEntryId, (spentBySource.get(entry.sourceEntryId) ?? 0) + -entry.amount);
+    }
+  }
   const pool = (engine: string): readonly LedgerEntry[] =>
     entries
       .filter((entry) => entry.engine === engine && entry.amount > 0 && (entry.expiresAt === null || entry.expiresAt > now))
-      .map((entry) => entry)
+      .map((entry) => ({ ...entry, amount: entry.amount - (spentBySource.get(entry.entryId) ?? 0) }))
+      .filter((entry) => entry.amount > 0)
       .sort((a, b) => {
         const bySource = CREDIT_SOURCE_ORDER[a.source] - CREDIT_SOURCE_ORDER[b.source];
         if (bySource !== 0) return bySource;
@@ -164,6 +174,7 @@ export function spend(entries: readonly LedgerEntry[], userId: string, input: Sp
     amount: -item.used,
     expiresAt: item.entry.expiresAt,
     jobId: input.jobId,
+    sourceEntryId: item.entry.entryId,
     costUsdMicros: index === 0 ? input.costUsdMicros : 0,
     createdAt: now,
   }));
