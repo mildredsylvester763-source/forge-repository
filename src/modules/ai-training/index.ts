@@ -1,1 +1,68 @@
-successfully downloaded text file (SHA: 21eb99ee9e78c79653ab79e83f0077ab4ba0dc5d)
+/** Public surface of the AI training module. Other modules import from here and nowhere deeper. */
+export { AiTrainingService } from './ai-training-service.ts';
+export type { AiTrainingDeps } from './ai-training-service.ts';
+export { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
+export type { AiTrainingEventType } from './events.ts';
+export { aiTrainingRoutes } from './routes.ts';
+export {
+  InMemoryAiTrainingStore,
+  type AgentEventRecord,
+  type AiTrainingStore,
+  type BlindBallotRecord,
+  type ByokKeyRecord,
+  type CapabilityMatrixRecord,
+  type DatasetSnapshotRecord,
+  type EvalSuiteRecord,
+  type ExperimentRecord,
+  type ExperimentSubjectRecord,
+  type GatewayLogRecord,
+  type GatewayProviderRecord,
+  type GatewayUsageRecord,
+  type InstanceReservationRecord,
+  type MiningBatchRecord,
+  type ModelCardRecord,
+  type ModelOpsRecord,
+  type ModelPinRecord,
+  type ModelPromotionRecord,
+  type ModelVersionRecord,
+  type NewAgentEvent,
+  type NewBlindBallot,
+  type NewByokKey,
+  type NewCapabilityMatrix,
+  type NewDatasetSnapshot,
+  type NewEvalSuite,
+  type NewExperiment,
+  type NewExperimentSubject,
+  type NewGatewayLog,
+  type NewGatewayProvider,
+  type NewGatewayUsage,
+  type NewInstanceReservation,
+  type NewMiningBatch,
+  type NewModelCard,
+  type NewModelOpsRecord,
+  type NewModelPin,
+  type NewModelPromotion,
+  type NewModelVersion,
+  type NewOnPremPackage,
+  type NewOutputSchema,
+  type NewPanelVote,
+  type NewSafetyBattery,
+  type NewSafetyGrade,
+  type NewServingPlan,
+  type NewTrainingAsset,
+  type NewTrainingRun,
+  type NewTrendSample,
+  type OnPremPackageRecord,
+  type OutputSchemaRecord,
+  type PanelVoteRecord,
+  type SafetyBatteryRecord,
+  type SafetyGradeRecord,
+  type ServingPlanRecord,
+  type TrainingAssetRecord,
+  type TrainingRunRecord,
+  type TrendSampleRecord,
+} from './ai-training-store.ts';
+export { SqliteAiTrainingStore } from './sqlite-stores.ts';
+export { PostgresAiTrainingStore } from './postgres-stores.ts';
+export { aiTrainingMigrations } from './migrations.ts';
+export { pgAiTrainingMigrations } from './postgres-migrations.ts';
