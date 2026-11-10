@@ -1,1 +1,39 @@
-successfully downloaded text file (SHA: 5b741379b7c58b7bd877c82b48894e4b9bf6e892)
+# Architecture
+
+FORGE is a modular monolith. One deployable, with hard boundaries between modules, so it can be split later without a rewrite.
+
+## The three rules that make modules connect cleanly
+
+1. **Modules talk through events and public interfaces only.** Each module exposes an `index.ts`. Nothing imports from another module's internals.
+2. **Every meaningful action emits an event** using the standard envelope (CO-063): id, type, version, actor, subject, payload, cause, status. Events are append-only and hash-chained (CO-064).
+3. **Only `src/app.ts` wires modules together.** A new module adds its routes there and subscribes to the events it cares about.
+
+## How a later feature plugs in
+
+```ts
+// Example: the Policy module reacting to sign-ins, with no change to identity code
+events.subscribe('identity.sign_in', async (event) => { /* evaluate risk rules */ });
+```
+
+Identity already publishes: `identity.user.registered`, `identity.registration.rejected`, `identity.sign_in.succeeded`, `identity.sign_in.failed`, `identity.sign_in.throttled`, `identity.sign_out.completed`, `identity.password.compromised_detected`, `identity.password.breach_check_skipped`. See `src/modules/identity/events.ts`.
+
+## Module map against the catalog
+
+| Module | Catalog range | Status |
+| --- | --- | --- |
+| `kernel` (events, audit chain, database, backups, HTTP, limits) | CO-063, 064, 065, 076, 093, 096 (partial) | started |
+| `identity` | CO-001 to CO-014 | CO-001 done |
+| `tenancy` | CO-015 to CO-028 | planned |
+| `policy` | CO-029 to CO-044 | planned |
+| `graph` | CO-045 to CO-062 | planned |
+| `audit` | CO-063 to CO-080 | CO-063 implemented within repository-documented scope; CO-064/065/076 partial; remaining IDs await exact catalogue wording |
+| `context` | CO-081 to CO-090 | planned |
+| `reliability` | CO-091 to CO-100 | planned |
+| `ai` | AI-001 to AI-150 | planned |
+| `quality` | TQ-001 to TQ-120 | planned |
+
+## Storage
+
+Every store is an interface (`UserStore`, `SessionStore`, `EventStore`) with in-memory, SQLite and PostgreSQL implementations. SQLite is the local development/test backend; PostgreSQL is the production target. The PostgreSQL event-store suite can use a SQLite-backed stand-in when `FORGE_TEST_POSTGRES_URL` is absent, so a passing stand-in run is not native PostgreSQL proof.
+
+Changes that must not be half-done go through a unit of work (`IdentityUnitOfWork`): selected identity data changes and their audit events commit in one transaction (CO-065). Subscriber notification is currently best-effort and in-process; a durable outbox, consumer offsets and retry/dead-letter lifecycle are not implemented pending the owner's delivery-contract decision. See `docs/DATABASE.md`.
