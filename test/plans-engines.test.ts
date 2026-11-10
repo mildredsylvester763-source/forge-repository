@@ -276,7 +276,7 @@ describe('plans hooks: credit ledger engine', () => {
   });
 
   it('counts expired positive grants as dead and negatives always', () => {
-    let entries: LedgerEntry[] = [];
+    let entries: readonly LedgerEntry[] = [];
     entries = appendGrant(entries, 'u', parsed({ source: 'free_window', amount: 10, expiresAt: 100 }), now).entries;
     entries = appendGrant(entries, 'u', parsed({ source: 'plan', amount: 20 }), now).entries;
     assert.equal(creditBalance(entries, 300, ''), 20);
@@ -294,7 +294,7 @@ describe('plans hooks: credit ledger engine', () => {
   });
 
   it('pins the spend order: free_window, then plan, then pass, then top-up; earlier expiry first', () => {
-    let entries: LedgerEntry[] = [];
+    let entries: readonly LedgerEntry[] = [];
     entries = appendGrant(entries, 'u', parsed({ source: 'top_up', amount: 5 }), now).entries;
     entries = appendGrant(entries, 'u', parsed({ source: 'pass', amount: 5 }), now).entries;
     entries = appendGrant(entries, 'u', parsed({ source: 'free_window', amount: 10 }), now).entries;
@@ -306,7 +306,7 @@ describe('plans hooks: credit ledger engine', () => {
         { entryId: 'led_u_2', source: 'pass', used: 5 },
       ]);
     }
-    let expiryEntries: LedgerEntry[] = [];
+    let expiryEntries: readonly LedgerEntry[] = [];
     expiryEntries = appendGrant(expiryEntries, 'u', parsed({ source: 'plan', amount: 5, expiresAt: 900 }), now).entries;
     expiryEntries = appendGrant(expiryEntries, 'u', parsed({ source: 'plan', amount: 5, expiresAt: 400 }), now).entries;
     const byExpiry = spend(expiryEntries, 'u', { engine: '', amount: 7, jobId: 'job_4', costUsdMicros: 0 }, now);
@@ -320,7 +320,7 @@ describe('plans hooks: credit ledger engine', () => {
   });
 
   it('spends the engine pool first, then general credits', () => {
-    let entries: LedgerEntry[] = [];
+    let entries: readonly LedgerEntry[] = [];
     entries = appendGrant(entries, 'u', parsed({ source: 'top_up', amount: 10 }), now).entries;
     entries = appendGrant(entries, 'u', parsed({ engine: 'music', source: 'pass', amount: 10 }), now).entries;
     const result = spend(entries, 'u', { engine: 'music', amount: 15, jobId: 'job_5', costUsdMicros: 1 }, now);
@@ -343,7 +343,7 @@ describe('plans hooks: credit ledger engine', () => {
   });
 
   it('refuses an uncovered spend atomically and never mutates the caller array', () => {
-    let entries: LedgerEntry[] = [];
+    let entries: readonly LedgerEntry[] = [];
     entries = appendGrant(entries, 'u', parsed({ source: 'plan', amount: 10 }), now).entries;
     const frozen = [...entries];
     const result = spend(entries, 'u', { engine: '', amount: 99, jobId: 'job_6', costUsdMicros: 0 }, now);
