@@ -24,7 +24,6 @@ import {
   spend,
   type AccessConfig,
   type AccessInput,
-  type CreditSource,
   type GateId,
   type LedgerEntry,
   type PlanId,
