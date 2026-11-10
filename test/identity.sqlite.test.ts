@@ -1,3 +1,1 @@
-// Runs the whole identity suite again, this time against the real SQLite storage layer.
-process.env.FORGE_TEST_STORAGE = 'sqlite';
-await import('./identity.test.ts');
+successfully downloaded text file (SHA: b90195ebabae2d08bf7c6efb7a2947dc550df0c2)
