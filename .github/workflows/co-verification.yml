@@ -1,1 +1,126 @@
-successfully downloaded text file (SHA: a750ea94782132afcbb5d485dd6d8fee7390e563)
+name: CO focused verification
+
+on:
+  push:
+    branches:
+      - mistral
+    paths:
+      - 'src/kernel/**'
+      - 'src/modules/identity/**'
+      - 'src/modules/offline-sync/**'
+      - 'tsconfig.co.json'
+      - 'test/co-063-canonical-payload.test.ts'
+      - 'test/co-076-anchor-verification.test.ts'
+      - 'test/co-065-atomic-signout.test.ts'
+      - 'test/co-065-postgres-uow.test.ts'
+      - 'test/postgres.test.ts'
+      - 'test/pg-helpers.ts'
+      - 'test/sqlite-pool.ts'
+      - 'test/co-091-readiness.test.ts'
+      - 'test/co-030-route-auth.test.ts'
+      - 'test/authorization.test.ts'
+      - 'test/backup.test.ts'
+      - 'test/rate-limit.test.ts'
+      - 'test/identity-throttle.test.ts'
+      - 'test/password.test.ts'
+      - 'src/modules/identity/webauthn.ts'
+      - 'test/webauthn.test.ts'
+      - 'test/passkey-store.test.ts'
+      - 'test/passkey-service.test.ts'
+      - 'test/passkey-routes.test.ts'
+      - 'test/config.test.ts'
+      - 'test/oidc-authorization.test.ts'
+      - 'test/oidc-token.test.ts'
+      - 'test/saml-service.test.ts'
+      - 'test/totp.test.ts'
+      - 'test/totp-service.test.ts'
+      - 'test/action-tokens.test.ts'
+      - 'test/agent-credentials.test.ts'
+      - 'test/co-012-anomaly.test.ts'
+      - 'test/identity-service.test.ts'
+      - 'test/co-006-session-manager.test.ts'
+      - 'test/co-007-native-token.test.ts'
+      - 'test/co-100-offline-sync.test.ts'
+      - 'test/co-100-offline-sync-postgres.test.ts'
+      - 'test/co-100-offline-sync-routes.test.ts'
+      - 'test/co-100-offline-sync-app.test.ts'
+      - '.github/workflows/co-verification.yml'
+  pull_request:
+    branches:
+      - mistral
+
+permissions:
+  contents: read
+
+jobs:
+  co-focused:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: forge_test
+          POSTGRES_PASSWORD: forge_test_password
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge_test -d forge_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      FORGE_TEST_POSTGRES_URL: postgres://forge_test:forge_test_password@localhost:5432/forge_test
+      FORGE_TEST_POSTGRES_SSL: off
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Typecheck the isolated CO kernel, identity, and offline-sync slice
+        run: npx tsc -p tsconfig.co.json --noEmit
+      - name: Run CO kernel, identity, offline-sync, and native PostgreSQL regressions
+        run: |
+          set -o pipefail
+          node --test \
+            test/co-063-canonical-payload.test.ts \
+            test/co-065-atomic-signout.test.ts \
+            test/co-065-postgres-uow.test.ts \
+            test/co-030-route-auth.test.ts \
+            test/authorization.test.ts \
+            test/co-091-readiness.test.ts \
+            test/backup.test.ts \
+            test/rate-limit.test.ts \
+            test/identity-throttle.test.ts \
+            test/password.test.ts \
+            test/webauthn.test.ts \
+            test/passkey-store.test.ts \
+            test/passkey-service.test.ts \
+            test/passkey-routes.test.ts \
+            test/config.test.ts \
+            test/oidc-authorization.test.ts \
+            test/oidc-token.test.ts \
+            test/saml-service.test.ts \
+            test/totp.test.ts \
+            test/totp-service.test.ts \
+            test/action-tokens.test.ts \
+            test/agent-credentials.test.ts \
+            test/co-012-anomaly.test.ts \
+            test/identity-service.test.ts \
+            test/co-006-session-manager.test.ts \
+            test/co-007-native-token.test.ts \
+            test/co-100-offline-sync.test.ts \
+            test/co-100-offline-sync-postgres.test.ts \
+            test/co-100-offline-sync-routes.test.ts \
+            test/co-100-offline-sync-app.test.ts \
+            test/postgres.test.ts \
+            2>&1 | tee co-test.log
+      - name: Surface failing tests as annotations
+        if: failure()
+        run: |
+          if [ -f co-test.log ]; then
+            grep -E -A3 'not ok|✖|AssertionError|SyntaxError|ReferenceError|TypeError|ERR_|ℹ fail' co-test.log | head -n 24 | while IFS= read -r line; do
+              echo "::error::${line:0:240}"
+            done
+          fi

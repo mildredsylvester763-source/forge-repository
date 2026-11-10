@@ -1,1 +1,29 @@
-successfully downloaded text file (SHA: f9da00d7aa9fc9c4d19196f30f84d24b8f27dfa0)
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - name: Run tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee forge-test.log
+      - name: Surface failing tests as annotations
+        if: failure()
+        run: |
+          if [ -f forge-test.log ]; then
+            grep -E -A3 'not ok|✖|AssertionError|SyntaxError|ReferenceError|TypeError|ERR_|ℹ fail' forge-test.log | head -n 24 | while IFS= read -r line; do
+              echo "::error::${line:0:240}"
+            done
+          fi
