@@ -1,1 +1,1 @@
-successfully downloaded text file (SHA: 45a5dbcfcd409c5d74689871073f6797929d69a0)
+export { offlineSyncRoutes } from './routes.ts';

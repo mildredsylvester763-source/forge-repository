@@ -1,1 +1,12 @@
-successfully downloaded text file (SHA: 9297c522c0faacbc5907e4e12c1025dc694d203e)
+/**
+ * The test quality module's published event contract (a small schema registry).
+ * Other modules subscribe to these; they never reach into test quality internals.
+ * Payloads never contain golden content bodies.
+ */
+export const TestQualityEvents = {
+  GoldenWritten: 'test_quality.golden.written',
+  GoldenUpdated: 'test_quality.golden.updated',
+} as const;
+
+export type TestQualityEventType = (typeof TestQualityEvents)[keyof typeof TestQualityEvents];
+export const TEST_QUALITY_EVENT_VERSION = 1;
