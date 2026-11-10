@@ -212,17 +212,17 @@ describe('plans hooks: subscription engine', () => {
       const applied = applyPaymentEvent(existing, parsedBase.event);
       assert.equal(applied.items.length, 2);
       assert.equal(applied.superseded.length, 1);
-      assert.equal(applied.superseded[0].status, 'cancelled');
-      assert.equal(applied.items[0].status, 'cancelled');
-      assert.equal(applied.granted[0].itemId, 'sub_u_2');
-      assert.equal(applied.granted[0].itemCode, 'pro');
+      assert.equal(applied.superseded[0]?.status, 'cancelled');
+      assert.equal(applied.items[0]?.status, 'cancelled');
+      assert.equal(applied.granted[0]?.itemId, 'sub_u_2');
+      assert.equal(applied.granted[0]?.itemCode, 'pro');
     }
     const parsedPass = parsePaymentEvent(event([{ itemType: 'engine_pass', itemCode: 'music', startsAt: 0, endsAt: 2000 }]));
     assert.equal(parsedPass.ok, true);
     if (parsedPass.ok) {
       const passOnly = applyPaymentEvent(existing, parsedPass.event);
       assert.equal(passOnly.superseded.length, 0);
-      assert.equal(passOnly.items[0].status, 'active');
+      assert.equal(passOnly.items[0]?.status, 'active');
     }
     assert.deepEqual(existing, frozen);
   });
@@ -331,11 +331,11 @@ describe('plans hooks: credit ledger engine', () => {
         { entryId: 'led_u_1', source: 'top_up', used: 5 },
       ]);
       const negatives = result.entries.slice(-2);
-      assert.equal(negatives[0].engine, 'music');
-      assert.equal(negatives[1].engine, '');
-      assert.equal(negatives[0].costUsdMicros, 1);
-      assert.equal(negatives[1].costUsdMicros, 0);
-      assert.equal(negatives[0].jobId, 'job_5');
+      assert.equal(negatives[0]?.engine, 'music');
+      assert.equal(negatives[1]?.engine, '');
+      assert.equal(negatives[0]?.costUsdMicros, 1);
+      assert.equal(negatives[1]?.costUsdMicros, 0);
+      assert.equal(negatives[0]?.jobId, 'job_5');
     }
     const balances = balanceByEngine(entries, now);
     assert.equal(balances.general, 10);
