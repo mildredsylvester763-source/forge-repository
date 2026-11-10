@@ -19,7 +19,6 @@
     "test/rate-limit.test.ts",
     "test/identity-throttle.test.ts",
     "test/pg-helpers.ts",
-    "test/postgres.test.ts",
     "test/sqlite-pool.ts",
     "test/password.test.ts",
     "test/identity-service.test.ts",
