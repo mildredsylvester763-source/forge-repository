@@ -1746,3 +1746,12 @@ Remaining implementation gaps, not owner-blocked engineering tasks:
 Continue provider-neutral implementation without waiting for provider credentials: wire a callback route and safe account-resolution flow; support explicit linking only to an already authenticated FORGE account; allow sign-in only for an already linked issuer/subject; never infer account ownership from email; issue sessions through the existing audited identity session path; and replace the in-memory transaction store with SQLite/PostgreSQL adapters that encrypt the PKCE verifier behind an injected key-provider boundary. Add migrations and focused/native-PostgreSQL tests before considering CO-003 complete.
 
 The exact Part 01 wording is required for formal catalogue reconciliation. Provider shortlist, client IDs/secrets, issuer/redirect configuration and production account-linking policy remain activation/owner inputs only; they do not block the provider-neutral backend work.
+
+
+### CO-003 follow-up defect found after the discovery-binding commit (2026-11-10)
+
+- A source-level audit of `src/modules/identity/oidc-token.ts` found that token-endpoint client authentication is not negotiated against the discovery document.
+- `fetchOidcDiscovery()` around lines 328–330 rejects `client_secret_basic` when it is the only advertised method; if the metadata field is omitted, the OIDC discovery default is `client_secret_basic`, but the returned metadata does not retain that method.
+- `exchangeOidcAuthorizationCode()` around lines 250–275 always places a configured `client_secret` in the form body and never sends HTTP Basic authentication. It does not reject a client-secret/method mismatch. Therefore a provider advertising only `none` can be sent a secret using POST, and a provider advertising only `client_secret_post` can be called without a secret.
+- **Classification remains PARTIAL with a defective token-endpoint authentication subcomponent.** This is internal protocol implementation work and does not require owner approval or provider credentials.
+- Next fix: preserve discovery-advertised token endpoint auth methods and the OIDC default; select a compatible method based on whether a client secret is configured; implement `client_secret_basic` with OAuth form-encoded client ID/secret before Base64; fail closed on unsupported/mismatched methods; add fixture tests for basic, post, none, omitted/default and mismatch cases. Re-run the CO-focused typecheck and tests before any source commit.
