@@ -1,1 +1,46 @@
-successfully downloaded text file (SHA: 889b7f9ee5b370bc47b6a9084f4e17e817d33c02)
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/kernel/**/*.ts",
+    "src/config.ts",
+    "src/modules/identity/**/*.ts",
+    "src/modules/offline-sync/**/*.ts",
+    "test/co-063-canonical-payload.test.ts",
+    "test/co-076-anchor-verification.test.ts",
+    "test/co-065-atomic-signout.test.ts",
+    "test/co-065-postgres-uow.test.ts",
+    "test/co-091-readiness.test.ts",
+    "test/co-030-route-auth.test.ts",
+    "test/authorization.test.ts",
+    "test/backup.test.ts",
+    "test/rate-limit.test.ts",
+    "test/identity-throttle.test.ts",
+    "test/pg-helpers.ts",
+    "test/postgres.test.ts",
+    "test/sqlite-pool.ts",
+    "test/password.test.ts",
+    "test/identity-service.test.ts",
+    "test/co-006-session-manager.test.ts",
+    "test/co-012-anomaly.test.ts",
+    "test/co-007-native-token.test.ts",
+    "test/webauthn.test.ts",
+    "test/passkey-store.test.ts",
+    "test/passkey-service.test.ts",
+    "test/passkey-routes.test.ts",
+    "test/config.test.ts",
+    "test/oidc-authorization.test.ts",
+    "test/totp.test.ts",
+    "src/modules/identity/oidc-token.ts",
+    "test/oidc-token.test.ts",
+    "test/saml-service.test.ts",
+    "test/totp-service.test.ts",
+    "test/action-tokens.test.ts",
+    "test/agent-credentials.test.ts",
+    "test/co-100-offline-sync.test.ts",
+    "test/co-100-offline-sync-postgres.test.ts",
+    "test/co-100-offline-sync-routes.test.ts"
+  ]
+}
