@@ -5,10 +5,8 @@ import {
 } from './oidc-authorization.ts';
 import {
   exchangeOidcAuthorizationCode,
-  fetchOidcDiscovery,
   fetchOidcJwks,
   verifyOidcIdToken,
-  type OidcDiscoveryMetadata,
   type VerifiedOidcIdentity,
 } from './oidc-token.ts';
 
@@ -70,24 +68,9 @@ export class OidcAuthenticationService {
     this.providers = providers;
   }
 
-  private async discover(provider: OidcRuntimeProviderConfig): Promise<OidcDiscoveryMetadata> {
-    const metadata = await fetchOidcDiscovery(provider.issuer, provider.environment, this.fetcher);
-    if (metadata.authorizationEndpoint !== provider.authorizationEndpoint ||
-        metadata.tokenEndpoint !== provider.tokenEndpoint ||
-        metadata.jwksUri !== provider.jwksUri) {
-      throw new TypeError('OIDC discovery endpoints do not match the configured provider');
-    }
-    return metadata;
-  }
-
   async begin(providerId: string) {
     const provider = this.providers.get(providerId);
     if (!provider) throw new OidcAuthenticationError('provider_not_configured', 'The requested identity provider is not configured.');
-    try {
-      await this.discover(provider);
-    } catch {
-      throw new OidcAuthenticationError('provider_not_configured', 'The configured identity provider metadata is unavailable or inconsistent.');
-    }
     return this.authorization.begin(provider);
   }
 
@@ -104,9 +87,8 @@ export class OidcAuthenticationService {
       throw new OidcAuthenticationError('authorization_transaction_invalid', 'The identity-provider authorization transaction is invalid or expired.');
     }
     try {
-      const metadata = await this.discover(provider);
       const tokenResponse = await exchangeOidcAuthorizationCode({
-        tokenEndpoint: metadata.tokenEndpoint,
+        tokenEndpoint: provider.tokenEndpoint,
         clientId: provider.clientId,
         ...(provider.clientSecret ? { clientSecret: provider.clientSecret } : {}),
         code,
@@ -114,7 +96,7 @@ export class OidcAuthenticationService {
         codeVerifier: transaction.codeVerifier,
         environment: provider.environment,
       }, this.fetcher);
-      const jwks = await fetchOidcJwks(metadata.jwksUri, provider.environment, this.fetcher);
+      const jwks = await fetchOidcJwks(provider.jwksUri, provider.environment, this.fetcher);
       return verifyOidcIdToken({
         idToken: tokenResponse.idToken,
         issuer: provider.issuer,
@@ -122,7 +104,6 @@ export class OidcAuthenticationService {
         nonceHash: transaction.nonceHash,
         jwks,
         now: this.clock(),
-        allowedAlgorithms: metadata.idTokenSigningAlgorithms,
       });
     } catch {
       throw new OidcAuthenticationError('identity_token_invalid', 'The identity provider response could not be verified.');

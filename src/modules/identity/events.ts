@@ -1,1 +1,33 @@
-successfully downloaded text file (SHA: 7bfb6644fb2f4928b8411d47268a30e2326d953d)
+/**
+ * The identity module's published event contract (a small schema registry, CO-067).
+ * Other modules (policy, graph, audit views, AI agents) subscribe to these; they never reach into identity internals.
+ * Payloads never contain passwords, hashes, tokens, or raw email addresses.
+ */
+export const IdentityEvents = {
+  UserRegistered: 'identity.user.registered',
+  RegistrationRejected: 'identity.registration.rejected',
+  SignInSucceeded: 'identity.sign_in.succeeded',
+  SignInAnomalyObserved: 'identity.sign_in.anomaly_observed',
+  SignInFailed: 'identity.sign_in.failed',
+  SignInThrottled: 'identity.sign_in.throttled',
+  SignedOut: 'identity.sign_out.completed',
+  SessionRevoked: 'identity.session.revoked',
+  PasswordCompromisedDetected: 'identity.password.compromised_detected',
+  BreachCheckSkipped: 'identity.password.breach_check_skipped',
+  PasskeyRegistered: 'identity.passkey.registered',
+  PasskeyRemoved: 'identity.passkey.removed',
+  PasskeyAuthenticated: 'identity.passkey.authenticated',
+  DeviceTrusted: 'identity.device.trusted',
+  DeviceTrustFailed: 'identity.device.trust_failed',
+  DeviceRevoked: 'identity.device.revoked',
+  TotpEnrollmentStarted: 'identity.totp.enrollment_started',
+  TotpEnrollmentConfirmed: 'identity.totp.enrollment_confirmed',
+  TotpEnrollmentCancelled: 'identity.totp.enrollment_cancelled',
+  TotpDisabled: 'identity.totp.disabled',
+  TotpVerificationSucceeded: 'identity.totp.verification_succeeded',
+  TotpVerificationFailed: 'identity.totp.verification_failed',
+  TotpThrottled: 'identity.totp.throttled',
+} as const;
+
+export type IdentityEventType = (typeof IdentityEvents)[keyof typeof IdentityEvents];
+export const IDENTITY_EVENT_VERSION = 1;
