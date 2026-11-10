@@ -39,6 +39,7 @@ export interface OidcIdTokenVerificationInput {
   readonly nonceHash: string;
   readonly jwks: readonly OidcJwk[];
   readonly now: number;
+  readonly allowedAlgorithms?: readonly string[];
   readonly clockSkewSeconds?: number;
 }
 
@@ -167,7 +168,14 @@ export function verifyOidcIdToken(input: OidcIdTokenVerificationInput): Verified
   if (header.typ !== undefined && header.typ !== 'JWT') return fail('OIDC ID token type is invalid');
   if (header.crit !== undefined) return fail('OIDC critical JWT headers are not supported');
   const algorithm = stringClaim(header.alg, 'header algorithm', 16);
-  if (!['RS256', 'PS256', 'ES256', 'EdDSA'].includes(algorithm)) return fail('OIDC ID token signing algorithm is not accepted');
+  const acceptedAlgorithms = ['RS256', 'PS256', 'ES256', 'EdDSA'];
+  if (!acceptedAlgorithms.includes(algorithm)) return fail('OIDC ID token signing algorithm is not accepted');
+  if (input.allowedAlgorithms !== undefined &&
+      (!Array.isArray(input.allowedAlgorithms) || input.allowedAlgorithms.length === 0 ||
+       input.allowedAlgorithms.some((value) => !acceptedAlgorithms.includes(value)) ||
+       !input.allowedAlgorithms.includes(algorithm))) {
+    return fail('OIDC ID token signing algorithm is not advertised by discovery');
+  }
   const key = keyFor(header, input.jwks, algorithm);
   if (!verifyJwtSignature(algorithm, Buffer.from(parts[0] + '.' + parts[1], 'ascii'), signature, key)) {
     return fail('OIDC ID token signature is invalid');

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { describe, it } from 'node:test';
 import { InMemoryOidcTransactionStore, OidcAuthorizationService, type OidcProviderConfig } from '../src/modules/identity/oidc-authorization.ts';
-import { OidcAuthenticationService } from '../src/modules/identity/oidc-authentication.ts';
+import { OidcAuthenticationError, OidcAuthenticationService } from '../src/modules/identity/oidc-authentication.ts';
 import {
   exchangeOidcAuthorizationCode,
   fetchOidcDiscovery,
@@ -73,6 +73,7 @@ describe('CO-003 provider-neutral OIDC token security', () => {
     assert.throws(() => verifyOidcIdToken(verification(tampered)), /signature is invalid/);
     assert.throws(() => verifyOidcIdToken(verification(token({}, { kid: 'unknown-key' }))), /key is missing/);
     assert.throws(() => verifyOidcIdToken(verification(token({}, { alg: 'none' }))), /algorithm is not accepted/);
+    assert.throws(() => verifyOidcIdToken({ ...verification(valid), allowedAlgorithms: ['ES256'] }), /not advertised by discovery/);
     assert.throws(() => verifyOidcIdToken(verification('not.a.jwt.too.many.parts')), /compact signed JWT/);
   });
 
@@ -197,8 +198,24 @@ describe('CO-003 provider-neutral OIDC token security', () => {
     };
     let callbackNonce = '';
     let tokenExchangeCount = 0;
+    let discoveryCount = 0;
+    const discoveryUrl = provider.issuer + '/.well-known/openid-configuration';
+    const discovery = {
+      issuer: provider.issuer,
+      authorization_endpoint: provider.authorizationEndpoint,
+      token_endpoint: provider.tokenEndpoint,
+      jwks_uri: provider.jwksUri,
+      response_types_supported: ['code'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
+    };
     const fetcher: typeof fetch = async (input, init) => {
       const url = String(input);
+      if (url === discoveryUrl) {
+        discoveryCount += 1;
+        return new Response(JSON.stringify(discovery), { status: 200 });
+      }
       if (url === provider.tokenEndpoint) {
         tokenExchangeCount += 1;
         const form = new URLSearchParams(String(init?.body));
@@ -227,6 +244,7 @@ describe('CO-003 provider-neutral OIDC token security', () => {
     const identity = await service.complete(provider.providerId, state, 'authorization-code');
     assert.equal(identity.subject, 'provider-user-123');
     assert.equal(identity.emailVerified, true);
+    assert.equal(discoveryCount, 2, 'discovery metadata must be checked before authorization and callback exchange');
     await assert.rejects(
       () => service.complete(provider.providerId, state, 'authorization-code'),
       (error: unknown) => error instanceof Error && error.message.includes('invalid or expired'),
@@ -234,6 +252,83 @@ describe('CO-003 provider-neutral OIDC token security', () => {
     assert.equal(tokenExchangeCount, 1, 'replayed state must be rejected before another provider request');
   });
 
+
+  it('rejects configured OIDC endpoints that disagree with issuer discovery', async () => {
+    const provider = {
+      providerId: 'identity-provider',
+      issuer: 'https://issuer.example.test',
+      authorizationEndpoint: 'https://issuer.example.test/authorize',
+      tokenEndpoint: 'https://issuer.example.test/token',
+      jwksUri: 'https://issuer.example.test/jwks',
+      clientId: 'forge-client',
+      redirectUri: 'https://app.forge.test/v1/auth/oidc/callback',
+      environment: 'production' as const,
+    };
+    const fetcher: typeof fetch = async () => new Response(JSON.stringify({
+      issuer: provider.issuer,
+      authorization_endpoint: provider.authorizationEndpoint,
+      token_endpoint: 'https://attacker.example/token',
+      jwks_uri: provider.jwksUri,
+      response_types_supported: ['code'],
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256'],
+    }), { status: 200 });
+    const authorization = new OidcAuthorizationService({
+      store: new InMemoryOidcTransactionStore(),
+      clock: () => now,
+    });
+    const service = new OidcAuthenticationService({ authorization, providers: [provider], clock: () => now, fetcher });
+    await assert.rejects(
+      () => service.begin(provider.providerId),
+      (error: unknown) => error instanceof OidcAuthenticationError && error.code === 'provider_not_configured',
+    );
+  });
+
+  it('rejects an ID-token algorithm that the provider discovery document does not advertise', async () => {
+    const provider = {
+      providerId: 'identity-provider',
+      issuer: 'https://issuer.example.test',
+      authorizationEndpoint: 'https://issuer.example.test/authorize',
+      tokenEndpoint: 'https://issuer.example.test/token',
+      jwksUri: 'https://issuer.example.test/jwks',
+      clientId: 'forge-client',
+      redirectUri: 'https://app.forge.test/v1/auth/oidc/callback',
+      environment: 'production' as const,
+    };
+    let callbackNonce = '';
+    const discoveryUrl = provider.issuer + '/.well-known/openid-configuration';
+    const fetcher: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url === discoveryUrl) return new Response(JSON.stringify({
+        issuer: provider.issuer,
+        authorization_endpoint: provider.authorizationEndpoint,
+        token_endpoint: provider.tokenEndpoint,
+        jwks_uri: provider.jwksUri,
+        response_types_supported: ['code'],
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['ES256'],
+        token_endpoint_auth_methods_supported: ['none'],
+      }), { status: 200 });
+      if (url === provider.tokenEndpoint) return new Response(JSON.stringify({
+        id_token: token({ nonce: callbackNonce }),
+      }), { status: 200 });
+      if (url === provider.jwksUri) return new Response(JSON.stringify({ keys: [jwk] }), { status: 200 });
+      throw new Error('unexpected provider endpoint');
+    };
+    const authorization = new OidcAuthorizationService({
+      store: new InMemoryOidcTransactionStore(),
+      clock: () => now,
+    });
+    const service = new OidcAuthenticationService({ authorization, providers: [provider], clock: () => now, fetcher });
+    const started = await service.begin(provider.providerId);
+    const url = new URL(started.authorizationUrl);
+    callbackNonce = url.searchParams.get('nonce')!;
+    const state = url.searchParams.get('state')!;
+    await assert.rejects(
+      () => service.complete(provider.providerId, state, 'authorization-code'),
+      (error: unknown) => error instanceof OidcAuthenticationError && error.code === 'identity_token_invalid',
+    );
+  });
 
   it('validates OIDC discovery issuer, endpoints, response type, subject type and signing algorithms', async () => {
     const metadata = {
