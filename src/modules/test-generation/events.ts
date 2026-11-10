@@ -1,1 +1,11 @@
-successfully downloaded text file (SHA: 7fc7f2b7d5decd498ca8ac1ada8025512f51f51e)
+/**
+ * The test generation module's published event contract (a small schema registry).
+ * Other modules subscribe to these; they never reach into test generation internals.
+ * Payloads never contain generated case bodies.
+ */
+export const TestGenerationEvents = {
+  SuiteGenerated: 'test_generation.suite.generated',
+} as const;
+
+export type TestGenerationEventType = (typeof TestGenerationEvents)[keyof typeof TestGenerationEvents];
+export const TEST_GENERATION_EVENT_VERSION = 1;
