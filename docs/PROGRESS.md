@@ -1704,3 +1704,45 @@ typecheck pass, npm test pass, zero failing-test annotations.
 - Keep production RP ID, exact allowed origins, RP display name, attestation posture, authenticator/algorithm policy, discoverable-credential policy and backup-eligible credential treatment as deployment/owner policy inputs. Backend code remains provider-neutral and testable without those production values.
 - Exact Part 01 wording remains required for formal catalogue acceptance; no wording has been invented.
 - No AI/TQ files, features or branches were modified.
+
+
+## CO-003 issuer-discovery binding and sequential audit checkpoint (2026-11-10)
+
+### Branch comparison before the CO-003 continuation
+
+- Repository: `mildredsylvester763-source/forge-repository`; destination: `mistral`; comparison: `main`.
+- Main head: `ec6716fb5ba6c42e940b748581990df9194a2a2b`.
+- Mistral pre-change parent: `be2b75afe6f234bf01ba0f13eec721cef7b0a720`.
+- Mistral was 606 commits ahead and 1 behind; merge base: `9c65e6a2b187fefb8511bc15fda8221899a1cdb8`.
+- Main has no `src/modules/identity/oidc-authorization.ts`, `oidc-authentication.ts`, `oidc-token.ts`, `test/oidc-authorization.test.ts`, `test/oidc-token.test.ts`, or `docs/features/CO-003.md`. The identity route table on both main and the pre-change Mistral parent has no OIDC route. No main implementation was copied or modified.
+
+### Classification: PARTIAL
+
+The Mistral OIDC service and token verifier are real provider-neutral backend groundwork, not a complete social sign-in integration. The exact original Part 01 CO-003 wording was not recovered from prior conversation context or the repository; no guessed catalogue criteria are treated as acceptance authority.
+
+The latest code commit, `89095ebed63d6fac9e55b7582acb6b8a51981618`, closes a concrete issuer-discovery binding gap:
+
+- `src/modules/identity/oidc-authentication.ts` now fetches discovery metadata before authorization and again before callback exchange, rejects configured authorization/token/JWKS endpoints that disagree with discovery, and uses the validated discovered token/JWKS endpoints.
+- `src/modules/identity/oidc-token.ts` binds accepted ID-token signing algorithms to the provider's discovery-advertised list.
+- `test/oidc-token.test.ts` adds regression coverage for endpoint mismatch and an ID-token algorithm not advertised by discovery.
+- `test/oidc-authorization.test.ts` covers the provider-neutral state/nonce/PKCE and callback pipeline.
+
+Remaining implementation gaps, not owner-blocked engineering tasks:
+
+- OIDC is not wired into `src/app.ts` or `src/config.ts`; no runtime provider configuration or HTTP authorization/callback routes exist.
+- No linked external-subject store, explicit existing-account link workflow, account-resolution path or FORGE session issuance exists. Do not auto-create an account or link by email alone.
+- The OIDC transaction store is in-memory only; it does not survive restart or support multiple replicas.
+- No OIDC schema exists in either `src/modules/identity/migrations.ts` or `src/modules/identity/postgres-migrations.ts`. Both migration streams currently end at version 8; their tables cover users/sessions, passkeys, SAML replay cache, TOTP factors, action tokens, agent credentials, trusted devices and recovery codes, but no OIDC transactions or linked subjects.
+- No userinfo request is implemented. No provider is configured or activated.
+
+### Verification
+
+- On code commit `89095ebed63d6fac9e55b7582acb6b8a51981618`, CO-focused workflow [42791392654](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42791392654) completed successfully. Its isolated typecheck step ran `npx tsc -p tsconfig.co.json --noEmit` and passed. Its configured Node test command completed with **183 passed, 0 failed, 0 skipped across 39 suites**. The workflow included `test/oidc-authorization.test.ts` and `test/oidc-token.test.ts`.
+- Full CI [42791392884](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/42791392884) failed during `npm run typecheck`, before the general test step. Exact out-of-CO errors: `src/modules/plans/engine/access-engine.ts` lines 78, 79, 80, 86, 87, 89 and 90 (TS2322/TS2345); `test/plans-engines.test.ts` lines 285, 289 and 290 (TS2339, `GrantParseResult.grant`). These files are outside this CO task; they were not changed. No AI/TQ source was changed.
+- A local Git checkout could not be obtained in this execution environment because DNS resolution for github.com failed. No local test or typecheck is claimed; the above results are from the actual GitHub Actions run on the current code commit.
+
+### Next CO-003 work
+
+Continue provider-neutral implementation without waiting for provider credentials: wire a callback route and safe account-resolution flow; support explicit linking only to an already authenticated FORGE account; allow sign-in only for an already linked issuer/subject; never infer account ownership from email; issue sessions through the existing audited identity session path; and replace the in-memory transaction store with SQLite/PostgreSQL adapters that encrypt the PKCE verifier behind an injected key-provider boundary. Add migrations and focused/native-PostgreSQL tests before considering CO-003 complete.
+
+The exact Part 01 wording is required for formal catalogue reconciliation. Provider shortlist, client IDs/secrets, issuer/redirect configuration and production account-linking policy remain activation/owner inputs only; they do not block the provider-neutral backend work.
