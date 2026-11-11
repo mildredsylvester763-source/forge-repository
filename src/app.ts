@@ -12,6 +12,7 @@ import { PostgresEventStore } from './kernel/postgres-events.ts';
 import type { SqlPool } from './kernel/sql.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import { InMemoryRateLimitStore, PostgresRateLimitStore, SqliteRateLimitStore, type SharedRateLimiter } from './kernel/rate-limit-store.ts';
+import { InMemoryOutboxStore, PostgresOutboxStore, SqliteOutboxStore, type OutboxStore } from './kernel/outbox.ts';
 import {
   CompositeBreachChecker,
   DEFAULT_THROTTLE,
@@ -181,6 +182,8 @@ export interface ForgeApp {
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
+  /** CO-065: the durable delivery queue fed by the event stores' transactions. */
+  outbox: OutboxStore;
   close(): Promise<void>;
 }
 
@@ -208,13 +211,16 @@ interface Storage {
   syncDb: Database | null;
   /** CO-093: the shared-store gateway limiter, one per storage. */
   rateLimitStore: SharedRateLimiter;
+  /** CO-065: the transactional outbox queue, one per storage. */
+  outbox: OutboxStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
   const eventsOverride = overrides.events;
   if (overrides.postgres) {
     const pool = overrides.postgres;
-    const events = new PostgresEventStore({ pool, clock, logger });
+    const outbox = new PostgresOutboxStore(pool);
+    const events = new PostgresEventStore({ pool, clock, logger, outbox });
     const users = new PostgresUserStore(pool);
     const sessionStore = new PostgresSessionStore(pool);
     const passkeys = new PostgresPasskeyStore({ pool, events });
@@ -232,7 +238,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const billing = new PostgresBillingStore(pool);
     const offlineSync = new PostgresOfflineSyncStore(pool);
     const rateLimitStore = new PostgresRateLimitStore(pool);
-    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -250,7 +256,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'ai_training', aiTrainingMigrations);
     migrate(db, 'training_data', trainingDataMigrations);
     migrate(db, 'plans', plansMigrations);
-    const events = new SqliteEventStore({ db, clock, logger });
+    const outbox = new SqliteOutboxStore(db);
+    const events = new SqliteEventStore({ db, clock, logger, outbox });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
     const passkeys = new SqlitePasskeyStore({ db, events });
@@ -268,9 +275,10 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const billing = new SqliteBillingStore(db);
     const offlineSync = new SqliteOfflineSyncStore(db);
     const rateLimitStore = new SqliteRateLimitStore(db);
-    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
-  const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
+  const outbox = new InMemoryOutboxStore();
+  const events = eventsOverride ?? new InMemoryEventStore({ clock, logger, outbox });
   const users = new InMemoryUserStore();
   const sessionStore = new InMemorySessionStore();
   const passkeys = new InMemoryPasskeyStore(events);
@@ -290,7 +298,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);
   const rateLimitStore = new InMemoryRateLimitStore();
-  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -412,6 +420,6 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, logger, db: storage.db, close };
+  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, logger, db: storage.db, outbox: storage.outbox, close };
 }
 

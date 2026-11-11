@@ -79,5 +79,23 @@ export const pgKernelMigrations: readonly Migration[] = [
       );
     `,
   },
+
+  {
+    version: 4,
+    name: 'transactional_outbox',
+    sql: `
+      CREATE TABLE kernel_outbox (
+        event_id     TEXT PRIMARY KEY,
+        event_seq    BIGINT NOT NULL UNIQUE,
+        status       TEXT NOT NULL CHECK (status IN ('pending','delivered','dead_lettered')),
+        attempts     INTEGER NOT NULL CHECK (attempts >= 0),
+        due_at       BIGINT NOT NULL CHECK (due_at >= 0),
+        last_error   TEXT,
+        delivered_at BIGINT,
+        created_at   BIGINT NOT NULL CHECK (created_at >= 0)
+      );
+      CREATE INDEX kernel_outbox_due_idx ON kernel_outbox (status, due_at, event_seq);
+    `,
+  },
 ];
 

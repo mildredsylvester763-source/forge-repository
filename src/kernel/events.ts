@@ -258,17 +258,22 @@ export class InMemoryEventStore implements EventStore {
   private readonly log: EventEnvelope[] = [];
   private readonly dispatcher: EventDispatcher;
   private readonly clock: Clock;
+  private readonly outbox: { enqueue(event: EventEnvelope, now: number): Promise<void> | void } | null;
 
-  constructor(options: { clock: Clock; logger: Logger }) {
+  constructor(options: { clock: Clock; logger: Logger; outbox?: { enqueue(event: EventEnvelope, now: number): Promise<void> | void } }) {
     this.clock = options.clock;
     this.dispatcher = new EventDispatcher(options.logger);
+    this.outbox = options.outbox ?? null;
   }
 
   async append(draft: EventDraft): Promise<EventEnvelope> {
     // No awaits between reading the head and pushing: appends are atomic and strictly ordered.
     const prev = this.log[this.log.length - 1];
-    const envelope = buildEnvelope(draft, prev ? { seq: prev.seq, hash: prev.hash } : null, this.clock());
+    const nowMs = this.clock();
+    const envelope = buildEnvelope(draft, prev ? { seq: prev.seq, hash: prev.hash } : null, nowMs);
     this.log.push(envelope);
+    // CO-065: the outbox row is written with the event, so durable delivery can never lose it.
+    if (this.outbox) await this.outbox.enqueue(envelope, nowMs);
     this.dispatcher.notify(envelope);
     return envelope;
   }

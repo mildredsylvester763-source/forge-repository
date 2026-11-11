@@ -35,7 +35,7 @@ describe('CO-100 offline synchronization', () => {
   it('adds migration 2 without changing migration 1 and is repeatable', () => {
     const { db, applied } = sqliteService();
     try {
-      assert.deepEqual(applied, [1,2,3]); // kernel v3 (rate-limit buckets) is appended; migrations 1 and 2 unchanged
+      assert.deepEqual(applied, [1,2,3,4]); // kernel v3 (rate-limit buckets) and v4 (transactional outbox) are appended; migrations 1 and 2 unchanged
       assert.deepEqual(migrate(db,'kernel',kernelMigrations), []);
       assert.equal(deterministicOperationId('u','phone',1),deterministicOperationId('u','phone',1));
       assert.notEqual(deterministicOperationId('u','phone',1),deterministicOperationId('v','phone',1));

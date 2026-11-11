@@ -72,5 +72,23 @@ export const kernelMigrations: readonly Migration[] = [
       ) STRICT;
     `,
   },
+
+  {
+    version: 4,
+    name: 'transactional_outbox',
+    sql: `
+      CREATE TABLE kernel_outbox (
+        event_id     TEXT PRIMARY KEY,
+        event_seq    INTEGER NOT NULL UNIQUE,
+        status       TEXT NOT NULL CHECK (status IN ('pending','delivered','dead_lettered')),
+        attempts     INTEGER NOT NULL CHECK (attempts >= 0),
+        due_at       INTEGER NOT NULL CHECK (due_at >= 0),
+        last_error   TEXT,
+        delivered_at INTEGER,
+        created_at   INTEGER NOT NULL CHECK (created_at >= 0)
+      ) STRICT;
+      CREATE INDEX kernel_outbox_due_idx ON kernel_outbox (status, due_at, event_seq);
+    `,
+  },
 ];
 

@@ -84,10 +84,12 @@ export class SqliteEventStore implements EventStore {
   private readonly last;
   private readonly insert;
   private readonly range;
+  private readonly outbox: { enqueueSync(event: EventEnvelope, now: number): void } | null;
 
-  constructor(options: { db: Database; clock: Clock; logger: Logger }) {
+  constructor(options: { db: Database; clock: Clock; logger: Logger; outbox?: { enqueueSync(event: EventEnvelope, now: number): void } }) {
     this.db = options.db;
     this.clock = options.clock;
+    this.outbox = options.outbox ?? null;
     this.dispatcher = new EventDispatcher(options.logger);
     this.last = this.db.prepare('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1');
     this.insert = this.db.prepare(
@@ -105,11 +107,14 @@ export class SqliteEventStore implements EventStore {
    */
   appendSync(draft: EventDraft): EventEnvelope {
     const prev = this.last.get() as unknown as { seq: number; hash: string } | undefined;
-    const e = buildEnvelope(draft, prev ? { seq: prev.seq, hash: prev.hash } : null, this.clock());
+    const nowMs = this.clock();
+    const e = buildEnvelope(draft, prev ? { seq: prev.seq, hash: prev.hash } : null, nowMs);
     this.insert.run(
       e.seq, e.id, e.type, e.version, e.occurredAt, e.actor.kind, e.actor.id, e.subject.type, e.subject.id,
       canonicalJson(e.payload), e.cause.correlationId, e.cause.causationId, e.status, e.prevHash, e.hash,
     );
+    // CO-065: the outbox row joins the caller's transaction, so it commits or rolls back with the event.
+    this.outbox?.enqueueSync(e, nowMs);
     return e;
   }
 

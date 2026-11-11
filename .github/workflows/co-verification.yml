@@ -18,6 +18,7 @@ on:
       - 'test/sqlite-pool.ts'
       - 'test/co-091-readiness.test.ts'
       - 'test/co-093-shared-rate-limit.test.ts'
+      - 'test/co-065-outbox.test.ts'
       - 'test/co-030-route-auth.test.ts'
       - 'test/authorization.test.ts'
       - 'test/backup.test.ts'
@@ -92,6 +93,7 @@ jobs:
             test/authorization.test.ts \
             test/co-091-readiness.test.ts \
             test/co-093-shared-rate-limit.test.ts \
+            test/co-065-outbox.test.ts \
             test/backup.test.ts \
             test/rate-limit.test.ts \
             test/identity-throttle.test.ts \

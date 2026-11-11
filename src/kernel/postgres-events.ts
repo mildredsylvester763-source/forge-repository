@@ -59,11 +59,13 @@ export class PostgresEventStore implements EventStore {
   private readonly pool: SqlPool;
   private readonly clock: Clock;
   private readonly dispatcher: EventDispatcher;
+  private readonly outbox: { enqueueIn(conn: SqlConn, event: EventEnvelope, now: number): Promise<void> } | null;
 
-  constructor(options: { pool: SqlPool; clock: Clock; logger: Logger }) {
+  constructor(options: { pool: SqlPool; clock: Clock; logger: Logger; outbox?: { enqueueIn(conn: SqlConn, event: EventEnvelope, now: number): Promise<void> } }) {
     this.pool = options.pool;
     this.clock = options.clock;
     this.dispatcher = new EventDispatcher(options.logger);
+    this.outbox = options.outbox ?? null;
   }
 
   /**
@@ -75,7 +77,8 @@ export class PostgresEventStore implements EventStore {
     await conn.query('SELECT pg_advisory_xact_lock($1::bigint)', [EVENT_CHAIN_LOCK_KEY]);
     const last = await conn.query<{ seq: number | string; hash: string }>('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1');
     const prev = last.rows[0] ? { seq: Number(last.rows[0].seq), hash: last.rows[0].hash } : null;
-    const e = buildEnvelope(draft, prev, this.clock());
+    const nowMs = this.clock();
+    const e = buildEnvelope(draft, prev, nowMs);
     await conn.query(
       `INSERT INTO events (seq, id, type, version, occurred_at, actor_kind, actor_id, subject_type, subject_id,
          payload, correlation_id, causation_id, status, prev_hash, hash)
@@ -85,6 +88,8 @@ export class PostgresEventStore implements EventStore {
         canonicalJson(e.payload), e.cause.correlationId, e.cause.causationId, e.status, e.prevHash, e.hash,
       ],
     );
+    // CO-065: the outbox row joins this transaction, so it commits or rolls back with the event.
+    if (this.outbox) await this.outbox.enqueueIn(conn, e, nowMs);
     return e;
   }
 
