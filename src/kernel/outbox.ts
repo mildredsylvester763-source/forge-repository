@@ -437,11 +437,12 @@ export class PostgresOutboxStore implements OutboxStore {
   }
 }
 
+/** Mutable tally used as an in-place accumulator during one drain pass. */
 export interface DrainSummary {
-  readonly delivered: number;
-  readonly retried: number;
-  readonly deadLettered: number;
-  readonly skippedDuplicate: number;
+  delivered: number;
+  retried: number;
+  deadLettered: number;
+  skippedDuplicate: number;
 }
 
 /**
