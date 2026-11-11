@@ -277,6 +277,10 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/training-data/tokenizer/encode': 'AI-012',
   '/v1/training-data/tokenizer/decode': 'AI-012',
   '/v1/training-data/tokenizer/list': 'AI-012',
+  '/v1/sync/operations': 'CO-100',
+  '/v1/sync/entities/get': 'CO-100',
+  '/v1/sync/conflicts': 'CO-100',
+  '/v1/sync/conflicts/resolve': 'CO-100',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */
