@@ -1732,3 +1732,23 @@ Status: BUILT, CI green. Commits ea90710 (batch B code) + 5e920bf (typecheck fix
 - Tests: test/plans-engines.test.ts six new oracle describes (every refusal named, band math, snapshot expiry, admin refusals, redemption limits, fixed window, retention). test/plans.test.ts new batch-B describe: countries route (empty catalog, 404 unknown), snapshot build/verify/tamper (400 snapshot-signature-invalid), admin route 403 on the empty allowlist + direct-service admin grant/comp/pause/ledger, promotions define/redeem/duplicate/already-redeemed, rate limit 2-then-refuse, export/delete (unconfirmed → 400 account-delete-unconfirmed; confirmed → queued, then /v1/plans/check → 403 account_paused).
 - Gates: none changed. FEATURE_GATES stays 204, ROUTE_GATES stays 278 (plans/admin/account/promotions routes are ungated by design; admin guarded by the allowlist).
 - Evidence rule honored: this entry is the per-feature evidence; BUILD_NOTES.md section 4 is a summary only.
+
+## AI-018 + AI-084 — batch 5 (mistral lane, 11 Nov 2026)
+
+Implemented and CI green first try at commit a4b7d30973c2c72765530e8f8ca01f031588b37c (27s run, 11 Nov 2026). Catalog rows (Part 01 With Plans): AI-018 "Experiment tracking: configs, metrics, loss curves, comparisons" — Free/Internal, never sold; AI-084 "Long-running tasks with checkpoints and resume" — Pro gate, Engine: General, no pass needed.
+
+### Evidence
+- Engines (pure, deterministic, no engine imports another engine):
+  - src/modules/ai-training/engine/experiment-tracking-engine.ts — defineTrackedExperiment (non-empty id, non-empty config of string/finite-number/boolean values, non-empty duplicate-free metric list; ext_ fingerprint over id + sorted config keys + metrics), logTrackedPoint (declared metric, non-negative integer step, finite value; returns the new record, never mutates the caller), trackedCurves (points copied and sorted by step then value), compareTrackedExperiments (last point per metric, counts, honest delta at 4dp).
+  - src/modules/ai-training/engine/longrunning-task-engine.ts — startLongRunningTask (running, no checkpoints), recordCheckpoint (only while running; non-negative integer step; non-empty object state; ltc_<taskId>_<n> ids), pause/resume/complete state machines (resume only while paused, checkpoint-unknown by id, latest checkpoint or none; resumedFrom always truthful).
+- Service: createTrackedExperiment / logExperimentPoint / experimentCurves / compareTrackedExperiments and startLongRunningTask / checkpointTask / pauseTask / resumeTask / completeTask / longRunningTaskStatus over per-user in-memory session Maps (streams precedent). No store or migration changes — persistence deliberately deferred.
+- Routes: /v1/ai-training/tracking/define|point|curves|compare (AI-018) and /v1/ai-training/tasks/start|checkpoint|pause|resume|complete|status (AI-084). All POST, session required.
+- Gates: FEATURE_GATES AI-018 internal (206 features: 86 free, 57 internal, 26 pro, 16 enterprise, 10 team, 10 plus, 1 engine); AI-084 pro. ROUTE_GATES +10 (288 routes). Pins updated in test/plans-engines.test.ts including spot pins for AI-018, AI-084 and the tracking/define + tasks/start routes.
+- Tests: oracle describes in test/ai-training-engines.test.ts (every named refusal, curve sorting, comparison delta, checkpoint lifecycle, resume-from-latest and resume-from-id, never-mutates) and end-to-end tests in test/ai-training.test.ts (refusals by name through the routes, 409 duplicates, 404s, frozen-clock createdAt, free-user 402 plan_required on tasks/start and free-user access to internal tracking).
+- Docs: docs/features/AI-018.md, docs/features/AI-084.md.
+
+### Honest limits
+- Experiments and tasks are in-memory session state: a restart clears them. Persistence, stores and migrations are deferred until the owner asks.
+- AI-084 is the first Pro-gated AI row: a free or plus user answers 402 plan_required on every task route (pinned by a route test).
+- AI-085 is the next unimplemented AI row.
+
