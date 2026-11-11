@@ -67,11 +67,11 @@ describe('plans engine (PLAN GATE LAW)', () => {
     }
   });
 
-  it('pins the catalog gate counts (204 features, one gate each)', () => {
+  it('pins the catalog gate counts (210 features, one gate each)', () => {
     const counts: Record<string, number> = {};
     for (const gate of Object.values(FEATURE_GATES)) counts[gate] = (counts[gate] ?? 0) + 1;
-    assert.equal(Object.keys(FEATURE_GATES).length, 208);
-    assert.deepEqual(counts, { free: 88, internal: 57, pro: 26, enterprise: 16, team: 10, plus: 10, engine: 1 });
+    assert.equal(Object.keys(FEATURE_GATES).length, 210);
+    assert.deepEqual(counts, { free: 88, internal: 59, pro: 26, enterprise: 16, team: 10, plus: 10, engine: 1 });
   });
 
   it('pins spot-checked gates from the With-Plans catalog', () => {
@@ -81,6 +81,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['CO-010', 'plus'],
     ['CO-020', 'team'],
     ['CO-063', 'internal'],
+    ['CO-091', 'internal'],
+    ['CO-093', 'internal'],
     ['CO-100', 'free'],
     ['AI-015', 'internal'],
     ['AI-016', 'internal'],
@@ -653,3 +655,4 @@ describe('account data (Hook 16)', () => {
     assert.deepEqual(validateDeletionRequest({ userId: 'u1', confirm: true }), { ok: true, value: { userId: 'u1' } });
   });
 });
+

@@ -89,6 +89,8 @@ export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'CO-078': 'free',
   'CO-079': 'pro',
   'CO-080': 'plus',
+  'CO-091': 'internal',
+  'CO-093': 'internal',
   'CO-096': 'free',
   'CO-100': 'free',
   'AI-001': 'internal',
@@ -218,3 +220,4 @@ export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'TQ-039': 'plus',
   'TQ-040': 'pro',
 };
+

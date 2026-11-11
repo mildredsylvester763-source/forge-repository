@@ -11,6 +11,7 @@ import { migrate, openDatabase, type Database } from './kernel/sqlite.ts';
 import { PostgresEventStore } from './kernel/postgres-events.ts';
 import type { SqlPool } from './kernel/sql.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
+import { InMemoryRateLimitStore, PostgresRateLimitStore, SqliteRateLimitStore, type SharedRateLimiter } from './kernel/rate-limit-store.ts';
 import {
   CompositeBreachChecker,
   DEFAULT_THROTTLE,
@@ -205,6 +206,8 @@ interface Storage {
   billing: BillingStore;
   offlineSync: OfflineSyncStore;
   syncDb: Database | null;
+  /** CO-093: the shared-store gateway limiter, one per storage. */
+  rateLimitStore: SharedRateLimiter;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -228,7 +231,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const userPlans = new PostgresPlanStore(pool);
     const billing = new PostgresBillingStore(pool);
     const offlineSync = new PostgresOfflineSyncStore(pool);
-    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    const rateLimitStore = new PostgresRateLimitStore(pool);
+    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -263,7 +267,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const userPlans = new SqlitePlanStore(db);
     const billing = new SqliteBillingStore(db);
     const offlineSync = new SqliteOfflineSyncStore(db);
-    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    const rateLimitStore = new SqliteRateLimitStore(db);
+    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -284,7 +289,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const syncDb = openDatabase(':memory:');
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);
-  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const rateLimitStore = new InMemoryRateLimitStore();
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -368,6 +374,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     rateLimits: config.plans.rateLimits,
     accessSnapshotTtlHours: config.plans.accessSnapshotTtlHours,
     accessSecret: config.plans.accessSecret,
+    rateLimitStore: storage.rateLimitStore,
   });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
 
@@ -407,3 +414,4 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, logger, db: storage.db, close };
 }
+

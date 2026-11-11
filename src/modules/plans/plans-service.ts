@@ -12,6 +12,7 @@ import { assembleAccessSnapshot, verifyAccessSnapshot as runVerifySnapshot, type
 import { isAdmin, validateAdminAction } from './engine/admin-console-engine.ts';
 import { validatePromotion as runValidatePromotion, redeemPromotion as runRedeemPromotion, type PromotionRedemption, type PromotionSpec } from './engine/promotion-engine.ts';
 import { consumeRateLimit, type RateLimitRule, type RateLimitState } from './engine/rate-limit-engine.ts';
+import type { SharedRateLimiter } from '../../kernel/rate-limit-store.ts';
 import { accountRetention, buildAccountExport, validateDeletionRequest } from './engine/account-data-engine.ts';
 import { signPaymentPayload } from './payment-provider.ts';
 import type { BillingStore } from './billing-store.ts';
@@ -57,6 +58,8 @@ export interface PlansDeps {
   readonly countryCatalog: readonly CountryRow[];
   /** Hook 14: per-user and per-device gateway limits. null = disabled (FORGE_RATE_LIMITS). */
   readonly rateLimits: { readonly user: RateLimitRule | null; readonly device: RateLimitRule | null };
+  /** CO-093: the shared-store limiter the gateway drains when one is wired (multi-replica honest). Optional: without it the in-process buckets stay. */
+  readonly rateLimitStore?: SharedRateLimiter;
   /** Hook 9: how many hours a signed access snapshot stays valid. */
   readonly accessSnapshotTtlHours: number;
   /** Hook 9: the HMAC secret access snapshots are signed with. */
@@ -86,6 +89,7 @@ export class PlansService {
   private readonly adminUsers: readonly string[];
   private readonly countryCatalog: readonly CountryRow[];
   private readonly rateLimits: { readonly user: RateLimitRule | null; readonly device: RateLimitRule | null };
+  private readonly rateLimitStore: SharedRateLimiter | null;
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
   /** Hook 11: paused accounts (admin action). In-memory session state, streams precedent. */
@@ -109,6 +113,7 @@ export class PlansService {
     this.adminUsers = deps.adminUsers;
     this.countryCatalog = deps.countryCatalog;
     this.rateLimits = deps.rateLimits;
+    this.rateLimitStore = deps.rateLimitStore ?? null;
     this.accessSnapshotTtlHours = deps.accessSnapshotTtlHours;
     this.accessSecret = deps.accessSecret;
   }
@@ -417,12 +422,14 @@ export class PlansService {
   async enforceUserRateLimit(userId: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
     const rule = this.rateLimits.user;
     if (rule === null) return { ok: true };
+    if (this.rateLimitStore !== null) return this.drainSharedBucket('user:' + userId, rule);
     return this.drainBucket('user:' + userId, rule);
   }
 
   async enforceDeviceRateLimit(deviceId: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
     const rule = this.rateLimits.device;
     if (rule === null) return { ok: true };
+    if (this.rateLimitStore !== null) return this.drainSharedBucket('device:' + deviceId, rule);
     return this.drainBucket('device:' + deviceId, rule);
   }
 
@@ -431,6 +438,14 @@ export class PlansService {
     if (!result.ok) return { ok: false, retryAfterMs: result.retryAfterMs };
     this.rateBuckets.set(key, result.value);
     return { ok: true };
+  }
+
+  /** CO-093 - the same rule, counted by one atomic upsert so every replica shares the budget. */
+  private async drainSharedBucket(key: string, rule: RateLimitRule): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+    const store = this.rateLimitStore;
+    if (store === null) throw new Error('rate-limit store vanished');
+    const decision = await store.consume(key, rule.limit, rule.windowMs, this.clock());
+    return decision.allowed ? { ok: true } : { ok: false, retryAfterMs: decision.retryAfterMs };
   }
 
   /** Hook 16 - export and delete my data. */
@@ -457,3 +472,4 @@ export class PlansService {
     return gateForRoute(path);
   }
 }
+

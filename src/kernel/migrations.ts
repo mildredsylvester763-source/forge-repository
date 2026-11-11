@@ -60,4 +60,17 @@ export const kernelMigrations: readonly Migration[] = [
       CREATE INDEX sync_conflicts_owner_status_idx ON sync_conflicts (owner_id, status, created_at);
     `,
   },
+
+  {
+    version: 3,
+    name: 'rate_limit_buckets',
+    sql: `
+      CREATE TABLE kernel_rate_limit_buckets (
+        bucket_key   TEXT PRIMARY KEY,
+        window_start INTEGER NOT NULL CHECK (window_start >= 0),
+        count        INTEGER NOT NULL CHECK (count >= 1)
+      ) STRICT;
+    `,
+  },
 ];
+
