@@ -280,6 +280,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const aiTraining = new InMemoryAiTrainingStore();
   const trainingData = new InMemoryTrainingDataStore();
   const userPlans = new InMemoryPlanStore();
+  const billing = new InMemoryBillingStore();
   const syncDb = openDatabase(':memory:');
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);

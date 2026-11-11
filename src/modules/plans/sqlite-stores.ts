@@ -100,7 +100,6 @@ const toLedger = (r: LedgerRow): LedgerEntry => ({
 
 /** SQLite storage for the billing hooks: subscription items, processed payment events, the append-only credit ledger. */
 export class SqliteBillingStore implements BillingStore {
-  private readonly db: Database;
   private readonly insertItem;
   private readonly itemsByUser;
   private readonly updateStatus;
@@ -111,7 +110,6 @@ export class SqliteBillingStore implements BillingStore {
   private readonly insertLedger;
 
   constructor(db: Database) {
-    this.db = db;
     this.insertItem = db.prepare(
       'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
