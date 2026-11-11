@@ -144,17 +144,23 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
-  it('gates engine rows on an owned pass: creative sessions (TQ-027)', async () => {
+  it('never locks engine rows: creative sessions run at free level without a pass (TQ-027)', async () => {
     const h = await startHarness();
     try {
       const noPass = await registerAndSetPlan(h, 'plans-engine-nopass@forge.test', 'pro');
-      const denied = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: noPass.cookie });
-      assert.equal(denied.status, 402);
-      const body = (await denied.json()) as { error: { details: Record<string, string> } };
-      assert.equal(body.error.details.reason, 'engine_pass_missing');
-      const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['music']);
-      const allowed = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: withPass.cookie });
+      const allowed = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: noPass.cookie });
       assert.notEqual(allowed.status, 402);
+      const verdict = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: noPass.cookie });
+      assert.equal(verdict.status, 200);
+      const body = (await verdict.json()) as { entitlement: Record<string, unknown> };
+      assert.equal(body.entitlement.allowed, true);
+      assert.equal(body.entitlement.engineLimits, 'free_level');
+      const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['music']);
+      const paid = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: withPass.cookie });
+      assert.equal(paid.status, 200);
+      const paidBody = (await paid.json()) as { entitlement: Record<string, unknown> };
+      assert.equal(paidBody.entitlement.allowed, true);
+      assert.equal(paidBody.entitlement.engineLimits, 'paid_level');
     } finally {
       await h.close();
     }

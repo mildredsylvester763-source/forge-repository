@@ -4,6 +4,7 @@ import {
   checkEntitlement,
   DEFAULT_PLAN,
   ENGINE_BY_FEATURE,
+  ENGINE_NAMES,
   ENGINES,
   FEATURE_GATES,
   gateForRoute,
@@ -34,12 +35,12 @@ import {
 describe('plans engine (PLAN GATE LAW)', () => {
   it('walks the plan ladder: cumulative plans, Studio covers Team but never Enterprise', () => {
     const ladder: Array<{ plan: PlanId; gates: Record<GateId, boolean> }> = [
-      { plan: 'free', gates: { free: true, plus: false, pro: false, team: false, enterprise: false, internal: true, engine: false } },
-      { plan: 'plus', gates: { free: true, plus: true, pro: false, team: false, enterprise: false, internal: true, engine: false } },
-      { plan: 'pro', gates: { free: true, plus: true, pro: true, team: false, enterprise: false, internal: true, engine: false } },
-      { plan: 'studio', gates: { free: true, plus: true, pro: true, team: true, enterprise: false, internal: true, engine: false } },
-      { plan: 'team', gates: { free: true, plus: true, pro: true, team: true, enterprise: false, internal: true, engine: false } },
-      { plan: 'enterprise', gates: { free: true, plus: true, pro: true, team: true, enterprise: true, internal: true, engine: false } },
+      { plan: 'free', gates: { free: true, plus: false, pro: false, team: false, enterprise: false, internal: true, engine: true } },
+      { plan: 'plus', gates: { free: true, plus: true, pro: false, team: false, enterprise: false, internal: true, engine: true } },
+      { plan: 'pro', gates: { free: true, plus: true, pro: true, team: false, enterprise: false, internal: true, engine: true } },
+      { plan: 'studio', gates: { free: true, plus: true, pro: true, team: true, enterprise: false, internal: true, engine: true } },
+      { plan: 'team', gates: { free: true, plus: true, pro: true, team: true, enterprise: false, internal: true, engine: true } },
+      { plan: 'enterprise', gates: { free: true, plus: true, pro: true, team: true, enterprise: true, internal: true, engine: true } },
     ];
     for (const row of ladder) {
       for (const [gate, allowed] of Object.entries(row.gates) as Array<[GateId, boolean]>) {
@@ -74,28 +75,34 @@ describe('plans engine (PLAN GATE LAW)', () => {
     for (const [feature, gate] of pinned) assert.equal(FEATURE_GATES[feature], gate, feature);
   });
 
-  it('pins the engine codes (five engines, sold per engine under any base plan)', () => {
-    assert.deepEqual([...ENGINES], ['manhwa', 'music', 'voice', 'video', '3d']);
-    assert.equal(isEngineCode('manhwa'), true);
-    assert.equal(isEngineCode('3d'), true);
+  it('pins the catalog engines (ten engines, full names, sold per engine under any base plan)', () => {
+    assert.deepEqual([...ENGINES], ['painting', 'manhwa', 'music', 'voice', 'audio', 'video', 'film', '3d', 'games', 'writing']);
+    assert.equal(ENGINE_NAMES['manhwa'], 'Manhwa / comics');
+    assert.equal(ENGINE_NAMES['3d'], '3D and world');
+    assert.equal(ENGINE_NAMES['video'], 'Video and animation');
+    assert.equal(isEngineCode('painting'), true);
+    assert.equal(isEngineCode('film'), true);
+    assert.equal(isEngineCode('games'), true);
+    assert.equal(isEngineCode('writing'), true);
     assert.equal(isEngineCode('creative'), false);
     assert.equal(isEngineCode('sonar'), false);
     assert.equal(isEngineCode(42), false);
   });
 
-  it('gates engine rows on an owned engine pass among the row engines', () => {
+  it('never locks engine rows: an owned pass runs paid level, everything else runs free level', () => {
     assert.deepEqual([...(ENGINE_BY_FEATURE['TQ-027'] ?? [])], ['manhwa', '3d', 'music']);
     assert.equal(FEATURE_GATES['TQ-027'], 'engine');
-    const denied = checkEntitlement({ plan: 'enterprise', enginePasses: [] }, 'TQ-027', 'engine');
-    assert.equal(denied.allowed, false);
-    assert.equal(denied.reason, 'engine_pass_missing');
-    const wrongPass = checkEntitlement({ plan: 'enterprise', enginePasses: ['sonar'] }, 'TQ-027', 'engine');
-    assert.equal(wrongPass.allowed, false);
-    const oldTag = checkEntitlement({ plan: 'enterprise', enginePasses: ['creative'] }, 'TQ-027', 'engine');
-    assert.equal(oldTag.allowed, false);
+    const unpaid = checkEntitlement({ plan: 'enterprise', enginePasses: [] }, 'TQ-027', 'engine');
+    assert.equal(unpaid.allowed, true);
+    assert.equal(unpaid.reason, 'unlocked');
+    assert.equal(unpaid.engineLimits, 'free_level');
+    const wrongPass = checkEntitlement({ plan: 'enterprise', enginePasses: ['voice'] }, 'TQ-027', 'engine');
+    assert.equal(wrongPass.allowed, true);
+    assert.equal(wrongPass.engineLimits, 'free_level');
     const owned = checkEntitlement({ plan: 'pro', enginePasses: ['music'] }, 'TQ-027', 'engine');
     assert.equal(owned.allowed, true);
     assert.equal(owned.reason, 'unlocked');
+    assert.equal(owned.engineLimits, 'paid_level');
   });
 
   it('pins plan ids and the free default', () => {
