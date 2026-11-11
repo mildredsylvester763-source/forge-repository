@@ -243,8 +243,10 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(after.balances.general, 3);
       assert.deepEqual(after.balances.engines, [{ engine: 'music', balance: 0 }]);
       await assert.rejects(
-        h.app.plans.spendCredits(user.id, { engine: 'music', amount: 99, jobId: 'job_plans_2', costUsdMicros: 0 }),
-        /insufficient_credits/,
+        () => h.app.plans.spendCredits(user.id, { engine: 'music', amount: 99, jobId: 'job_plans_2', costUsdMicros: 0 }),
+        (err: unknown) =>
+          err instanceof Error &&
+          ((err as { code?: unknown }).code === 'insufficient_credits' || /Not enough credits/.test(err.message)),
       );
     } finally {
       await h.close();
