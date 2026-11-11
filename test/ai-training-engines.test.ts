@@ -11,6 +11,8 @@ import { TUNING_METHODS, defineTuningPipeline, advanceTuningStage, type Preferen
 import { DISTILLATION_STAGES, planDistillation, advanceDistillationStage, type DistillationSample } from '../src/modules/ai-training/engine/distillation-engine.ts';
 import { defineTrackedExperiment, logTrackedPoint, trackedCurves, compareTrackedExperiments, type TrackedExperiment } from '../src/modules/ai-training/engine/experiment-tracking-engine.ts';
 import { startLongRunningTask, recordCheckpoint, pauseLongRunningTask, resumeLongRunningTask, completeLongRunningTask, type LongRunningTask } from '../src/modules/ai-training/engine/longrunning-task-engine.ts';
+import { defineTaskBudget, chargeTaskBudget, type TaskBudget } from '../src/modules/ai-training/engine/task-budget-engine.ts';
+import { runSelfCritique, type CritiqueReport } from '../src/modules/ai-training/engine/self-critique-engine.ts';
 
 
 function mulberry32(seed: number) {
@@ -1747,5 +1749,83 @@ describe('long-running task engine (FORGE AI-084)', () => {
     const paused = pauseLongRunningTask(started.value);
     assert.ok(paused.ok);
     assert.equal(JSON.stringify(started.value), frozen);
+  });
+});
+
+/** AI-085 per-task budgets, pure engine pinned. */
+describe('task budget engine (FORGE AI-085)', () => {
+  it('refuses bad budget definitions by name', () => {
+    assert.deepEqual(defineTaskBudget({ taskId: '', limits: { toolCalls: 10 } }), { ok: false, reason: 'budget-no-task' });
+    assert.deepEqual(defineTaskBudget({ taskId: 't-1', limits: {} }), { ok: false, reason: 'budget-no-limits' });
+    assert.deepEqual(defineTaskBudget({ taskId: 't-1', limits: 'big' }), { ok: false, reason: 'budget-no-limits' });
+    assert.deepEqual(defineTaskBudget({ taskId: 't-1', limits: { toolCalls: 0 } }), { ok: false, reason: 'budget-limit-invalid:toolCalls' });
+    assert.deepEqual(defineTaskBudget({ taskId: 't-1', limits: { timeMs: 1.5 } }), { ok: false, reason: 'budget-limit-invalid:timeMs' });
+    assert.deepEqual(defineTaskBudget({ taskId: 't-1', limits: { costUsdMicros: -5 } }), { ok: false, reason: 'budget-limit-invalid:costUsdMicros' });
+  });
+
+  it('charges atomically and names the crossing charge', () => {
+    const defined = defineTaskBudget({ taskId: 't-1', limits: { timeMs: 1000, toolCalls: 10 } });
+    assert.ok(defined.ok);
+    if (!defined.ok) return;
+    let budget: TaskBudget = defined.value;
+    assert.deepEqual({ timeMs: budget.spent.timeMs, toolCalls: budget.spent.toolCalls, exceeded: budget.exceeded }, { timeMs: 0, toolCalls: 0, exceeded: null });
+    assert.deepEqual(chargeTaskBudget(budget, { timeMs: -1 }), { ok: false, reason: 'budget-charge-invalid:timeMs' });
+    assert.deepEqual(chargeTaskBudget(budget, { toolCalls: 1.5 }), { ok: false, reason: 'budget-charge-invalid:toolCalls' });
+    const first = chargeTaskBudget(budget, { timeMs: 600, toolCalls: 6 });
+    assert.ok(first.ok);
+    if (first.ok) budget = first.value;
+    assert.deepEqual({ timeMs: budget.spent.timeMs, toolCalls: budget.spent.toolCalls, exceeded: budget.exceeded }, { timeMs: 600, toolCalls: 6, exceeded: null });
+    const crossing = chargeTaskBudget(budget, { toolCalls: 5 });
+    assert.ok(crossing.ok);
+    if (crossing.ok) budget = crossing.value;
+    assert.deepEqual({ toolCalls: budget.spent.toolCalls, exceeded: budget.exceeded }, { toolCalls: 11, exceeded: 'toolCalls' });
+    assert.deepEqual(chargeTaskBudget(budget, { timeMs: 100 }), { ok: false, reason: 'budget-already-exceeded:toolCalls' });
+    const timeOnly = chargeTaskBudget(defined.value, { timeMs: 1000 });
+    assert.ok(timeOnly.ok);
+    if (timeOnly.ok) assert.deepEqual({ timeMs: timeOnly.value.spent.timeMs, exceeded: timeOnly.value.exceeded }, { timeMs: 1000, exceeded: null });
+  });
+
+  it('never mutates the caller input', () => {
+    const defined = defineTaskBudget({ taskId: 't-2', limits: { toolCalls: 2 } });
+    assert.ok(defined.ok);
+    if (!defined.ok) return;
+    const frozen = JSON.stringify(defined.value);
+    const charged = chargeTaskBudget(defined.value, { toolCalls: 1 });
+    assert.ok(charged.ok);
+    assert.equal(JSON.stringify(defined.value), frozen);
+  });
+});
+
+/** AI-086 self-critique pass, pure engine pinned. */
+describe('self-critique engine (FORGE AI-086)', () => {
+  const base = { resultId: 'r-1', summary: 'Trained a small model on a small dataset' };
+
+  it('refuses bad critiques by name', () => {
+    assert.deepEqual(runSelfCritique({ ...base, resultId: '', items: [{ kind: 'fact', text: 'ok' }] }), { ok: false, reason: 'critique-no-result-id' });
+    assert.deepEqual(runSelfCritique({ ...base, summary: '', items: [{ kind: 'fact', text: 'ok' }] }), { ok: false, reason: 'critique-no-summary' });
+    assert.deepEqual(runSelfCritique({ ...base, items: [] }), { ok: false, reason: 'critique-no-items' });
+    assert.deepEqual(runSelfCritique({ ...base, items: ['nope'] }), { ok: false, reason: 'critique-item-invalid:0' });
+    assert.deepEqual(runSelfCritique({ ...base, items: [{ kind: 'guess', text: 'ok' }] }), { ok: false, reason: 'critique-kind-invalid:guess' });
+    assert.deepEqual(runSelfCritique({ ...base, items: [{ kind: 'fact', text: '  ' }] }), { ok: false, reason: 'critique-empty-text:0' });
+  });
+
+  it('sends a result with no caveat or uncertainty back for revision', () => {
+    const report = runSelfCritique({ ...base, items: [{ kind: 'fact', text: 'accuracy 0.9' }, { kind: 'action', text: 'deploy it' }] });
+    assert.ok(report.ok);
+    if (!report.ok) return;
+    const value: CritiqueReport = report.value;
+    assert.deepEqual({ verdict: value.verdict, issues: [...value.issues] }, { verdict: 'revise', issues: ['no-caveat-or-uncertainty'] });
+    assert.ok(value.fingerprint.startsWith('sc_'));
+  });
+
+  it('presents an honest result and stays deterministic', () => {
+    const items = [{ kind: 'fact', text: 'accuracy 0.9' }, { kind: 'caveat', text: 'small dataset' }, { kind: 'uncertainty', text: 'loss still noisy' }];
+    const report = runSelfCritique({ ...base, items });
+    assert.ok(report.ok);
+    if (!report.ok) return;
+    assert.deepEqual({ verdict: report.value.verdict, issues: [...report.value.issues] }, { verdict: 'present', issues: [] });
+    const same = runSelfCritique({ ...base, items });
+    assert.ok(same.ok);
+    if (same.ok) assert.equal(same.value.fingerprint, report.value.fingerprint);
   });
 });

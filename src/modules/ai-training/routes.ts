@@ -717,5 +717,33 @@ export function aiTrainingRoutes(service: AiTrainingService, identity: IdentityS
         return { status: 200, body: result };
       },
     },
+    '/v1/ai-training/tasks/budget/define': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.defineTaskBudget(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/budget/charge': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.chargeTaskBudget(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/budget/status': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.taskBudgetStatus(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/critique/run': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.selfCritique(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
   };
 }

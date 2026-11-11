@@ -122,6 +122,15 @@ import {
   type LongRunningTask,
   type TaskCheckpoint,
 } from './engine/longrunning-task-engine.ts';
+import {
+  defineTaskBudget as runDefineTaskBudget,
+  chargeTaskBudget as runChargeTaskBudget,
+  type TaskBudget,
+} from './engine/task-budget-engine.ts';
+import {
+  runSelfCritique as runRunSelfCritique,
+  type CritiqueReport,
+} from './engine/self-critique-engine.ts';
 
 /** AI-015 tuning pipelines, session state per user. Ephemeral by design like streams. */
 interface StoredTuningPipeline {
@@ -146,6 +155,18 @@ interface StoredTrackedExperiment {
 /** AI-084 long-running tasks, session state per user. Ephemeral by design like streams. */
 interface StoredLongRunningTask {
   task: LongRunningTask;
+  createdAt: number;
+}
+
+/** AI-085 task budgets, session state per user. Ephemeral by design like streams. */
+interface StoredTaskBudget {
+  budget: TaskBudget;
+  createdAt: number;
+}
+
+/** AI-086 critique reports, session state per user. Ephemeral by design like streams. */
+interface StoredCritiqueReport {
+  report: CritiqueReport;
   createdAt: number;
 }
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
@@ -249,6 +270,8 @@ export class AiTrainingService {
   private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
   private readonly trackedExperiments = new Map<string, StoredTrackedExperiment>();
   private readonly longRunningTasks = new Map<string, StoredLongRunningTask>();
+  private readonly taskBudgets = new Map<string, StoredTaskBudget>();
+  private readonly critiqueReports = new Map<string, StoredCritiqueReport>();
 
   constructor(deps: AiTrainingDeps) {
     this.store = deps.store;
@@ -1943,5 +1966,51 @@ export class AiTrainingService {
     const dto = (body ?? {}) as Record<string, unknown>;
     const stored = this.resolveLongRunningTask(userId, dto);
     return { task: stored.task, createdAt: stored.createdAt };
+  }
+
+  // ---- AI-085 per-task budgets ----
+
+  async defineTaskBudget(userId: string, body: unknown): Promise<{ budget: TaskBudget; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runDefineTaskBudget({ taskId: typeof dto.taskId === 'string' ? dto.taskId : '', limits: dto.limits });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.taskId;
+    if (this.taskBudgets.has(key)) throw conflict('task-budget-duplicate:' + result.value.taskId);
+    const createdAt = this.clock();
+    this.taskBudgets.set(key, { budget: result.value, createdAt });
+    return { budget: result.value, createdAt };
+  }
+
+  private resolveTaskBudget(userId: string, dto: Record<string, unknown>): StoredTaskBudget {
+    const taskId = typeof dto.taskId === 'string' ? dto.taskId.trim() : '';
+    const stored = this.taskBudgets.get(userId + ':' + taskId);
+    if (!stored) throw notFound('task-budget-not-found:' + taskId);
+    return stored;
+  }
+
+  async chargeTaskBudget(userId: string, body: unknown): Promise<{ budget: TaskBudget }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTaskBudget(userId, dto);
+    const result = runChargeTaskBudget(stored.budget, { timeMs: dto.timeMs, costUsdMicros: dto.costUsdMicros, toolCalls: dto.toolCalls });
+    if (!result.ok) throw refusal(result.reason);
+    stored.budget = result.value;
+    return { budget: result.value };
+  }
+
+  async taskBudgetStatus(userId: string, body: unknown): Promise<{ budget: TaskBudget; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTaskBudget(userId, dto);
+    return { budget: stored.budget, createdAt: stored.createdAt };
+  }
+
+  // ---- AI-086 self-critique pass ----
+
+  async selfCritique(userId: string, body: unknown): Promise<{ report: CritiqueReport; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runRunSelfCritique({ resultId: typeof dto.resultId === 'string' ? dto.resultId : '', summary: dto.summary, items: dto.items });
+    if (!result.ok) throw refusal(result.reason);
+    const createdAt = this.clock();
+    this.critiqueReports.set(userId + ':' + result.value.resultId, { report: result.value, createdAt });
+    return { report: result.value, createdAt };
   }
 }

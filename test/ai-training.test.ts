@@ -1427,3 +1427,71 @@ describe('experiment tracking and long-running tasks (AI-018/084)', () => {
     }
   });
 });
+
+describe('per-task budgets and self-critique (AI-085/086)', () => {
+  it('runs a budget from definition to a named, honest breach (AI-085)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'budgets@example.com');
+      const bad = await h.post('/v1/ai-training/tasks/budget/define', { taskId: 't-1', limits: {} }, { cookie });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'budget-no-limits');
+      const defined = await h.post('/v1/ai-training/tasks/budget/define', { taskId: 't-1', limits: { timeMs: 1000, toolCalls: 10 } }, { cookie });
+      assert.equal(defined.status, 201);
+      const definedBody = (await defined.json()) as { budget: { spent: { timeMs: number; toolCalls: number }; exceeded: string | null }; createdAt: number };
+      assert.deepEqual({ timeMs: definedBody.budget.spent.timeMs, toolCalls: definedBody.budget.spent.toolCalls, exceeded: definedBody.budget.exceeded }, { timeMs: 0, toolCalls: 0, exceeded: null });
+      assert.equal(definedBody.createdAt, NOW);
+      const duplicate = await h.post('/v1/ai-training/tasks/budget/define', { taskId: 't-1', limits: { toolCalls: 10 } }, { cookie });
+      assert.equal(duplicate.status, 409);
+      assert.equal(await errorCode(duplicate), 'task-budget-duplicate:t-1');
+      const unknown = await h.post('/v1/ai-training/tasks/budget/charge', { taskId: 't-x', toolCalls: 1 }, { cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'task-budget-not-found:t-x');
+      const badCharge = await h.post('/v1/ai-training/tasks/budget/charge', { taskId: 't-1', toolCalls: -1 }, { cookie });
+      assert.equal(badCharge.status, 400);
+      assert.equal(await errorCode(badCharge), 'budget-charge-invalid:toolCalls');
+      const charged = await h.post('/v1/ai-training/tasks/budget/charge', { taskId: 't-1', timeMs: 600, toolCalls: 6 }, { cookie });
+      assert.equal(charged.status, 200);
+      const chargedBody = (await charged.json()) as { budget: { spent: { timeMs: number; toolCalls: number }; exceeded: string | null } };
+      assert.deepEqual({ timeMs: chargedBody.budget.spent.timeMs, toolCalls: chargedBody.budget.spent.toolCalls, exceeded: chargedBody.budget.exceeded }, { timeMs: 600, toolCalls: 6, exceeded: null });
+      const crossing = await h.post('/v1/ai-training/tasks/budget/charge', { taskId: 't-1', toolCalls: 5 }, { cookie });
+      assert.equal(crossing.status, 200);
+      const crossingBody = (await crossing.json()) as { budget: { spent: { toolCalls: number }; exceeded: string | null } };
+      assert.deepEqual({ toolCalls: crossingBody.budget.spent.toolCalls, exceeded: crossingBody.budget.exceeded }, { toolCalls: 11, exceeded: 'toolCalls' });
+      const afterBreach = await h.post('/v1/ai-training/tasks/budget/charge', { taskId: 't-1', timeMs: 100 }, { cookie });
+      assert.equal(afterBreach.status, 400);
+      assert.equal(await errorCode(afterBreach), 'budget-already-exceeded:toolCalls');
+      const status = await h.post('/v1/ai-training/tasks/budget/status', { taskId: 't-1' }, { cookie });
+      assert.equal(status.status, 200);
+      const statusBody = (await status.json()) as { budget: { exceeded: string | null }; createdAt: number };
+      assert.deepEqual({ exceeded: statusBody.budget.exceeded, createdAt: statusBody.createdAt }, { exceeded: 'toolCalls', createdAt: NOW });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('critiques results before presenting them (AI-086)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'critique@example.com');
+      const noSummary = await h.post('/v1/ai-training/critique/run', { resultId: 'r-1', summary: '', items: [{ kind: 'fact', text: 'ok' }] }, { cookie });
+      assert.equal(noSummary.status, 400);
+      assert.equal(await errorCode(noSummary), 'critique-no-summary');
+      const badKind = await h.post('/v1/ai-training/critique/run', { resultId: 'r-1', summary: 'Trained a model', items: [{ kind: 'guess', text: 'ok' }] }, { cookie });
+      assert.equal(badKind.status, 400);
+      assert.equal(await errorCode(badKind), 'critique-kind-invalid:guess');
+      const revise = await h.post('/v1/ai-training/critique/run', { resultId: 'r-1', summary: 'Trained a model', items: [{ kind: 'fact', text: 'accuracy 0.9' }] }, { cookie });
+      assert.equal(revise.status, 200);
+      const reviseBody = (await revise.json()) as { report: { verdict: string; issues: string[] }; createdAt: number };
+      assert.deepEqual({ verdict: reviseBody.report.verdict, issues: reviseBody.report.issues }, { verdict: 'revise', issues: ['no-caveat-or-uncertainty'] });
+      assert.equal(reviseBody.createdAt, NOW);
+      const present = await h.post('/v1/ai-training/critique/run', { resultId: 'r-2', summary: 'Trained a model', items: [{ kind: 'fact', text: 'accuracy 0.9' }, { kind: 'caveat', text: 'small dataset' }] }, { cookie });
+      assert.equal(present.status, 200);
+      const presentBody = (await present.json()) as { report: { verdict: string; issues: string[]; fingerprint: string } };
+      assert.deepEqual({ verdict: presentBody.report.verdict, issues: presentBody.report.issues }, { verdict: 'present', issues: [] });
+      assert.ok(presentBody.report.fingerprint.startsWith('sc_'));
+    } finally {
+      await h.close();
+    }
+  });
+});

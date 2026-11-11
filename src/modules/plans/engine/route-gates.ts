@@ -297,6 +297,10 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/ai-training/tasks/resume': 'AI-084',
   '/v1/ai-training/tasks/complete': 'AI-084',
   '/v1/ai-training/tasks/status': 'AI-084',
+  '/v1/ai-training/tasks/budget/define': 'AI-085',
+  '/v1/ai-training/tasks/budget/charge': 'AI-085',
+  '/v1/ai-training/tasks/budget/status': 'AI-085',
+  '/v1/ai-training/critique/run': 'AI-086',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */
