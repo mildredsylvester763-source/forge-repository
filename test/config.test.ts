@@ -10,6 +10,7 @@ const prod = (extra: Record<string, string> = {}) => ({
   FORGE_AUDIT_KEY: key(),
   FORGE_ALLOWED_ORIGINS: 'https://app.example.com',
   FORGE_DATABASE_URL: 'postgresql://forge:secret@db.example.com:5432/forge',
+  FORGE_PAYMENT_WEBHOOK_SECRET: 'pwhsec'.repeat(8),
   ...extra,
 });
 
@@ -17,6 +18,7 @@ describe('configuration safety', () => {
   it('refuses to start in production without secrets', () => {
     assert.throws(() => loadConfig({ FORGE_ENV: 'production' }), ConfigError);
     assert.throws(() => loadConfig({ ...prod(), FORGE_AUDIT_KEY: '' }), ConfigError);
+    assert.throws(() => loadConfig({ ...prod(), FORGE_PAYMENT_WEBHOOK_SECRET: '' }), ConfigError);
   });
   it('rejects weak or malformed secrets', () => {
     assert.throws(() => loadConfig(prod({ FORGE_PASSWORD_PEPPERS: '1:c2hvcnQ=' })), ConfigError);
