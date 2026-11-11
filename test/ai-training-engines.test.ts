@@ -7,6 +7,9 @@ import { openCostLedger, recordCost, reproducibilityFingerprint, type CostLedger
 import { defineEvalSuite, suiteFingerprint, gradeSuite, aggregatePanel, applyRegressionGate, type EvalCase, type EvalSuite, type GateThreshold, type PanelVote, type RegressionGate } from '../src/modules/ai-training/engine/eval-gate-engine.ts';
 import { defineProbeBattery, gradeSafetyRun, groundClaims, detectContamination, tallyBlindComparison, CONTAMINATION_DEFAULTS, CONTAMINATION_N_BOUNDS, type BlindVote, type Claim, type CorpusDoc, type Fact, type Probe, type ProbeBatteryInput } from '../src/modules/ai-training/engine/safety-eval-engine.ts';
 import { defineExperiment, assignVariant, tallyExperiment, buildScorecards, buildTrend, mineFailures, AB_Z_CRITICAL, type AgentEvent, type AssignmentInput, type ExperimentOutcome, type ExperimentSpec, type ExperimentVariant, type MinedCaseInput, type TrendSample } from '../src/modules/ai-training/engine/product-experiment-engine.ts';
+import { TUNING_METHODS, defineTuningPipeline, advanceTuningStage, type PreferencePair } from '../src/modules/ai-training/engine/preference-tuning-engine.ts';
+import { DISTILLATION_STAGES, planDistillation, advanceDistillationStage, type DistillationSample } from '../src/modules/ai-training/engine/distillation-engine.ts';
+
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -1410,5 +1413,161 @@ describe('scorecards, trends and failure mining (FORGE AI-030/031/032)', () => {
         });
       }
     }
+  });
+});
+
+/** AI-015 - preference tuning pipelines (RLHF, DPO style), pure engine pinned. */
+describe('preference tuning engine (FORGE AI-015)', () => {
+  const pair = (n: number): PreferencePair => ({ prompt: 'prompt ' + n, chosen: 'good answer ' + n, rejected: 'bad answer ' + n });
+  const hp = { learningRate: 0.0001, beta: 0.1, epochs: 3 };
+  const dpo = defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1)], hyperparams: hp });
+
+  it('pins the methods and names every definition refusal', () => {
+    assert.deepEqual([...TUNING_METHODS], ['rlhf', 'dpo']);
+    assert.deepEqual(defineTuningPipeline({ pipelineId: '  ', method: 'dpo', pairs: [pair(1)], hyperparams: hp }), { ok: false, reason: 'pipeline-no-id' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'grpo', pairs: [pair(1)], hyperparams: hp }), { ok: false, reason: 'pipeline-method-unknown:grpo' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [], hyperparams: hp }), { ok: false, reason: 'pipeline-no-pairs' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [{ prompt: 'p', chosen: '', rejected: 'r' }], hyperparams: hp }), { ok: false, reason: 'pipeline-pair-invalid:0' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1), { prompt: 'p', chosen: 'same', rejected: 'same' }], hyperparams: hp }), { ok: false, reason: 'pipeline-pair-identical:1' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1)], hyperparams: { learningRate: 0, beta: 0.1, epochs: 3 } }), { ok: false, reason: 'pipeline-bad-hyperparams:learningRate' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1)], hyperparams: { learningRate: 0.0001, beta: 2.5, epochs: 3 } }), { ok: false, reason: 'pipeline-bad-hyperparams:beta' });
+    assert.deepEqual(defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1)], hyperparams: { learningRate: 0.0001, beta: 0.1, epochs: 1.5 } }), { ok: false, reason: 'pipeline-bad-hyperparams:epochs' });
+  });
+
+  it('stages per method, dedupes identical pairs and stays deterministic', () => {
+    assert.ok(dpo.ok);
+    if (dpo.ok) {
+      assert.deepEqual([...dpo.value.stages], ['prepare', 'optimize', 'evaluate']);
+      assert.equal(dpo.value.stage, 'prepare');
+      assert.equal(dpo.value.stageIndex, 0);
+      assert.equal(dpo.value.pairCount, 1);
+      assert.ok(dpo.value.fingerprint.startsWith('ptfp_'));
+    }
+    const rlhf = defineTuningPipeline({ pipelineId: 'pt-2', method: 'rlhf', pairs: [pair(1)], hyperparams: hp });
+    assert.ok(rlhf.ok);
+    if (rlhf.ok) assert.deepEqual([...rlhf.value.stages], ['collect', 'reward', 'optimize', 'evaluate']);
+    const dupes = defineTuningPipeline({ pipelineId: 'pt-3', method: 'dpo', pairs: [pair(1), pair(1), pair(2)], hyperparams: hp });
+    assert.ok(dupes.ok);
+    if (dupes.ok) {
+      assert.equal(dupes.value.pairCount, 2);
+      assert.equal(dupes.value.duplicatesDropped, 1);
+      assert.equal(dupes.value.pairFingerprints.length, 2);
+    }
+    const again = defineTuningPipeline({ pipelineId: 'pt-1', method: 'dpo', pairs: [pair(1)], hyperparams: hp });
+    assert.ok(again.ok);
+    if (again.ok && dpo.ok) assert.equal(again.value.fingerprint, dpo.value.fingerprint);
+    const other = defineTuningPipeline({ pipelineId: 'pt-1', method: 'rlhf', pairs: [pair(1)], hyperparams: hp });
+    assert.ok(other.ok);
+    if (other.ok && dpo.ok) assert.notEqual(other.value.fingerprint, dpo.value.fingerprint);
+  });
+
+  it('walks the stage machine, gates the evaluate metrics and refuses bad moves', () => {
+    assert.ok(dpo.ok);
+    if (!dpo.ok) return;
+    let pipeline = dpo.value;
+    const first = advanceTuningStage(pipeline);
+    assert.ok(first.ok);
+    if (first.ok) {
+      assert.deepEqual(first.value, { pipelineId: 'pt-1', stage: 'optimize', stageIndex: 1, complete: false, verdict: null });
+      pipeline = { ...pipeline, stage: first.value.stage, stageIndex: first.value.stageIndex };
+    }
+    assert.deepEqual(advanceTuningStage(pipeline), { ok: false, reason: 'tuning-missing-metrics' });
+    assert.deepEqual(advanceTuningStage(pipeline, { rewardMargin: 1, acceptanceRate: 1.5 }), { ok: false, reason: 'tuning-metrics-invalid:acceptanceRate' });
+    assert.deepEqual(advanceTuningStage(pipeline, { rewardMargin: Number.NaN, acceptanceRate: 0.9 }), { ok: false, reason: 'tuning-metrics-invalid:rewardMargin' });
+    const accepted = advanceTuningStage(pipeline, { rewardMargin: 1.5, acceptanceRate: 0.8 });
+    assert.ok(accepted.ok);
+    if (accepted.ok) {
+      assert.equal(accepted.value.stage, 'evaluate');
+      assert.equal(accepted.value.complete, true);
+      assert.equal(accepted.value.verdict, 'accepted');
+      pipeline = { ...pipeline, stage: accepted.value.stage, stageIndex: accepted.value.stageIndex };
+    }
+    assert.deepEqual(advanceTuningStage(pipeline), { ok: false, reason: 'pipeline-stage-invalid' });
+    const rejectedLow = advanceTuningStage({ ...dpo.value, stageIndex: 1 }, { rewardMargin: 2, acceptanceRate: 0.2 });
+    assert.ok(rejectedLow.ok);
+    if (rejectedLow.ok) assert.equal(rejectedLow.value.verdict, 'rejected');
+    const rejectedMargin = advanceTuningStage({ ...dpo.value, stageIndex: 1 }, { rewardMargin: -1, acceptanceRate: 0.9 });
+    assert.ok(rejectedMargin.ok);
+    if (rejectedMargin.ok) assert.equal(rejectedMargin.value.verdict, 'rejected');
+  });
+
+  it('never mutates the caller input', () => {
+    const pairs = [pair(1), pair(2)];
+    const frozen = JSON.stringify(pairs);
+    const result = defineTuningPipeline({ pipelineId: 'pt-9', method: 'rlhf', pairs, hyperparams: hp });
+    assert.ok(result.ok);
+    assert.equal(JSON.stringify(pairs), frozen);
+  });
+});
+
+/** AI-016 - distillation from larger models into small deployable ones, pure engine pinned. */
+describe('distillation engine (FORGE AI-016)', () => {
+  const sample = (n: number): DistillationSample => ({ prompt: 'prompt ' + n, teacherOutput: 'teacher answer ' + n });
+  const base = { planId: 'dist-1', teacherModelId: 'forge-large', teacherVersion: 4, studentModelId: 'forge-small', teacherParams: 700_000_000, studentParams: 7_000_000, qualityGate: 0.9 };
+  const plan = planDistillation({ ...base, samples: [sample(1), sample(2)] });
+
+  it('pins the stages and names every planning refusal', () => {
+    assert.deepEqual([...DISTILLATION_STAGES], ['generate', 'compress', 'evaluate', 'register']);
+    assert.deepEqual(planDistillation({ ...base, planId: ' ', samples: [sample(1)] }), { ok: false, reason: 'distillation-no-plan-id' });
+    assert.deepEqual(planDistillation({ ...base, teacherModelId: '', samples: [sample(1)] }), { ok: false, reason: 'distillation-no-teacher' });
+    assert.deepEqual(planDistillation({ ...base, studentModelId: '', samples: [sample(1)] }), { ok: false, reason: 'distillation-no-student' });
+    assert.deepEqual(planDistillation({ ...base, teacherVersion: 0, samples: [sample(1)] }), { ok: false, reason: 'distillation-teacher-version-invalid' });
+    assert.deepEqual(planDistillation({ ...base, teacherParams: 0, samples: [sample(1)] }), { ok: false, reason: 'distillation-teacher-params-invalid' });
+    assert.deepEqual(planDistillation({ ...base, studentParams: -5, samples: [sample(1)] }), { ok: false, reason: 'distillation-student-params-invalid' });
+    assert.deepEqual(planDistillation({ ...base, studentParams: 700_000_000, samples: [sample(1)] }), { ok: false, reason: 'distillation-student-too-large' });
+    assert.deepEqual(planDistillation({ ...base, samples: [] }), { ok: false, reason: 'distillation-no-samples' });
+    assert.deepEqual(planDistillation({ ...base, samples: [{ prompt: '', teacherOutput: 't' }] }), { ok: false, reason: 'distillation-sample-invalid:0' });
+    assert.deepEqual(planDistillation({ ...base, qualityGate: 1.5, samples: [sample(1)] }), { ok: false, reason: 'distillation-quality-gate-invalid' });
+  });
+
+  it('plans compression honestly and stays deterministic', () => {
+    assert.ok(plan.ok);
+    if (plan.ok) {
+      assert.equal(plan.value.compressionRatio, 0.01);
+      assert.equal(plan.value.sampleCount, 2);
+      assert.deepEqual([...plan.value.stages], ['generate', 'compress', 'evaluate', 'register']);
+      assert.equal(plan.value.stage, 'generate');
+      assert.equal(plan.value.stageIndex, 0);
+      assert.ok(plan.value.fingerprint.startsWith('dist_'));
+    }
+    const same = planDistillation({ ...base, samples: [sample(1), sample(2)] });
+    assert.ok(same.ok);
+    if (same.ok && plan.ok) assert.equal(same.value.fingerprint, plan.value.fingerprint);
+  });
+
+  it('walks the stage machine, gates the evaluate metrics and refuses bad moves', () => {
+    assert.ok(plan.ok);
+    if (!plan.ok) return;
+    let state = plan.value;
+    const compressed = advanceDistillationStage(state);
+    assert.ok(compressed.ok);
+    if (compressed.ok) {
+      assert.deepEqual({ stage: compressed.value.stage, complete: compressed.value.complete, verdict: compressed.value.verdict }, { stage: 'compress', complete: false, verdict: null });
+      state = { ...state, stage: compressed.value.stage, stageIndex: compressed.value.stageIndex };
+    }
+    assert.deepEqual(advanceDistillationStage(state), { ok: false, reason: 'distillation-missing-metrics' });
+    assert.deepEqual(advanceDistillationStage(state, { studentAccuracy: 1.2 }), { ok: false, reason: 'distillation-metrics-invalid:studentAccuracy' });
+    assert.deepEqual(advanceDistillationStage(state, { studentAccuracy: Number.NaN }), { ok: false, reason: 'distillation-metrics-invalid:studentAccuracy' });
+    const evaluated = advanceDistillationStage(state, { studentAccuracy: 0.92 });
+    assert.ok(evaluated.ok);
+    if (evaluated.ok) {
+      assert.deepEqual({ stage: evaluated.value.stage, complete: evaluated.value.complete, verdict: evaluated.value.verdict }, { stage: 'evaluate', complete: false, verdict: 'accepted' });
+      state = { ...state, stage: evaluated.value.stage, stageIndex: evaluated.value.stageIndex };
+    }
+    const registered = advanceDistillationStage(state);
+    assert.ok(registered.ok);
+    if (registered.ok) assert.deepEqual({ stage: registered.value.stage, complete: registered.value.complete }, { stage: 'register', complete: true });
+    assert.deepEqual(advanceDistillationStage({ ...plan.value, stageIndex: 3 }), { ok: false, reason: 'distillation-stage-invalid' });
+    const rejected = advanceDistillationStage({ ...plan.value, stageIndex: 1 }, { studentAccuracy: 0.5 });
+    assert.ok(rejected.ok);
+    if (rejected.ok) assert.equal(rejected.value.verdict, 'rejected');
+  });
+
+  it('never mutates the caller input', () => {
+    const samples = [sample(1)];
+    const frozen = JSON.stringify(samples);
+    const result = planDistillation({ ...base, samples });
+    assert.ok(result.ok);
+    assert.equal(JSON.stringify(samples), frozen);
   });
 });

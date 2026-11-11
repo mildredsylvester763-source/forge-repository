@@ -1213,3 +1213,92 @@ describe('ai-training routes (FORGE AI-003..032)', () => {
     }
   });
 });
+
+/** AI-015/AI-016 - preference tuning and distillation, end to end through the routes. */
+describe('preference tuning and distillation pipelines (AI-015/016)', () => {
+  it('runs a tuning pipeline from definition to verdict (AI-015)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'tuning@example.com');
+      const badMethod = await h.post('/v1/ai-training/tuning/define', { pipelineId: 'pt-1', method: 'grpo', pairs: [{ prompt: 'p', chosen: 'c', rejected: 'r' }], hyperparams: { learningRate: 0.0001, beta: 0.1, epochs: 2 } }, { cookie });
+      assert.equal(badMethod.status, 400);
+      assert.equal(await errorCode(badMethod), 'pipeline-method-unknown:grpo');
+      const defined = await h.post('/v1/ai-training/tuning/define', { pipelineId: 'pt-1', method: 'dpo', pairs: [{ prompt: 'p', chosen: 'c', rejected: 'r' }, { prompt: 'p', chosen: 'c', rejected: 'r' }], hyperparams: { learningRate: 0.0001, beta: 0.1, epochs: 2 } }, { cookie });
+      assert.equal(defined.status, 201);
+      const definedBody = (await defined.json()) as { pipeline: { pipelineId: string; method: string; pairCount: number; duplicatesDropped: number; stage: string; stageIndex: number }; createdAt: number };
+      assert.deepEqual({ pipelineId: definedBody.pipeline.pipelineId, method: definedBody.pipeline.method, pairCount: definedBody.pipeline.pairCount, duplicatesDropped: definedBody.pipeline.duplicatesDropped, stage: definedBody.pipeline.stage, stageIndex: definedBody.pipeline.stageIndex }, { pipelineId: 'pt-1', method: 'dpo', pairCount: 1, duplicatesDropped: 1, stage: 'prepare', stageIndex: 0 });
+      assert.equal(definedBody.createdAt, NOW);
+      const duplicate = await h.post('/v1/ai-training/tuning/define', { pipelineId: 'pt-1', method: 'dpo', pairs: [{ prompt: 'p', chosen: 'c', rejected: 'r' }], hyperparams: { learningRate: 0.0001, beta: 0.1, epochs: 2 } }, { cookie });
+      assert.equal(duplicate.status, 409);
+      assert.equal(await errorCode(duplicate), 'tuning-pipeline-duplicate:pt-1');
+      const unknown = await h.post('/v1/ai-training/tuning/status', { pipelineId: 'pt-x' }, { cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'tuning-pipeline-not-found:pt-x');
+      const first = await h.post('/v1/ai-training/tuning/advance', { pipelineId: 'pt-1' }, { cookie });
+      assert.equal(first.status, 200);
+      const firstBody = (await first.json()) as { stage: string; complete: boolean; verdict: string | null };
+      assert.deepEqual({ stage: firstBody.stage, complete: firstBody.complete, verdict: firstBody.verdict }, { stage: 'optimize', complete: false, verdict: null });
+      const missing = await h.post('/v1/ai-training/tuning/advance', { pipelineId: 'pt-1' }, { cookie });
+      assert.equal(missing.status, 400);
+      assert.equal(await errorCode(missing), 'tuning-missing-metrics');
+      const done = await h.post('/v1/ai-training/tuning/advance', { pipelineId: 'pt-1', metrics: { rewardMargin: 1.5, acceptanceRate: 0.8 } }, { cookie });
+      assert.equal(done.status, 200);
+      const doneBody = (await done.json()) as { stage: string; complete: boolean; verdict: string };
+      assert.deepEqual({ stage: doneBody.stage, complete: doneBody.complete, verdict: doneBody.verdict }, { stage: 'evaluate', complete: true, verdict: 'accepted' });
+      const past = await h.post('/v1/ai-training/tuning/advance', { pipelineId: 'pt-1' }, { cookie });
+      assert.equal(past.status, 400);
+      assert.equal(await errorCode(past), 'pipeline-stage-invalid');
+      const status = await h.post('/v1/ai-training/tuning/status', { pipelineId: 'pt-1' }, { cookie });
+      assert.equal(status.status, 200);
+      const statusBody = (await status.json()) as { pipeline: { stage: string; stageIndex: number }; verdict: string };
+      assert.deepEqual({ stage: statusBody.pipeline.stage, stageIndex: statusBody.pipeline.stageIndex, verdict: statusBody.verdict }, { stage: 'evaluate', stageIndex: 2, verdict: 'accepted' });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('runs a distillation plan from teacher to registered student (AI-016)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'distill@example.com');
+      const tooLarge = await h.post('/v1/ai-training/distill/plan', { planId: 'dist-1', teacherModelId: 'forge-large', teacherVersion: 4, studentModelId: 'forge-same', teacherParams: 700000000, studentParams: 700000000, samples: [{ prompt: 'p', teacherOutput: 't' }], qualityGate: 0.9 }, { cookie });
+      assert.equal(tooLarge.status, 400);
+      assert.equal(await errorCode(tooLarge), 'distillation-student-too-large');
+      const planned = await h.post('/v1/ai-training/distill/plan', { planId: 'dist-1', teacherModelId: 'forge-large', teacherVersion: 4, studentModelId: 'forge-small', teacherParams: 700000000, studentParams: 7000000, samples: [{ prompt: 'p', teacherOutput: 't' }], qualityGate: 0.9 }, { cookie });
+      assert.equal(planned.status, 201);
+      const plannedBody = (await planned.json()) as { plan: { compressionRatio: number; stage: string; sampleCount: number }; createdAt: number };
+      assert.deepEqual({ compressionRatio: plannedBody.plan.compressionRatio, stage: plannedBody.plan.stage, sampleCount: plannedBody.plan.sampleCount }, { compressionRatio: 0.01, stage: 'generate', sampleCount: 1 });
+      assert.equal(plannedBody.createdAt, NOW);
+      const duplicate = await h.post('/v1/ai-training/distill/plan', { planId: 'dist-1', teacherModelId: 'forge-large', teacherVersion: 4, studentModelId: 'forge-small', teacherParams: 700000000, studentParams: 7000000, samples: [{ prompt: 'p', teacherOutput: 't' }], qualityGate: 0.9 }, { cookie });
+      assert.equal(duplicate.status, 409);
+      assert.equal(await errorCode(duplicate), 'distillation-plan-duplicate:dist-1');
+      const unknown = await h.post('/v1/ai-training/distill/status', { planId: 'dist-x' }, { cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'distillation-plan-not-found:dist-x');
+      const compressed = await h.post('/v1/ai-training/distill/advance', { planId: 'dist-1' }, { cookie });
+      assert.equal(compressed.status, 200);
+      const compressedBody = (await compressed.json()) as { stage: string; complete: boolean };
+      assert.deepEqual({ stage: compressedBody.stage, complete: compressedBody.complete }, { stage: 'compress', complete: false });
+      const missing = await h.post('/v1/ai-training/distill/advance', { planId: 'dist-1' }, { cookie });
+      assert.equal(missing.status, 400);
+      assert.equal(await errorCode(missing), 'distillation-missing-metrics');
+      const evaluated = await h.post('/v1/ai-training/distill/advance', { planId: 'dist-1', metrics: { studentAccuracy: 0.92 } }, { cookie });
+      assert.equal(evaluated.status, 200);
+      const evaluatedBody = (await evaluated.json()) as { stage: string; verdict: string };
+      assert.deepEqual({ stage: evaluatedBody.stage, verdict: evaluatedBody.verdict }, { stage: 'evaluate', verdict: 'accepted' });
+      const registered = await h.post('/v1/ai-training/distill/advance', { planId: 'dist-1' }, { cookie });
+      assert.equal(registered.status, 200);
+      const registeredBody = (await registered.json()) as { stage: string; complete: boolean };
+      assert.deepEqual({ stage: registeredBody.stage, complete: registeredBody.complete }, { stage: 'register', complete: true });
+      const past = await h.post('/v1/ai-training/distill/advance', { planId: 'dist-1' }, { cookie });
+      assert.equal(past.status, 400);
+      assert.equal(await errorCode(past), 'distillation-stage-invalid');
+      const status = await h.post('/v1/ai-training/distill/status', { planId: 'dist-1' }, { cookie });
+      assert.equal(status.status, 200);
+      const statusBody = (await status.json()) as { plan: { stage: string; stageIndex: number }; verdict: string };
+      assert.deepEqual({ stage: statusBody.plan.stage, stageIndex: statusBody.plan.stageIndex, verdict: statusBody.verdict }, { stage: 'register', stageIndex: 3, verdict: 'accepted' });
+    } finally {
+      await h.close();
+    }
+  });
+});

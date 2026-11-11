@@ -105,6 +105,8 @@ export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'AI-012': 'internal',
   'AI-013': 'internal',
   'AI-014': 'internal',
+  'AI-015': 'internal',
+  'AI-016': 'internal',
   'AI-017': 'internal',
   'AI-019': 'internal',
   'AI-020': 'internal',

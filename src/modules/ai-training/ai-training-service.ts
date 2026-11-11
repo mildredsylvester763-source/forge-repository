@@ -89,6 +89,34 @@ import {
   type PinPlan,
   type ReservationPlan,
 } from './engine/model-access-engine.ts';
+import {
+  defineTuningPipeline as runDefineTuningPipeline,
+  advanceTuningStage as runAdvanceTuningStage,
+  type TuningAdvance,
+  type TuningMetrics,
+  type TuningPipeline,
+} from './engine/preference-tuning-engine.ts';
+import {
+  planDistillation as runPlanDistillation,
+  advanceDistillationStage as runAdvanceDistillationStage,
+  type DistillationAdvance,
+  type DistillationMetrics,
+  type DistillationPlan,
+} from './engine/distillation-engine.ts';
+
+/** AI-015 tuning pipelines, session state per user. Ephemeral by design like streams. */
+interface StoredTuningPipeline {
+  pipeline: TuningPipeline;
+  createdAt: number;
+  verdict: 'accepted' | 'rejected' | null;
+}
+
+/** AI-016 distillation plans, session state per user. Ephemeral by design like streams. */
+interface StoredDistillationPlan {
+  plan: DistillationPlan;
+  createdAt: number;
+  verdict: 'accepted' | 'rejected' | null;
+}
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
 import type {
@@ -186,6 +214,8 @@ export class AiTrainingService {
   private readonly responseCache = new Map<string, CacheEntry[]>();
   /** Per-user streaming sessions. Ephemeral by design - a restart resumes from the client's last seen index. */
   private readonly streams = new Map<string, StreamState>();
+  private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
+  private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
 
   constructor(deps: AiTrainingDeps) {
     this.store = deps.store;
@@ -1653,6 +1683,111 @@ export class AiTrainingService {
       licenseAccepted: dto.licenseAccepted === true,
     });
     if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  /** AI-015 - preference tuning pipelines (RLHF, DPO style). Session state, ephemeral by design. */
+  async createTuningPipeline(userId: string, body: unknown): Promise<{ pipeline: TuningPipeline; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const hyperRaw = (dto.hyperparams ?? {}) as Record<string, unknown>;
+    const result = runDefineTuningPipeline({
+      pipelineId: typeof dto.pipelineId === 'string' ? dto.pipelineId : '',
+      method: typeof dto.method === 'string' ? dto.method : '',
+      pairs: (Array.isArray(dto.pairs) ? dto.pairs : []).map((raw) => {
+        const p = (raw ?? {}) as Record<string, unknown>;
+        return {
+          prompt: typeof p.prompt === 'string' ? p.prompt : '',
+          chosen: typeof p.chosen === 'string' ? p.chosen : '',
+          rejected: typeof p.rejected === 'string' ? p.rejected : '',
+        };
+      }),
+      hyperparams: {
+        learningRate: typeof hyperRaw.learningRate === 'number' ? hyperRaw.learningRate : Number.NaN,
+        beta: typeof hyperRaw.beta === 'number' ? hyperRaw.beta : Number.NaN,
+        epochs: typeof hyperRaw.epochs === 'number' ? hyperRaw.epochs : Number.NaN,
+      },
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.pipelineId;
+    if (this.tuningPipelines.has(key)) throw conflict('tuning-pipeline-duplicate:' + result.value.pipelineId);
+    const createdAt = this.clock();
+    this.tuningPipelines.set(key, { pipeline: result.value, createdAt, verdict: null });
+    return { pipeline: result.value, createdAt };
+  }
+
+  async tuningStatus(userId: string, body: unknown): Promise<{ pipeline: TuningPipeline; createdAt: number; verdict: 'accepted' | 'rejected' | null }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const pipelineId = typeof dto.pipelineId === 'string' ? dto.pipelineId.trim() : '';
+    const stored = this.tuningPipelines.get(userId + ':' + pipelineId);
+    if (!stored) throw notFound('tuning-pipeline-not-found:' + pipelineId);
+    return { pipeline: stored.pipeline, createdAt: stored.createdAt, verdict: stored.verdict };
+  }
+
+  async advanceTuningStage(userId: string, body: unknown): Promise<TuningAdvance> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const pipelineId = typeof dto.pipelineId === 'string' ? dto.pipelineId.trim() : '';
+    const stored = this.tuningPipelines.get(userId + ':' + pipelineId);
+    if (!stored) throw notFound('tuning-pipeline-not-found:' + pipelineId);
+    const metricsRaw = (dto.metrics ?? {}) as Record<string, unknown>;
+    const metrics: TuningMetrics | undefined = dto.metrics === undefined ? undefined : {
+      rewardMargin: typeof metricsRaw.rewardMargin === 'number' ? metricsRaw.rewardMargin : Number.NaN,
+      acceptanceRate: typeof metricsRaw.acceptanceRate === 'number' ? metricsRaw.acceptanceRate : Number.NaN,
+    };
+    const result = runAdvanceTuningStage(stored.pipeline, metrics);
+    if (!result.ok) throw refusal(result.reason);
+    stored.pipeline = { ...stored.pipeline, stage: result.value.stage, stageIndex: result.value.stageIndex };
+    if (result.value.verdict !== null) stored.verdict = result.value.verdict;
+    return result.value;
+  }
+
+  /** AI-016 - distillation from larger models into small deployable ones. Session state, ephemeral by design. */
+  async planDistillation(userId: string, body: unknown): Promise<{ plan: DistillationPlan; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runPlanDistillation({
+      planId: typeof dto.planId === 'string' ? dto.planId : '',
+      teacherModelId: typeof dto.teacherModelId === 'string' ? dto.teacherModelId : '',
+      teacherVersion: typeof dto.teacherVersion === 'number' ? dto.teacherVersion : Number.NaN,
+      studentModelId: typeof dto.studentModelId === 'string' ? dto.studentModelId : '',
+      teacherParams: typeof dto.teacherParams === 'number' ? dto.teacherParams : Number.NaN,
+      studentParams: typeof dto.studentParams === 'number' ? dto.studentParams : Number.NaN,
+      samples: (Array.isArray(dto.samples) ? dto.samples : []).map((raw) => {
+        const s = (raw ?? {}) as Record<string, unknown>;
+        return {
+          prompt: typeof s.prompt === 'string' ? s.prompt : '',
+          teacherOutput: typeof s.teacherOutput === 'string' ? s.teacherOutput : '',
+        };
+      }),
+      qualityGate: typeof dto.qualityGate === 'number' ? dto.qualityGate : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.planId;
+    if (this.distillationPlans.has(key)) throw conflict('distillation-plan-duplicate:' + result.value.planId);
+    const createdAt = this.clock();
+    this.distillationPlans.set(key, { plan: result.value, createdAt, verdict: null });
+    return { plan: result.value, createdAt };
+  }
+
+  async distillationStatus(userId: string, body: unknown): Promise<{ plan: DistillationPlan; createdAt: number; verdict: 'accepted' | 'rejected' | null }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const planId = typeof dto.planId === 'string' ? dto.planId.trim() : '';
+    const stored = this.distillationPlans.get(userId + ':' + planId);
+    if (!stored) throw notFound('distillation-plan-not-found:' + planId);
+    return { plan: stored.plan, createdAt: stored.createdAt, verdict: stored.verdict };
+  }
+
+  async advanceDistillationStage(userId: string, body: unknown): Promise<DistillationAdvance> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const planId = typeof dto.planId === 'string' ? dto.planId.trim() : '';
+    const stored = this.distillationPlans.get(userId + ':' + planId);
+    if (!stored) throw notFound('distillation-plan-not-found:' + planId);
+    const metricsRaw = (dto.metrics ?? {}) as Record<string, unknown>;
+    const metrics: DistillationMetrics | undefined = dto.metrics === undefined ? undefined : {
+      studentAccuracy: typeof metricsRaw.studentAccuracy === 'number' ? metricsRaw.studentAccuracy : Number.NaN,
+    };
+    const result = runAdvanceDistillationStage(stored.plan, metrics);
+    if (!result.ok) throw refusal(result.reason);
+    stored.plan = { ...stored.plan, stage: result.value.stage, stageIndex: result.value.stageIndex };
+    if (result.value.verdict !== null) stored.verdict = result.value.verdict;
     return result.value;
   }
 }
