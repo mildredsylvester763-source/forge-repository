@@ -89,12 +89,74 @@ plans), `FORGE_FREE_WINDOW_CREDITS` (40), `FORGE_FREE_WINDOW_HOURS` (5),
 plus 3000, pro 7500, studio 18000, team 11800 per month, granted as general credits on the
 verified payment event. Free draws the window instead — 40 credits per 5 hours, 600 a month.
 
-## What is NOT built (batch B and later)
+## Batch B — hooks 8, 9, 11, 12, 14, 16 (11 Nov 2026)
 
-Hooks 8, 9, 11, 12, 14 and 16 are deferred to batch B. The Postgres billing adapter has no
+**Hook 8 — the country table.** Pure engine `engine/country-registry-engine.ts`: one row
+per country (ISO code, currency, region band A/B/C, the tax rule with the date it was
+checked, payment methods, enabled, minimum payout). `REGION_BAND_MULTIPLIERS` (A 1.00,
+B 0.70, C 0.45) is the price-band basis. Rows come from `FORGE_COUNTRY_CATALOG` (JSON,
+validated at config parse) and the catalog is EMPTY until the owner supplies country data.
+Routes: `GET /v1/plans/countries`, `POST /v1/plans/countries/get` (404 country-unknown,
+403 country-disabled).
+
+**Hook 9 — cached access for bad networks.** Pure engine
+`engine/access-snapshot-engine.ts`: assemble/verify a snapshot
+{userId, plan, passes, issuedAt, expiresAt}. The service signs it with the same HMAC as
+payment events (`FORGE_ACCESS_SNAPSHOT_SECRET`, falling back to the webhook secret with a
+production warning); the TTL is `FORGE_ACCESS_SNAPSHOT_TTL_HOURS` (default 6, 1–72). The
+server stays the boss: an expired snapshot answers `snapshot-expired:<user>`, a tampered
+signature answers `snapshot-signature-invalid`, and verify returns the live server state.
+Routes: `POST /v1/plans/access-snapshot`, `POST /v1/plans/access-snapshot/verify`.
+
+**Hook 11 — the basic admin console.** Pure engine `engine/admin-console-engine.ts`:
+`isAdmin` (allowlist) and `validateAdminAction` with named refusals; a written reason is
+required for every action (the audit trail is not optional). Service: adminGrantCredits
+(top_up source, engine-tagged), adminCompPlan, adminPauseAccount/resume (a paused account
+answers 403 account_paused on every gated route) and adminLedger (items + entries +
+balances, read-only). The allowlist is `FORGE_ADMIN_USERS` (CSV) and it is EMPTY until the
+owner names the admins — with an empty list every admin action answers 403 admin_forbidden.
+Routes: `POST /v1/admin/credits/grant`, `/v1/admin/plans/comp`,
+`/v1/admin/accounts/pause`, `/v1/admin/ledger`.
+
+**Hook 12 — coupons, trials and referrals as ONE model.** Pure engine
+`engine/promotion-engine.ts`: one table (code, kind coupon/trial/referral, creditAmount,
+days, maxRedemptions, perUserLimit, expiresAt) with a limit and an expiry, named refusals
+for every field; redeem refuses expired, repeated (per-user) and exhausted codes by name.
+Definitions and redemptions are in-memory session state (streams precedent) — persistence
+lands with the owner's go-ahead. A redemption grants credits through the existing append-only
+ledger (top_up source; the ledger engine is pinned law, so a dedicated promotion source is
+an additive change for the owner to approve). Routes: `POST /v1/promotions/define` (admin),
+`/v1/promotions/redeem`, `/v1/promotions/status`.
+
+**Hook 14 — rate limits at the gateway.** Pure engine `engine/rate-limit-engine.ts`:
+fixed-window counters with named refusals and an honest retryAfterMs. `FORGE_RATE_LIMITS`
+JSON (e.g. `{"user":{"limit":60,"windowMs":60000}}`) — DISABLED until the owner sets it.
+When enabled, every gated route enforces the per-user limit after sign-in, before canUse
+and before any AI call, answering 429 rate_limited with scope and retryAfterMs. The
+per-device rule is parsed and enforced by the service the moment device ids reach the
+gateway. Route wiring: `gate-middleware.ts`.
+
+**Hook 16 — export and delete my data.** Pure engine `engine/account-data-engine.ts`:
+buildAccountExport (plan, passes, subscription items, credit ledger, in one bundle) and
+accountRetention (the law lets us keep invoices; profile, sessions, subscriptions and the
+credit ledger are erasable; the jurisdictions — Nigeria NDPR and every other one — must be
+VERIFIED by the owner before deletion goes live). `POST /v1/account/export` gives the
+signed-in user their bundle; `POST /v1/account/delete` (confirm: true) pauses the account,
+queues the deletion and returns the retention policy. The hard purge needs billing-store
+deletes and the owner's confirmed retention list, so nothing is destroyed yet.
+
+## What is NOT built (after batch B)
+
+All sixteen hooks now exist. Honest remaining gaps: the Postgres billing adapter has no
 coverage in main CI (same as every other PostgreSQL adapter in this repository); it is
-exercised only by the SQL stand-in path of the focused workflows. Prices, the pass catalog
-and the all-round bundle plans stay empty until the owner sets them — nothing was invented.
+exercised only by the SQL stand-in path of the focused workflows. Prices, the pass catalog,
+the all-round bundle plans, the country rows, the admin allowlist and the gateway rate
+limits all stay EMPTY until the owner sets them — nothing was invented. Time-based
+promotions (days) are validated by the engine but the service answers
+promotion-days-unsupported until checkout renewals (Hook 15) land. No device id reaches the
+gateway yet, so the per-device limit is enforced but never hit. Account deletion pauses and
+queues; the hard purge is owner-gated. Hook 10 (audit log) and Hook 15 (test mode) were
+never on the deferred list and stay as their specs describe them.
 
 ## Where the code lives
 

@@ -2,7 +2,7 @@
 
 One place where every lane records what it has ALREADY built as code, so no lane rebuilds another lane's work. Sylvester's Drive doc "Forge Feature — Plan Hooks (build notes)" is the human spec; this file is the in-repo mirror every agent can read and write. Update it in the same batch as any feature work.
 
-## mistral lane (Vibe) — 11 Nov 2026, head a10c2a1, CI green at a10c2a1
+## mistral lane (Vibe) — 11 Nov 2026, head 5e920bf, CI green at 5e920bf
 
 ### 1. Plans gate framework — BUILT AND LIVE
 
@@ -22,7 +22,7 @@ Single base plan per user. Module `src/modules/plans/` (13 files): plan ladder F
 
 ### 4. Plan hooks retrofit — BATCH A BUILT (10–11 Nov 2026, CI green at 548dc32)
 
-Hooks 1, 2/2b, 3, 4, 5, 6 and 7 are now live on mistral: subscriptions as a list (one active base plan + any engine passes), canUse as the only access check (every gated route asks it; feature_off → 503), the append-only tagged credit ledger (balances are computed sums, spends atomic, engine pool first then general), the pass catalog as config (EMPTY until the owner sets prices), per-feature switches, the HMAC-verified idempotent payment webhook (POST /v1/payments/event, GET /v1/credits/me), and whole-number money throughout. Engine law: ten engines (painting, manhwa, music, voice, audio, video, film, 3d, games, writing) with display names; engine rows are NEVER locked — unpaid engines run at free level (40 credits/5h, 600/month). Only implemented engine row: TQ-027 → manhwa/3d/music. Doc: docs/plans-hooks.md. Hooks 8, 9, 11, 12, 14, 16 are batch B. The Postgres billing adapter has no main-CI coverage (same as the other PG adapters).
+Hooks 1, 2/2b, 3, 4, 5, 6 and 7 are now live on mistral: subscriptions as a list (one active base plan + any engine passes), canUse as the only access check (every gated route asks it; feature_off → 503), the append-only tagged credit ledger (balances are computed sums, spends atomic, engine pool first then general), the pass catalog as config (EMPTY until the owner sets prices), per-feature switches, the HMAC-verified idempotent payment webhook (POST /v1/payments/event, GET /v1/credits/me), and whole-number money throughout. Engine law: ten engines (painting, manhwa, music, voice, audio, video, film, 3d, games, writing) with display names; engine rows are NEVER locked — unpaid engines run at free level (40 credits/5h, 600/month). Only implemented engine row: TQ-027 → manhwa/3d/music. Doc: docs/plans-hooks.md. Hooks 8, 9, 11, 12, 14 and 16 are BUILT in batch B (11 Nov 2026, CI green at 5e920bf): the country table (engine/country-registry-engine.ts), signed access snapshots (access-snapshot-engine.ts), the basic admin console (admin-console-engine.ts, allowlist FORGE_ADMIN_USERS, empty until the owner names admins), promotions as one model (promotion-engine.ts), gateway rate limits (rate-limit-engine.ts, FORGE_RATE_LIMITS, disabled until set), and export/delete my data (account-data-engine.ts) — six pure engines + oracle tests, ~14 service methods, 13 new routes, gate-middleware wiring. Catalogs, allowlists and rate limits stay EMPTY until the owner sets them. The Postgres billing adapter has no main-CI coverage (same as the other PG adapters).
 
 ### 5. Rules for every lane
 
