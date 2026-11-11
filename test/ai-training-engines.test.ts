@@ -9,6 +9,8 @@ import { defineProbeBattery, gradeSafetyRun, groundClaims, detectContamination, 
 import { defineExperiment, assignVariant, tallyExperiment, buildScorecards, buildTrend, mineFailures, AB_Z_CRITICAL, type AgentEvent, type AssignmentInput, type ExperimentOutcome, type ExperimentSpec, type ExperimentVariant, type MinedCaseInput, type TrendSample } from '../src/modules/ai-training/engine/product-experiment-engine.ts';
 import { TUNING_METHODS, defineTuningPipeline, advanceTuningStage, type PreferencePair } from '../src/modules/ai-training/engine/preference-tuning-engine.ts';
 import { DISTILLATION_STAGES, planDistillation, advanceDistillationStage, type DistillationSample } from '../src/modules/ai-training/engine/distillation-engine.ts';
+import { defineTrackedExperiment, logTrackedPoint, trackedCurves, compareTrackedExperiments, type TrackedExperiment } from '../src/modules/ai-training/engine/experiment-tracking-engine.ts';
+import { startLongRunningTask, recordCheckpoint, pauseLongRunningTask, resumeLongRunningTask, completeLongRunningTask, type LongRunningTask } from '../src/modules/ai-training/engine/longrunning-task-engine.ts';
 
 
 function mulberry32(seed: number) {
@@ -1569,5 +1571,181 @@ describe('distillation engine (FORGE AI-016)', () => {
     const result = planDistillation({ ...base, samples });
     assert.ok(result.ok);
     assert.equal(JSON.stringify(samples), frozen);
+  });
+});
+
+/** AI-018 experiment tracking, pure engine pinned. */
+describe('experiment tracking engine (FORGE AI-018)', () => {
+  const base = { experimentId: 'exp-1', config: { learningRate: 0.1, optimizer: 'adam' }, metrics: ['loss', 'accuracy'] };
+
+  it('refuses bad definitions by name', () => {
+    assert.deepEqual(defineTrackedExperiment({ experimentId: '', config: base.config, metrics: base.metrics }), { ok: false, reason: 'experiment-tracking-no-id' });
+    assert.deepEqual(defineTrackedExperiment({ experimentId: 'exp-1', config: {}, metrics: base.metrics }), { ok: false, reason: 'experiment-tracking-no-config' });
+    assert.deepEqual(defineTrackedExperiment({ experimentId: 'exp-1', config: { learningRate: null }, metrics: base.metrics }), { ok: false, reason: 'experiment-tracking-config-invalid:learningRate' });
+    assert.deepEqual(defineTrackedExperiment({ experimentId: 'exp-1', config: base.config, metrics: [] }), { ok: false, reason: 'experiment-tracking-no-metrics' });
+    assert.deepEqual(defineTrackedExperiment({ experimentId: 'exp-1', config: base.config, metrics: ['loss', ''] }), { ok: false, reason: 'experiment-tracking-metric-invalid:1' });
+    assert.deepEqual(defineTrackedExperiment({ experimentId: 'exp-1', config: base.config, metrics: ['loss', 'loss'] }), { ok: false, reason: 'experiment-tracking-metric-duplicate:loss' });
+  });
+
+  it('logs points and builds honest, sorted curves', () => {
+    const defined = defineTrackedExperiment(base);
+    assert.ok(defined.ok);
+    if (!defined.ok) return;
+    const exp = defined.value;
+    assert.equal(exp.pointCount, 0);
+    assert.ok(exp.fingerprint.startsWith('ext_'));
+    const same = defineTrackedExperiment({ ...base, config: { optimizer: 'adam', learningRate: 0.1 } });
+    assert.ok(same.ok);
+    if (same.ok) assert.equal(same.value.fingerprint, exp.fingerprint);
+    assert.deepEqual(logTrackedPoint(exp, { step: 0, metric: 'f1', value: 0.5 }), { ok: false, reason: 'experiment-tracking-unknown-metric:f1' });
+    assert.deepEqual(logTrackedPoint(exp, { step: -1, metric: 'loss', value: 0.5 }), { ok: false, reason: 'experiment-tracking-bad-step' });
+    assert.deepEqual(logTrackedPoint(exp, { step: 1.5, metric: 'loss', value: 0.5 }), { ok: false, reason: 'experiment-tracking-bad-step' });
+    assert.deepEqual(logTrackedPoint(exp, { step: 1, metric: 'loss', value: Number.NaN }), { ok: false, reason: 'experiment-tracking-bad-value' });
+    let current = exp;
+    const logged2 = logTrackedPoint(current, { step: 2, metric: 'loss', value: 0.4 });
+    assert.ok(logged2.ok);
+    if (logged2.ok) current = logged2.value.experiment;
+    const logged1 = logTrackedPoint(current, { step: 1, metric: 'loss', value: 0.9 });
+    assert.ok(logged1.ok);
+    if (logged1.ok) {
+      current = logged1.value.experiment;
+      assert.equal(logged1.value.point.step, 1);
+    }
+    assert.equal(current.pointCount, 2);
+    const curves = trackedCurves(current);
+    assert.ok(curves.ok);
+    if (curves.ok) {
+      assert.equal(curves.value.curves.length, 2);
+      const lossCurve = curves.value.curves.find((c) => c.metric === 'loss');
+      assert.ok(lossCurve !== undefined);
+      assert.deepEqual(lossCurve.points.map((p) => p.step), [1, 2]);
+      assert.deepEqual(lossCurve.points.map((p) => p.value), [0.9, 0.4]);
+    }
+    assert.deepEqual(trackedCurves(current, 'f1'), { ok: false, reason: 'experiment-tracking-unknown-metric:f1' });
+  });
+
+  it('compares two experiments honestly', () => {
+    const a = defineTrackedExperiment({ ...base, experimentId: 'exp-a' });
+    const b = defineTrackedExperiment({ ...base, experimentId: 'exp-b' });
+    assert.ok(a.ok && b.ok);
+    if (!a.ok || !b.ok) return;
+    assert.deepEqual(compareTrackedExperiments(a.value, b.value, ''), { ok: false, reason: 'experiment-tracking-compare-no-metric' });
+    assert.deepEqual(compareTrackedExperiments(a.value, b.value, 'f1'), { ok: false, reason: 'experiment-tracking-unknown-metric:f1' });
+    assert.deepEqual(compareTrackedExperiments(a.value, b.value, 'loss'), { ok: false, reason: 'experiment-tracking-compare-empty:loss' });
+    let expA: TrackedExperiment = a.value;
+    const a1 = logTrackedPoint(expA, { step: 0, metric: 'loss', value: 0.9 });
+    assert.ok(a1.ok);
+    if (a1.ok) expA = a1.value.experiment;
+    const a2 = logTrackedPoint(expA, { step: 1, metric: 'loss', value: 0.5 });
+    assert.ok(a2.ok);
+    if (a2.ok) expA = a2.value.experiment;
+    let expB: TrackedExperiment = b.value;
+    const b1 = logTrackedPoint(expB, { step: 0, metric: 'loss', value: 0.9 });
+    assert.ok(b1.ok);
+    if (b1.ok) expB = b1.value.experiment;
+    const b2 = logTrackedPoint(expB, { step: 1, metric: 'loss', value: 0.4 });
+    assert.ok(b2.ok);
+    if (b2.ok) expB = b2.value.experiment;
+    const comparison = compareTrackedExperiments(expA, expB, 'loss');
+    assert.ok(comparison.ok);
+    if (comparison.ok) {
+      assert.deepEqual(comparison.value, {
+        metric: 'loss',
+        a: { experimentId: 'exp-a', last: 0.5, count: 2 },
+        b: { experimentId: 'exp-b', last: 0.4, count: 2 },
+        delta: -0.1,
+      });
+    }
+  });
+
+  it('never mutates the caller input', () => {
+    const defined = defineTrackedExperiment(base);
+    assert.ok(defined.ok);
+    if (!defined.ok) return;
+    const frozen = JSON.stringify(defined.value);
+    const logged = logTrackedPoint(defined.value, { step: 0, metric: 'loss', value: 0.5 });
+    assert.ok(logged.ok);
+    assert.equal(JSON.stringify(defined.value), frozen);
+    const curves = trackedCurves(defined.value);
+    assert.ok(curves.ok);
+    assert.equal(JSON.stringify(defined.value), frozen);
+  });
+});
+
+/** AI-084 long-running tasks with checkpoints and resume, pure engine pinned. */
+describe('long-running task engine (FORGE AI-084)', () => {
+  it('refuses bad starts by name', () => {
+    assert.deepEqual(startLongRunningTask({ taskId: '', kind: 'render' }), { ok: false, reason: 'task-start-no-id' });
+    assert.deepEqual(startLongRunningTask({ taskId: 't-1', kind: '' }), { ok: false, reason: 'task-start-no-kind' });
+  });
+
+  it('walks start, checkpoint, pause, resume, complete with named refusals', () => {
+    const started = startLongRunningTask({ taskId: 't-1', kind: 'render' });
+    assert.ok(started.ok);
+    if (!started.ok) return;
+    let task: LongRunningTask = started.value;
+    assert.deepEqual({ status: task.status, checkpointCount: task.checkpointCount, resumedFrom: task.resumedFrom }, { status: 'running', checkpointCount: 0, resumedFrom: null });
+    assert.deepEqual(recordCheckpoint(task, { step: -1, state: { done: 1 } }), { ok: false, reason: 'checkpoint-bad-step' });
+    assert.deepEqual(recordCheckpoint(task, { step: 0, state: {} }), { ok: false, reason: 'checkpoint-no-state' });
+    assert.deepEqual(recordCheckpoint(task, { step: 0, state: 'oops' }), { ok: false, reason: 'checkpoint-no-state' });
+    const cp0 = recordCheckpoint(task, { step: 0, state: { done: 10 } });
+    assert.ok(cp0.ok);
+    if (cp0.ok) {
+      assert.equal(cp0.value.checkpoint.checkpointId, 'ltc_t-1_0');
+      task = cp0.value.task;
+    }
+    const cp1 = recordCheckpoint(task, { step: 5, state: { done: 50 } });
+    assert.ok(cp1.ok);
+    if (cp1.ok) {
+      assert.equal(cp1.value.checkpoint.checkpointId, 'ltc_t-1_1');
+      task = cp1.value.task;
+    }
+    assert.equal(task.checkpointCount, 2);
+    const paused = pauseLongRunningTask(task);
+    assert.ok(paused.ok);
+    if (paused.ok) task = paused.value;
+    assert.equal(task.status, 'paused');
+    assert.deepEqual(recordCheckpoint(task, { step: 6, state: { done: 60 } }), { ok: false, reason: 'task-not-running:paused' });
+    assert.deepEqual(pauseLongRunningTask(task), { ok: false, reason: 'task-not-running:paused' });
+    assert.deepEqual(resumeLongRunningTask(task, 'ltc_t-1_9'), { ok: false, reason: 'checkpoint-unknown:ltc_t-1_9' });
+    const resumed = resumeLongRunningTask(task);
+    assert.ok(resumed.ok);
+    if (resumed.ok) task = resumed.value;
+    assert.deepEqual({ status: task.status, resumedFrom: task.resumedFrom }, { status: 'running', resumedFrom: 'ltc_t-1_1' });
+    const resumedFirst = resumeLongRunningTask(paused.ok ? paused.value : task, 'ltc_t-1_0');
+    assert.ok(resumedFirst.ok);
+    if (resumedFirst.ok) assert.equal(resumedFirst.value.resumedFrom, 'ltc_t-1_0');
+    assert.deepEqual(resumeLongRunningTask(task), { ok: false, reason: 'task-not-paused:running' });
+    const completed = completeLongRunningTask(task);
+    assert.ok(completed.ok);
+    if (completed.ok) task = completed.value;
+    assert.equal(task.status, 'completed');
+    assert.deepEqual(completeLongRunningTask(task), { ok: false, reason: 'task-not-running:completed' });
+    assert.deepEqual(resumeLongRunningTask(task), { ok: false, reason: 'task-not-paused:completed' });
+  });
+
+  it('resumes a paused task with no checkpoints from scratch', () => {
+    const started = startLongRunningTask({ taskId: 't-2', kind: 'train' });
+    assert.ok(started.ok);
+    if (!started.ok) return;
+    let task: LongRunningTask = started.value;
+    const paused = pauseLongRunningTask(task);
+    assert.ok(paused.ok);
+    if (paused.ok) task = paused.value;
+    const resumed = resumeLongRunningTask(task);
+    assert.ok(resumed.ok);
+    if (resumed.ok) assert.deepEqual({ status: resumed.value.status, resumedFrom: resumed.value.resumedFrom }, { status: 'running', resumedFrom: null });
+  });
+
+  it('never mutates the caller input', () => {
+    const started = startLongRunningTask({ taskId: 't-3', kind: 'render' });
+    assert.ok(started.ok);
+    if (!started.ok) return;
+    const frozen = JSON.stringify(started.value);
+    const cp = recordCheckpoint(started.value, { step: 0, state: { done: 1 } });
+    assert.ok(cp.ok);
+    const paused = pauseLongRunningTask(started.value);
+    assert.ok(paused.ok);
+    assert.equal(JSON.stringify(started.value), frozen);
   });
 });

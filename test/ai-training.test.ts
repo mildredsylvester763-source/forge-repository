@@ -1302,3 +1302,128 @@ describe('preference tuning and distillation pipelines (AI-015/016)', () => {
     }
   });
 });
+
+describe('experiment tracking and long-running tasks (AI-018/084)', () => {
+  it('tracks experiments end to end: define, points, curves, compare (AI-018)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'tracking@example.com');
+      const bad = await h.post('/v1/ai-training/tracking/define', { experimentId: 'exp-a', config: { learningRate: 0.1 }, metrics: [] }, { cookie });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'experiment-tracking-no-metrics');
+      const defined = await h.post('/v1/ai-training/tracking/define', { experimentId: 'exp-a', config: { learningRate: 0.1 }, metrics: ['loss'] }, { cookie });
+      assert.equal(defined.status, 201);
+      const definedBody = (await defined.json()) as { experiment: { experimentId: string; pointCount: number }; createdAt: number };
+      assert.deepEqual({ experimentId: definedBody.experiment.experimentId, pointCount: definedBody.experiment.pointCount }, { experimentId: 'exp-a', pointCount: 0 });
+      assert.equal(definedBody.createdAt, NOW);
+      const duplicate = await h.post('/v1/ai-training/tracking/define', { experimentId: 'exp-a', config: { learningRate: 0.1 }, metrics: ['loss'] }, { cookie });
+      assert.equal(duplicate.status, 409);
+      assert.equal(await errorCode(duplicate), 'tracked-experiment-duplicate:exp-a');
+      const unknownExp = await h.post('/v1/ai-training/tracking/point', { experimentId: 'exp-x', metric: 'loss', step: 0, value: 0.9 }, { cookie });
+      assert.equal(unknownExp.status, 404);
+      assert.equal(await errorCode(unknownExp), 'tracked-experiment-not-found:exp-x');
+      const unknownMetric = await h.post('/v1/ai-training/tracking/point', { experimentId: 'exp-a', metric: 'f1', step: 0, value: 0.9 }, { cookie });
+      assert.equal(unknownMetric.status, 400);
+      assert.equal(await errorCode(unknownMetric), 'experiment-tracking-unknown-metric:f1');
+      const pointTwo = await h.post('/v1/ai-training/tracking/point', { experimentId: 'exp-a', metric: 'loss', step: 2, value: 0.4 }, { cookie });
+      assert.equal(pointTwo.status, 200);
+      const pointOne = await h.post('/v1/ai-training/tracking/point', { experimentId: 'exp-a', metric: 'loss', step: 1, value: 0.9 }, { cookie });
+      assert.equal(pointOne.status, 200);
+      const pointBody = (await pointOne.json()) as { step: number; metric: string; value: number };
+      assert.deepEqual(pointBody, { step: 1, metric: 'loss', value: 0.9 });
+      const definedB = await h.post('/v1/ai-training/tracking/define', { experimentId: 'exp-b', config: { learningRate: 0.05 }, metrics: ['loss'] }, { cookie });
+      assert.equal(definedB.status, 201);
+      await h.post('/v1/ai-training/tracking/point', { experimentId: 'exp-b', metric: 'loss', step: 2, value: 0.3 }, { cookie });
+      const curves = await h.post('/v1/ai-training/tracking/curves', { experimentId: 'exp-a' }, { cookie });
+      assert.equal(curves.status, 200);
+      const curvesBody = (await curves.json()) as { curves: Array<{ metric: string; points: Array<{ step: number }> }> };
+      const lossCurve = curvesBody.curves.find((c) => c.metric === 'loss');
+      assert.ok(lossCurve !== undefined);
+      assert.deepEqual(lossCurve.points.map((p) => p.step), [1, 2]);
+      const badCurves = await h.post('/v1/ai-training/tracking/curves', { experimentId: 'exp-a', metric: 'f1' }, { cookie });
+      assert.equal(await errorCode(badCurves), 'experiment-tracking-unknown-metric:f1');
+      const comparison = await h.post('/v1/ai-training/tracking/compare', { a: 'exp-a', b: 'exp-b', metric: 'loss' }, { cookie });
+      assert.equal(comparison.status, 200);
+      const compareBody = (await comparison.json()) as { a: { last: number }; b: { last: number }; delta: number };
+      assert.deepEqual({ aLast: compareBody.a.last, bLast: compareBody.b.last, delta: compareBody.delta }, { aLast: 0.4, bLast: 0.3, delta: -0.1 });
+      const missing = await h.post('/v1/ai-training/tracking/compare', { a: 'exp-a', b: 'exp-x', metric: 'loss' }, { cookie });
+      assert.equal(missing.status, 404);
+      assert.equal(await errorCode(missing), 'tracked-experiment-not-found:exp-x');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('runs a long-running task: start, checkpoint, pause, resume, complete (AI-084)', async () => {
+    const h = await startHarness();
+    try {
+      const cookie = await signedInUser(h, 'longrunning@example.com');
+      const badKind = await h.post('/v1/ai-training/tasks/start', { taskId: 't-1', kind: '' }, { cookie });
+      assert.equal(badKind.status, 400);
+      assert.equal(await errorCode(badKind), 'task-start-no-kind');
+      const started = await h.post('/v1/ai-training/tasks/start', { taskId: 't-1', kind: 'render' }, { cookie });
+      assert.equal(started.status, 201);
+      const startedBody = (await started.json()) as { task: { taskId: string; kind: string; status: string; checkpointCount: number; resumedFrom: string | null }; createdAt: number };
+      assert.deepEqual({ taskId: startedBody.task.taskId, kind: startedBody.task.kind, status: startedBody.task.status, checkpointCount: startedBody.task.checkpointCount, resumedFrom: startedBody.task.resumedFrom }, { taskId: 't-1', kind: 'render', status: 'running', checkpointCount: 0, resumedFrom: null });
+      assert.equal(startedBody.createdAt, NOW);
+      const duplicate = await h.post('/v1/ai-training/tasks/start', { taskId: 't-1', kind: 'render' }, { cookie });
+      assert.equal(duplicate.status, 409);
+      assert.equal(await errorCode(duplicate), 'longrunning-task-duplicate:t-1');
+      const badState = await h.post('/v1/ai-training/tasks/checkpoint', { taskId: 't-1', step: 0, state: {} }, { cookie });
+      assert.equal(badState.status, 400);
+      assert.equal(await errorCode(badState), 'checkpoint-no-state');
+      const cp = await h.post('/v1/ai-training/tasks/checkpoint', { taskId: 't-1', step: 0, state: { done: 10 } }, { cookie });
+      assert.equal(cp.status, 200);
+      const cpBody = (await cp.json()) as { checkpoint: { checkpointId: string; step: number }; task: { checkpointCount: number } };
+      assert.deepEqual({ checkpointId: cpBody.checkpoint.checkpointId, step: cpBody.checkpoint.step, checkpointCount: cpBody.task.checkpointCount }, { checkpointId: 'ltc_t-1_0', step: 0, checkpointCount: 1 });
+      const paused = await h.post('/v1/ai-training/tasks/pause', { taskId: 't-1' }, { cookie });
+      assert.equal(paused.status, 200);
+      const pausedBody = (await paused.json()) as { task: { status: string } };
+      assert.equal(pausedBody.task.status, 'paused');
+      const checkpointWhilePaused = await h.post('/v1/ai-training/tasks/checkpoint', { taskId: 't-1', step: 1, state: { done: 20 } }, { cookie });
+      assert.equal(checkpointWhilePaused.status, 400);
+      assert.equal(await errorCode(checkpointWhilePaused), 'task-not-running:paused');
+      const badResume = await h.post('/v1/ai-training/tasks/resume', { taskId: 't-1', fromCheckpointId: 'ltc_t-1_9' }, { cookie });
+      assert.equal(badResume.status, 400);
+      assert.equal(await errorCode(badResume), 'checkpoint-unknown:ltc_t-1_9');
+      const resumed = await h.post('/v1/ai-training/tasks/resume', { taskId: 't-1' }, { cookie });
+      assert.equal(resumed.status, 200);
+      const resumedBody = (await resumed.json()) as { task: { status: string; resumedFrom: string } };
+      assert.deepEqual({ status: resumedBody.task.status, resumedFrom: resumedBody.task.resumedFrom }, { status: 'running', resumedFrom: 'ltc_t-1_0' });
+      const complete = await h.post('/v1/ai-training/tasks/complete', { taskId: 't-1' }, { cookie });
+      assert.equal(complete.status, 200);
+      const completeBody = (await complete.json()) as { task: { status: string } };
+      assert.equal(completeBody.task.status, 'completed');
+      const completeAgain = await h.post('/v1/ai-training/tasks/complete', { taskId: 't-1' }, { cookie });
+      assert.equal(completeAgain.status, 400);
+      assert.equal(await errorCode(completeAgain), 'task-not-running:completed');
+      const status = await h.post('/v1/ai-training/tasks/status', { taskId: 't-1' }, { cookie });
+      assert.equal(status.status, 200);
+      const statusBody = (await status.json()) as { task: { status: string; checkpointCount: number }; createdAt: number };
+      assert.deepEqual({ status: statusBody.task.status, checkpointCount: statusBody.task.checkpointCount, createdAt: statusBody.createdAt }, { status: 'completed', checkpointCount: 1, createdAt: NOW });
+      const unknownTask = await h.post('/v1/ai-training/tasks/status', { taskId: 't-x' }, { cookie });
+      assert.equal(unknownTask.status, 404);
+      assert.equal(await errorCode(unknownTask), 'longrunning-task-not-found:t-x');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('gates AI-084 at pro and leaves AI-018 internal for every signed-in user', async () => {
+    const h = await startHarness();
+    try {
+      const register = await h.post('/v1/auth/register', { email: 'freeuser@example.com', password: GOOD_PASSWORD, displayName: 'Free User' });
+      assert.equal(register.status, 201);
+      const signIn = await h.post('/v1/auth/sign-in', { email: 'freeuser@example.com', password: GOOD_PASSWORD });
+      assert.equal(signIn.status, 200);
+      const freeCookie = sessionCookie(signIn);
+      const gated = await h.post('/v1/ai-training/tasks/start', { taskId: 't-free', kind: 'render' }, { cookie: freeCookie });
+      assert.equal(gated.status, 402);
+      assert.equal(await errorCode(gated), 'plan_required');
+      const internalOk = await h.post('/v1/ai-training/tracking/define', { experimentId: 'exp-free', config: { learningRate: 0.1 }, metrics: ['loss'] }, { cookie: freeCookie });
+      assert.equal(internalOk.status, 201);
+    } finally {
+      await h.close();
+    }
+  });
+});

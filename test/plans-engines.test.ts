@@ -70,8 +70,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
   it('pins the catalog gate counts (204 features, one gate each)', () => {
     const counts: Record<string, number> = {};
     for (const gate of Object.values(FEATURE_GATES)) counts[gate] = (counts[gate] ?? 0) + 1;
-    assert.equal(Object.keys(FEATURE_GATES).length, 204);
-    assert.deepEqual(counts, { free: 86, internal: 56, pro: 25, enterprise: 16, team: 10, plus: 10, engine: 1 });
+    assert.equal(Object.keys(FEATURE_GATES).length, 206);
+    assert.deepEqual(counts, { free: 86, internal: 57, pro: 26, enterprise: 16, team: 10, plus: 10, engine: 1 });
   });
 
   it('pins spot-checked gates from the With-Plans catalog', () => {
@@ -84,6 +84,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['CO-100', 'free'],
     ['AI-015', 'internal'],
     ['AI-016', 'internal'],
+    ['AI-018', 'internal'],
+    ['AI-084', 'pro'],
     ['AI-045', 'pro'],
     ['AI-050', 'plus'],
     ['AI-052', 'team'],
@@ -133,8 +135,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(isPlanId(42), false);
   });
 
-  it('pins every wired route to a catalog feature (278 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 278);
+  it('pins every wired route to a catalog feature (288 routes)', () => {
+    assert.equal(Object.keys(ROUTE_GATES).length, 288);
     for (const [path, feature] of Object.entries(ROUTE_GATES)) {
       assert.notEqual(FEATURE_GATES[feature], undefined, path + ' -> ' + feature);
     }
@@ -152,6 +154,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['/v1/sync/operations', 'CO-100', 'free'],
     ['/v1/ai-training/tuning/define', 'AI-015', 'internal'],
     ['/v1/ai-training/distill/plan', 'AI-016', 'internal'],
+    ['/v1/ai-training/tracking/define', 'AI-018', 'internal'],
+    ['/v1/ai-training/tasks/start', 'AI-084', 'pro'],
     ['/v1/test-quality/matrix/plan', 'TQ-040', 'pro'],
     ['/v1/test-generation/property/plan', 'TQ-034', 'pro'],
     ['/v1/search-integrity/packs', 'AI-072', 'plus'],

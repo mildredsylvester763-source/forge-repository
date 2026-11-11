@@ -287,6 +287,16 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/ai-training/distill/plan': 'AI-016',
   '/v1/ai-training/distill/advance': 'AI-016',
   '/v1/ai-training/distill/status': 'AI-016',
+  '/v1/ai-training/tracking/define': 'AI-018',
+  '/v1/ai-training/tracking/point': 'AI-018',
+  '/v1/ai-training/tracking/curves': 'AI-018',
+  '/v1/ai-training/tracking/compare': 'AI-018',
+  '/v1/ai-training/tasks/start': 'AI-084',
+  '/v1/ai-training/tasks/checkpoint': 'AI-084',
+  '/v1/ai-training/tasks/pause': 'AI-084',
+  '/v1/ai-training/tasks/resume': 'AI-084',
+  '/v1/ai-training/tasks/complete': 'AI-084',
+  '/v1/ai-training/tasks/status': 'AI-084',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */

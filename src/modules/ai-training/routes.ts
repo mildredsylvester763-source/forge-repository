@@ -647,5 +647,75 @@ export function aiTrainingRoutes(service: AiTrainingService, identity: IdentityS
         return { status: 200, body: result };
       },
     },
+    '/v1/ai-training/tracking/define': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.createTrackedExperiment(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/ai-training/tracking/point': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.logExperimentPoint(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tracking/curves': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.experimentCurves(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tracking/compare': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.compareTrackedExperiments(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/start': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.startLongRunningTask(user.id, await ctx.json());
+        return { status: 201, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/checkpoint': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.checkpointTask(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/pause': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.pauseTask(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/resume': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.resumeTask(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/complete': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.completeTask(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/tasks/status': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.longRunningTaskStatus(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
   };
 }

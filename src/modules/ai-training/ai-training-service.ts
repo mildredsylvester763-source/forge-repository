@@ -103,6 +103,25 @@ import {
   type DistillationMetrics,
   type DistillationPlan,
 } from './engine/distillation-engine.ts';
+import {
+  defineTrackedExperiment as runDefineTrackedExperiment,
+  logTrackedPoint as runLogTrackedPoint,
+  trackedCurves as runTrackedCurves,
+  compareTrackedExperiments as runCompareTrackedExperiments,
+  type TrackedComparison,
+  type TrackedCurve,
+  type TrackedExperiment,
+  type TrackedPoint,
+} from './engine/experiment-tracking-engine.ts';
+import {
+  startLongRunningTask as runStartLongRunningTask,
+  recordCheckpoint as runRecordCheckpoint,
+  pauseLongRunningTask as runPauseLongRunningTask,
+  resumeLongRunningTask as runResumeLongRunningTask,
+  completeLongRunningTask as runCompleteLongRunningTask,
+  type LongRunningTask,
+  type TaskCheckpoint,
+} from './engine/longrunning-task-engine.ts';
 
 /** AI-015 tuning pipelines, session state per user. Ephemeral by design like streams. */
 interface StoredTuningPipeline {
@@ -116,6 +135,18 @@ interface StoredDistillationPlan {
   plan: DistillationPlan;
   createdAt: number;
   verdict: 'accepted' | 'rejected' | null;
+}
+
+/** AI-018 tracked experiments, session state per user. Ephemeral by design like streams. */
+interface StoredTrackedExperiment {
+  experiment: TrackedExperiment;
+  createdAt: number;
+}
+
+/** AI-084 long-running tasks, session state per user. Ephemeral by design like streams. */
+interface StoredLongRunningTask {
+  task: LongRunningTask;
+  createdAt: number;
 }
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
@@ -216,6 +247,8 @@ export class AiTrainingService {
   private readonly streams = new Map<string, StreamState>();
   private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
   private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
+  private readonly trackedExperiments = new Map<string, StoredTrackedExperiment>();
+  private readonly longRunningTasks = new Map<string, StoredLongRunningTask>();
 
   constructor(deps: AiTrainingDeps) {
     this.store = deps.store;
@@ -1789,5 +1822,126 @@ export class AiTrainingService {
     stored.plan = { ...stored.plan, stage: result.value.stage, stageIndex: result.value.stageIndex };
     if (result.value.verdict !== null) stored.verdict = result.value.verdict;
     return result.value;
+  }
+
+  // ---- AI-018 experiment tracking ----
+
+  async createTrackedExperiment(userId: string, body: unknown): Promise<{ experiment: TrackedExperiment; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runDefineTrackedExperiment({
+      experimentId: typeof dto.experimentId === 'string' ? dto.experimentId : '',
+      config: dto.config,
+      metrics: dto.metrics,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.experimentId;
+    if (this.trackedExperiments.has(key)) throw conflict('tracked-experiment-duplicate:' + result.value.experimentId);
+    const createdAt = this.clock();
+    this.trackedExperiments.set(key, { experiment: result.value, createdAt });
+    return { experiment: result.value, createdAt };
+  }
+
+  private resolveTrackedExperiment(userId: string, dto: Record<string, unknown>): StoredTrackedExperiment {
+    const experimentId = typeof dto.experimentId === 'string' ? dto.experimentId.trim() : '';
+    const stored = this.trackedExperiments.get(userId + ':' + experimentId);
+    if (!stored) throw notFound('tracked-experiment-not-found:' + experimentId);
+    return stored;
+  }
+
+  async logExperimentPoint(userId: string, body: unknown): Promise<TrackedPoint> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTrackedExperiment(userId, dto);
+    const result = runLogTrackedPoint(stored.experiment, {
+      step: dto.step,
+      metric: typeof dto.metric === 'string' ? dto.metric : '',
+      value: dto.value,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    stored.experiment = result.value.experiment;
+    return result.value.point;
+  }
+
+  async experimentCurves(userId: string, body: unknown): Promise<{ experimentId: string; curves: TrackedCurve[] }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTrackedExperiment(userId, dto);
+    const metric = typeof dto.metric === 'string' && dto.metric !== '' ? dto.metric : undefined;
+    const result = runTrackedCurves(stored.experiment, metric);
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async compareTrackedExperiments(userId: string, body: unknown): Promise<TrackedComparison> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const a = this.resolveTrackedExperiment(userId, { experimentId: dto.a });
+    const b = this.resolveTrackedExperiment(userId, { experimentId: dto.b });
+    const result = runCompareTrackedExperiments(a.experiment, b.experiment, typeof dto.metric === 'string' ? dto.metric : '');
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  // ---- AI-084 long-running tasks ----
+
+  async startLongRunningTask(userId: string, body: unknown): Promise<{ task: LongRunningTask; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runStartLongRunningTask({
+      taskId: typeof dto.taskId === 'string' ? dto.taskId : '',
+      kind: typeof dto.kind === 'string' ? dto.kind : '',
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.taskId;
+    if (this.longRunningTasks.has(key)) throw conflict('longrunning-task-duplicate:' + result.value.taskId);
+    const createdAt = this.clock();
+    this.longRunningTasks.set(key, { task: result.value, createdAt });
+    return { task: result.value, createdAt };
+  }
+
+  private resolveLongRunningTask(userId: string, dto: Record<string, unknown>): StoredLongRunningTask {
+    const taskId = typeof dto.taskId === 'string' ? dto.taskId.trim() : '';
+    const stored = this.longRunningTasks.get(userId + ':' + taskId);
+    if (!stored) throw notFound('longrunning-task-not-found:' + taskId);
+    return stored;
+  }
+
+  async checkpointTask(userId: string, body: unknown): Promise<{ task: LongRunningTask; checkpoint: TaskCheckpoint }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runRecordCheckpoint(stored.task, { step: dto.step, state: dto.state });
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value.task;
+    return result.value;
+  }
+
+  async pauseTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runPauseLongRunningTask(stored.task);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async resumeTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const fromCheckpointId = typeof dto.fromCheckpointId === 'string' && dto.fromCheckpointId !== '' ? dto.fromCheckpointId : undefined;
+    const result = runResumeLongRunningTask(stored.task, fromCheckpointId);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async completeTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runCompleteLongRunningTask(stored.task);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async longRunningTaskStatus(userId: string, body: unknown): Promise<{ task: LongRunningTask; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    return { task: stored.task, createdAt: stored.createdAt };
   }
 }
