@@ -1810,3 +1810,27 @@ No new code: both rows were already registered and already enforced by tests tha
 ### Honest limits
 - Zero gated routes for both rows is by design: CO-030's enforcement lives in middleware every route already passes through, and CO-063 is internal forge machinery (never sold, never gated).
 - Remaining partials: C3 = CO-064 (acceptance record — native PG proof already runs in CI) + CO-065 (durable outbox delivery, real build), C4 = CO-076 + CO-096.
+
+## CO-064 + CO-065 — partials batch C3: acceptance record and the durable transactional outbox (mistral lane, 11 Nov 2026)
+
+CI green at commit 54e5486d546168d0f71321e3aa5e008bb2451657 (CI #953 and CO focused verification #414) at head, after three fixups on the first C3 code push (bedbc19): two typecheck rounds (readonly accumulator tallies in outbox.ts) and one test bug (the PostgreSQL delivery stub threw unconditionally, so the post-replay delivery could never succeed — fixed to recover after its failure budget like the other scenarios).
+
+### CO-064 — append-only, hash-chained event store (internal)
+- Where its code lives: the kernel event store in src/kernel/events.ts (verifyChain), src/kernel/sqlite-events.ts (verifyEventsTable over the stored table, in pages), src/kernel/postgres-events.ts (the same paged proof on PostgreSQL). Both stores refuse UPDATE/DELETE/TRUNCATE at the database level (SQLite triggers; PostgreSQL trigger functions).
+- Proof already in CI: the native PostgreSQL proof runs on every push in the CO focused verification workflow against the ephemeral PostgreSQL 16 service — no owner secret needed for CI. The append-only enforcement is also pinned by the kernel migration pin test (co-100, kernel v4 now).
+- Conclusion: the row's engineering is complete and CI-pinned; the acceptance call against the owner's With-Plans catalog wording remains with the owner, as it does for every internal row.
+
+### CO-065 — durable subscriber delivery via the transactional outbox (internal)
+- What this batch built (src/kernel/outbox.ts, new):
+  - The outbox row is written in the SAME transaction as the event: PostgresEventStore.appendIn calls outbox.enqueueIn(conn, ...) inside the transaction; SqliteEventStore.appendSync calls outbox.enqueueSync(...) on the caller's transaction; InMemoryEventStore enqueues on append. A committed change can never leave its event undispatchable, and a rolled-back change leaves no phantom delivery.
+  - Delivery is at-least-once: OutboxDispatcher.deliverDue drains due rows, an event-missing row is dead-lettered immediately (the append-only chain means that is corruption), persisted attempts survive restarts, failures back off with a pure bounded exponential delay (saturating at the cap instead of overflowing), and at the bound the row is dead-lettered — only an EXPLICIT replay (all dead letters, or one by event id, re-queued as a fresh row) retries it. A subscriber failure never rolls back the committed event.
+  - Event-ID idempotency guard (InMemoryIdempotencyGuard) is the reference dedupe for crash-after-delivery replays; duplicate re-queues are marked delivered without calling the subscriber again.
+  - Stores: InMemoryOutboxStore, SqliteOutboxStore, PostgresOutboxStore (BIGINT-safe row mapping, one statement per step, safe under concurrent dispatchers). Kernel migration v4 (transactional_outbox) appended to both kernelMigrations and pgKernelMigrations — shipped migrations untouched, per the law.
+  - Wired in app.ts on every storage branch (PostgreSQL, SQLite, in-memory); the ForgeApp interface exposes storage.outbox.
+- Tests: test/co-065-outbox.test.ts (pure backoff/decision tests; in-memory enqueue/deliver/crash-replay with the guard; SQLite rollback-leaves-nothing, persisted attempts across a fresh store, dead-letter at the bound with a frozen clock, explicit replay resets attempts; the same lifecycle on PostgreSQL — real PostgreSQL in the CO focused workflow, the SQLite-backed stand-in in main CI). test/co-100-offline-sync.test.ts pins kernel migration v4. The CO focused workflow runs the new test file with the ephemeral PostgreSQL service.
+- Conclusion: CO-065's engineering is complete. What remains is deployment-time, not code: point ops at the same durable store and wire real subscribers to the dispatcher; the engineering default (transactional outbox, at-least-once, explicit replay) is recorded in docs/CO_APPROVAL_NEEDED.md.
+
+### Honest limits
+- The dispatcher drain is invoked by tests and any ops caller today; no background scheduler daemon ships in this batch (deliberate: scheduling belongs to the deployment's process model, and CO-096's scheduler shows the pattern).
+- Multi-process dispatchers are safe (one statement per step, at-least-once) but were proven only at the store level, not under real concurrent load.
+- Remaining partials: C4 = CO-076 + CO-096 (anchor interface + R2 adapter + verification report; off-site backup upload), then batch 7 = AI-087 + AI-088.

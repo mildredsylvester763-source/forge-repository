@@ -2,7 +2,7 @@
 
 One place where every lane records what it has ALREADY built as code, so no lane rebuilds another lane's work. Sylvester's Drive doc "Forge Feature — Plan Hooks (build notes)" is the human spec; this file is the in-repo mirror every agent can read and write. Update it in the same batch as any feature work.
 
-## mistral lane (Vibe) — 11 Nov 2026, head 7b4b49f, CI green at 7b4b49f (C1 code at 6029744)
+## mistral lane (Vibe) — 11 Nov 2026, head 54e5486, CI green at 54e5486 (C1 code 6029744, C2 records 809446c, C3 outbox 54e5486)
 
 ### 1. Plans gate framework — BUILT AND LIVE
 
@@ -17,7 +17,7 @@ Single base plan per user. Module `src/modules/plans/` (13 files): plan ladder F
 ### 3. NOT implemented (nobody has built these)
 
 - AI-087–AI-150 and TQ-041–TQ-120 — not started.
-- Partially implemented rows (owner reminder, audit of 11 Nov 2026, updated after batch C1): CO-091 (health and readiness) and CO-093 (rate limiting) are NOW complete and registered (CI green at 6029744). CO-030, CO-063, CO-064, CO-065, CO-076 and CO-096 are registered but their outstanding proofs are owner-dependent or pending in-repo batches and listed in docs/CO_APPROVAL_NEEDED.md (planned: C2 = CO-030 + CO-063, C3 = CO-064 + CO-065, C4 = CO-076 + CO-096).
+- Partially implemented rows (owner reminder, audit of 11 Nov 2026, updated after batch C3): CO-091, CO-093, CO-030, CO-063, CO-064 and CO-065 are NOW complete (C1 health/rate-limit at 6029744, C2 acceptance records at 809446c, C3 transactional outbox — src/kernel/outbox.ts, the outbox row joins the event's transaction on every store, at-least-once delivery with persisted attempts, bounded backoff, dead-letter and explicit replay, kernel migration v4 — at 54e5486, all CI green). CO-076 and CO-096 remain pending in-repo batch C4 and are listed in docs/CO_APPROVAL_NEEDED.md; after C4 the lane returns to AI batches (batch 7 = AI-087 + AI-088).
 - Everything in Part 02 (DP / OB / CG / RV / BD / SC) — not started on mistral.
 
 ### 4. Plan hooks retrofit — BATCH A BUILT (10–11 Nov 2026, CI green at 548dc32)
