@@ -45,3 +45,123 @@ export class SqlitePlanStore implements PlanStore {
     });
   }
 }
+import type { LedgerEntry } from './engine/ledger-engine.ts';
+import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
+import type { BillingStore } from './billing-store.ts';
+
+interface ItemRow {
+  item_id: string;
+  user_id: string;
+  item_type: string;
+  item_code: string;
+  starts_at: number;
+  ends_at: number;
+  status: string;
+  source: string;
+  created_at: number;
+}
+
+interface LedgerRow {
+  entry_id: string;
+  user_id: string;
+  engine: string;
+  source: string;
+  amount: number;
+  expires_at: number | null;
+  job_id: string | null;
+  source_entry_id: string | null;
+  cost_usd_micros: number | null;
+  created_at: number;
+}
+
+const toItem = (r: ItemRow): SubscriptionItem => ({
+  itemId: r.item_id,
+  userId: r.user_id,
+  itemType: r.item_type as SubscriptionItem['itemType'],
+  itemCode: r.item_code,
+  startsAt: r.starts_at,
+  endsAt: r.ends_at,
+  status: r.status as SubscriptionStatus,
+  source: r.source,
+});
+
+const toLedger = (r: LedgerRow): LedgerEntry => ({
+  entryId: r.entry_id,
+  userId: r.user_id,
+  engine: r.engine,
+  source: r.source as LedgerEntry['source'],
+  amount: r.amount,
+  expiresAt: r.expires_at,
+  jobId: r.job_id,
+  sourceEntryId: r.source_entry_id,
+  costUsdMicros: r.cost_usd_micros,
+  createdAt: r.created_at,
+});
+
+/** SQLite storage for the billing hooks: subscription items, processed payment events, the append-only credit ledger. */
+export class SqliteBillingStore implements BillingStore {
+  private readonly db: Database;
+  private readonly insertItem;
+  private readonly itemsByUser;
+  private readonly updateStatus;
+  private readonly itemById;
+  private readonly hasEvent;
+  private readonly insertEvent;
+  private readonly ledgerByUser;
+  private readonly insertLedger;
+
+  constructor(db: Database) {
+    this.db = db;
+    this.insertItem = db.prepare(
+      'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    this.itemsByUser = db.prepare('SELECT * FROM subscription_items WHERE user_id = ? ORDER BY created_at, item_id');
+    this.updateStatus = db.prepare('UPDATE subscription_items SET status = ? WHERE item_id = ?');
+    this.itemById = db.prepare('SELECT * FROM subscription_items WHERE item_id = ?');
+    this.hasEvent = db.prepare('SELECT 1 AS found FROM payment_events WHERE event_id = ?');
+    this.insertEvent = db.prepare(
+      'INSERT INTO payment_events (event_id, user_id, amount_minor, currency, occurred_at, processed_at) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    this.ledgerByUser = db.prepare('SELECT * FROM credit_ledger WHERE user_id = ? ORDER BY created_at, entry_id');
+    this.insertLedger = db.prepare(
+      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+  }
+
+  async listItems(userId: string): Promise<readonly SubscriptionItem[]> {
+    return (this.itemsByUser.all(userId) as unknown as ItemRow[]).map(toItem);
+  }
+
+  async appendItem(item: SubscriptionItem, createdAt: number): Promise<SubscriptionItem> {
+    this.insertItem.run(
+      item.itemId, item.userId, item.itemType, item.itemCode, item.startsAt, item.endsAt, item.status, item.source, createdAt,
+    );
+    return item;
+  }
+
+  async updateItemStatus(itemId: string, status: SubscriptionStatus): Promise<SubscriptionItem | null> {
+    this.updateStatus.run(status, itemId);
+    const row = this.itemById.get(itemId) as unknown as ItemRow | undefined;
+    return row ? toItem(row) : null;
+  }
+
+  async hasPaymentEvent(eventId: string): Promise<boolean> {
+    return this.hasEvent.get(eventId) !== undefined;
+  }
+
+  async markPaymentEvent(event: PaymentEvent, processedAt: number): Promise<void> {
+    this.insertEvent.run(event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt);
+  }
+
+  async listLedger(userId: string): Promise<readonly LedgerEntry[]> {
+    return (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
+  }
+
+  async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
+    this.insertLedger.run(
+      entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
+      entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+    );
+    return entry;
+  }
+}

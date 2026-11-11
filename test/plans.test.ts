@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
-import type { PlanId } from '../src/modules/plans/index.ts';
+import { signPaymentPayload, type PlanId } from '../src/modules/plans/index.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
@@ -37,6 +37,8 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(me.status, 401);
       const check = await h.post('/v1/plans/check', { featureId: 'CO-001' });
       assert.equal(check.status, 401);
+      const credits = await h.get('/v1/credits/me');
+      assert.equal(credits.status, 401);
     } finally {
       await h.close();
     }
@@ -71,12 +73,12 @@ describe('plans (PLAN GATE LAW)', () => {
       const denied = await h.post('/v1/plans/check', { featureId: 'AI-050' }, { cookie: user.cookie });
       assert.equal(denied.status, 200);
       assert.deepEqual((await denied.json()) as unknown, {
-        entitlement: { allowed: false, feature: 'AI-050', gate: 'plus', plan: 'free', reason: 'plan_too_low' },
+        decision: { allowed: false, feature: 'AI-050', gate: 'plus', plan: 'free', passes: [], engine: null, level: null, reason: 'plan_too_low', limits: null },
       });
       const allowed = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
       assert.equal(allowed.status, 200);
       assert.deepEqual((await allowed.json()) as unknown, {
-        entitlement: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', reason: 'unlocked' },
+        decision: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', passes: [], engine: null, level: null, reason: 'unlocked', limits: null },
       });
       const unknown = await h.post('/v1/plans/check', { featureId: 'XX-999' }, { cookie: user.cookie });
       assert.equal(unknown.status, 404);
@@ -152,15 +154,98 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.notEqual(allowed.status, 402);
       const verdict = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: noPass.cookie });
       assert.equal(verdict.status, 200);
-      const body = (await verdict.json()) as { entitlement: Record<string, unknown> };
-      assert.equal(body.entitlement.allowed, true);
-      assert.equal(body.entitlement.engineLimits, 'free_level');
+      const body = (await verdict.json()) as { decision: Record<string, unknown> };
+      assert.equal(body.decision.allowed, true);
+      assert.equal(body.decision.level, 'free');
+      assert.deepEqual((body.decision as { limits: Record<string, number> }).limits, {
+        windowCredits: 40,
+        windowHours: 5,
+        monthlyCeiling: 600,
+      });
       const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['music']);
       const paid = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: withPass.cookie });
       assert.equal(paid.status, 200);
-      const paidBody = (await paid.json()) as { entitlement: Record<string, unknown> };
-      assert.equal(paidBody.entitlement.allowed, true);
-      assert.equal(paidBody.entitlement.engineLimits, 'paid_level');
+      const paidBody = (await paid.json()) as { decision: Record<string, unknown> };
+      assert.equal(paidBody.decision.allowed, true);
+      assert.equal(paidBody.decision.level, 'paid');
+    } finally {
+      await h.close();
+    }
+  });
+
+
+  it('processes signed payment events exactly once and grants tagged credits (Hooks 1, 3, 6)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-pay@forge.test');
+      const empty = await h.get('/v1/credits/me', { cookie: user.cookie });
+      assert.equal(empty.status, 200);
+      const emptyBody = (await empty.json()) as { balances: { general: number; engines: unknown[] } };
+      assert.equal(emptyBody.balances.general, 0);
+      assert.deepEqual(emptyBody.balances.engines, []);
+      const now = Date.now();
+      const payload = {
+        eventId: 'evt_plans_1',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [
+          { itemType: 'base_plan', itemCode: 'pro', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+          { itemType: 'engine_pass', itemCode: 'music', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+        ],
+      };
+      const bad = await h.post('/v1/payments/event', { payload, signature: 'deadbeef' });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'payment_event_rejected');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const res = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { processed: boolean; duplicate: boolean; grantedItems: string[] };
+      assert.equal(body.processed, true);
+      assert.equal(body.duplicate, false);
+      assert.equal(body.grantedItems.length, 2);
+      const me = await h.get('/v1/plans/me', { cookie: user.cookie });
+      const meBody = (await me.json()) as { plan: string; enginePasses: string[] };
+      assert.equal(meBody.plan, 'pro');
+      assert.deepEqual(meBody.enginePasses, ['music']);
+      const check = await h.post('/v1/plans/check', { featureId: 'AI-045' }, { cookie: user.cookie });
+      const checkBody = (await check.json()) as { decision: { allowed: boolean; plan: string } };
+      assert.equal(checkBody.decision.allowed, true);
+      assert.equal(checkBody.decision.plan, 'pro');
+      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
+      assert.equal(credits.balances.general, 7500);
+      const replay = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      const replayBody = (await replay.json()) as { processed: boolean; duplicate: boolean };
+      assert.equal(replayBody.processed, false);
+      assert.equal(replayBody.duplicate, true);
+      const afterReplay = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
+      assert.equal(afterReplay.balances.general, 7500);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-ledger@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: 'music', source: 'pass', amount: 10, expiresAt: null, jobId: null });
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 5, expiresAt: null, jobId: null });
+      const res = await h.get('/v1/credits/me', { cookie: user.cookie });
+      const body = (await res.json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
+      assert.equal(body.balances.general, 5);
+      assert.deepEqual(body.balances.engines, [{ engine: 'music', balance: 10 }]);
+      const spend = await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 12, jobId: 'job_plans_1', costUsdMicros: 30000 });
+      assert.equal(spend.spent, 12);
+      assert.equal(spend.from.length, 2);
+      const after = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
+      assert.equal(after.balances.general, 3);
+      assert.deepEqual(after.balances.engines, [{ engine: 'music', balance: 0 }]);
+      await assert.rejects(
+        h.app.plans.spendCredits(user.id, { engine: 'music', amount: 99, jobId: 'job_plans_2', costUsdMicros: 0 }),
+        /insufficient_credits/,
+      );
     } finally {
       await h.close();
     }

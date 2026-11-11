@@ -135,12 +135,17 @@ import {
 } from './modules/training-data/index.ts';
 import {
   applyRouteGates,
+  HmacPaymentProvider,
+  InMemoryBillingStore,
   InMemoryPlanStore,
   PlansService,
   plansMigrations,
   plansRoutes,
+  PostgresBillingStore,
   PostgresPlanStore,
+  SqliteBillingStore,
   SqlitePlanStore,
+  type BillingStore,
   type PlanStore,
 } from './modules/plans/index.ts';
 
@@ -197,6 +202,7 @@ interface Storage {
   aiTraining: AiTrainingStore;
   trainingData: TrainingDataStore;
   userPlans: PlanStore;
+  billing: BillingStore;
   offlineSync: OfflineSyncStore;
   syncDb: Database | null;
 }
@@ -220,8 +226,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
     const userPlans = new PostgresPlanStore(pool);
+    const billing = new PostgresBillingStore(pool);
     const offlineSync = new PostgresOfflineSyncStore(pool);
-    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, offlineSync, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -254,8 +261,9 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
     const userPlans = new SqlitePlanStore(db);
+    const billing = new SqliteBillingStore(db);
     const offlineSync = new SqliteOfflineSyncStore(db);
-    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, offlineSync, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
   const users = new InMemoryUserStore();
@@ -275,7 +283,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const syncDb = openDatabase(':memory:');
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);
-  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, offlineSync, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -341,7 +349,20 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const trainingData = new TrainingDataService({ store: storage.trainingData, events, clock });
 
-  const plans = new PlansService({ store: storage.userPlans, events, clock });
+  const plans = new PlansService({
+    store: storage.userPlans,
+    billing: storage.billing,
+    events,
+    clock,
+    access: {
+      gatesEnabled: config.plans.gatesEnabled,
+      featureSwitches: config.plans.featureSwitches,
+      engineBundlePlans: config.plans.engineBundlePlans,
+      freeEngineLimits: config.plans.freeEngineLimits,
+    },
+    monthlyCredits: config.plans.monthlyCredits,
+    passCatalog: config.plans.passCatalog,
+  });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
 
   const ungated: RouteTable = {
@@ -359,7 +380,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...searchIntegrityRoutes(searchIntegrity, identity, config.cookie),
     ...aiTrainingRoutes(aiTraining, identity, config.cookie),
     ...trainingDataRoutes(trainingData, identity, config.cookie),
-    ...plansRoutes(plans, identity, config.cookie, config.plans),
+    ...plansRoutes(plans, identity, config.cookie, config.plans, new HmacPaymentProvider(config.plans.paymentWebhookSecret)),
   };
 
   const routes = applyRouteGates(ungated, plans, identity, config.cookie);

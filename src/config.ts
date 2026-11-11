@@ -3,6 +3,8 @@ import type { LogLevel } from './kernel/logger.ts';
 import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
+import { isPlanId } from './modules/plans/index.ts';
+import type { FreeEngineLimits, PassCatalogEntry, PlanId } from './modules/plans/index.ts';
 
 export type Environment = 'development' | 'test' | 'production';
 
@@ -31,6 +33,20 @@ export interface ForgeConfig {
     teamUsdPerSeatPerMonth: number;
     teamMinSeats: number;
     enterpriseFromUsdPerMonth: number;
+    /** Hook 5: master gate flag. When false, canUse allows everyone (development convenience only). */
+    gatesEnabled: boolean;
+    /** Hook 5: per-feature on/off switches, flippable without a release. */
+    featureSwitches: Readonly<Record<string, boolean>>;
+    /** Base plans that include every engine at paid level. Empty until the owner names the all-round plans. */
+    engineBundlePlans: readonly PlanId[];
+    /** Hook 2b: the free level every unpaid engine runs at. */
+    freeEngineLimits: FreeEngineLimits;
+    /** The monthly credit pool per paid plan (Numbers Plan, 2 Nov 2026). Free draws the window instead. */
+    monthlyCredits: Readonly<Record<'plus' | 'pro' | 'studio' | 'team', number>>;
+    /** Hook 4: the pass catalog. Empty until the owner sets prices; never hardcoded. */
+    passCatalog: readonly PassCatalogEntry[];
+    /** Hook 6: the HMAC secret payment events are signed with. Required in production. */
+    paymentWebhookSecret: Buffer;
   };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
@@ -185,6 +201,81 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   }
   if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
 
+  // Plan hooks (10 Nov 2026): switches, bundle plans, free-engine limits, monthly credits, pass catalog, webhook secret.
+  const gatesEnabled = env.FORGE_GATES_ENABLED !== 'false';
+  const featureSwitches: Record<string, boolean> = {};
+  for (const part of (env.FORGE_FEATURE_SWITCHES ?? '').split(',')) {
+    const entry = part.trim();
+    if (entry === '') continue;
+    const [name, value] = entry.split(':');
+    if (!name || (value !== 'true' && value !== 'false')) {
+      throw new ConfigError('FORGE_FEATURE_SWITCHES entries must look like FEATURE:true or FEATURE:false');
+    }
+    featureSwitches[name] = value === 'true';
+  }
+  const engineBundlePlans: PlanId[] = [];
+  for (const part of (env.FORGE_ENGINE_BUNDLE_PLANS ?? '').split(',')) {
+    const code = part.trim();
+    if (code === '') continue;
+    if (!isPlanId(code)) throw new ConfigError('FORGE_ENGINE_BUNDLE_PLANS entries must be plan ids (free, plus, pro, studio, team, enterprise)');
+    engineBundlePlans.push(code);
+  }
+  const freeEngineLimits: FreeEngineLimits = {
+    windowCredits: int(env, 'FORGE_FREE_WINDOW_CREDITS', 40, 0, 1_000_000),
+    windowHours: int(env, 'FORGE_FREE_WINDOW_HOURS', 5, 1, 720),
+    monthlyCeiling: int(env, 'FORGE_FREE_MONTHLY_CEILING', 600, 0, 1_000_000),
+  };
+  const monthlyCredits: Readonly<Record<'plus' | 'pro' | 'studio' | 'team', number>> = {
+    plus: int(env, 'FORGE_PLUS_MONTHLY_CREDITS', 3000, 0, 1_000_000),
+    pro: int(env, 'FORGE_PRO_MONTHLY_CREDITS', 7500, 0, 1_000_000),
+    studio: int(env, 'FORGE_STUDIO_MONTHLY_CREDITS', 18000, 0, 1_000_000),
+    team: int(env, 'FORGE_TEAM_MONTHLY_CREDITS', 11800, 0, 1_000_000),
+  };
+  let passCatalog: readonly PassCatalogEntry[] = [];
+  if (env.FORGE_PASS_CATALOG !== undefined && env.FORGE_PASS_CATALOG !== '') {
+    let parsedCatalog: unknown;
+    try {
+      parsedCatalog = JSON.parse(env.FORGE_PASS_CATALOG);
+    } catch {
+      throw new ConfigError('FORGE_PASS_CATALOG must be a JSON array of pass catalog entries');
+    }
+    if (!Array.isArray(parsedCatalog)) throw new ConfigError('FORGE_PASS_CATALOG must be a JSON array');
+    const entries: PassCatalogEntry[] = [];
+    for (const raw of parsedCatalog) {
+      if (typeof raw !== 'object' || raw === null) throw new ConfigError('FORGE_PASS_CATALOG entries must be objects');
+      const r = raw as Record<string, unknown>;
+      const productCode = r.productCode;
+      const type = r.type;
+      const enginesIncluded = r.enginesIncluded;
+      const creditsIncluded = r.creditsIncluded;
+      const billingPeriod = r.billingPeriod;
+      const sellable = r.sellable;
+      if (typeof productCode !== 'string' || productCode.length === 0 || productCode.length > 64) {
+        throw new ConfigError('FORGE_PASS_CATALOG productCode must be 1 to 64 characters');
+      }
+      if (type !== 'base_plan' && type !== 'engine_pass') throw new ConfigError('FORGE_PASS_CATALOG type must be base_plan or engine_pass');
+      if (!Array.isArray(enginesIncluded) || enginesIncluded.some((engine) => typeof engine !== 'string')) {
+        throw new ConfigError('FORGE_PASS_CATALOG enginesIncluded must be an array of engine codes');
+      }
+      if (typeof creditsIncluded !== 'number' || !Number.isInteger(creditsIncluded) || creditsIncluded < 0) {
+        throw new ConfigError('FORGE_PASS_CATALOG creditsIncluded must be a whole number');
+      }
+      if (billingPeriod !== 'monthly' && billingPeriod !== 'yearly') throw new ConfigError('FORGE_PASS_CATALOG billingPeriod must be monthly or yearly');
+      if (typeof sellable !== 'boolean') throw new ConfigError('FORGE_PASS_CATALOG sellable must be true or false');
+      entries.push({ productCode, type, enginesIncluded: enginesIncluded as string[], creditsIncluded, billingPeriod, sellable });
+    }
+    passCatalog = entries;
+  }
+  let paymentWebhookSecret: Buffer;
+  if (env.FORGE_PAYMENT_WEBHOOK_SECRET !== undefined && env.FORGE_PAYMENT_WEBHOOK_SECRET !== '') {
+    paymentWebhookSecret = Buffer.from(env.FORGE_PAYMENT_WEBHOOK_SECRET, 'utf8');
+  } else if (production) {
+    throw new ConfigError('FORGE_PAYMENT_WEBHOOK_SECRET is required in production');
+  } else {
+    paymentWebhookSecret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+    warnings.push('FORGE_PAYMENT_WEBHOOK_SECRET not set: using the insecure development webhook secret. Never use this in production.');
+  }
+
   const currentPepperVersion = Math.max(...peppers.keys());
 
   return {
@@ -225,6 +316,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       teamUsdPerSeatPerMonth: money(env, 'FORGE_TEAM_USD_PER_SEAT_PER_MONTH', 39),
       teamMinSeats: int(env, 'FORGE_TEAM_MIN_SEATS', 3, 1, 10_000),
       enterpriseFromUsdPerMonth: money(env, 'FORGE_ENTERPRISE_FROM_USD_PER_MONTH', 1000),
+      gatesEnabled,
+      featureSwitches,
+      engineBundlePlans,
+      freeEngineLimits,
+      monthlyCredits,
+      passCatalog,
+      paymentWebhookSecret,
     },
     storage: {
       databaseUrl,
