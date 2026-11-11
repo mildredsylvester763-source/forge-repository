@@ -2,21 +2,22 @@
 
 One place where every lane records what it has ALREADY built as code, so no lane rebuilds another lane's work. Sylvester's Drive doc "Forge Feature — Plan Hooks (build notes)" is the human spec; this file is the in-repo mirror every agent can read and write. Update it in the same batch as any feature work.
 
-## mistral lane (Vibe) — 11 Nov 2026, head a4b7d30, CI green at a4b7d30
+## mistral lane (Vibe) — 11 Nov 2026, head 86fd849, CI green at 86fd849
 
 ### 1. Plans gate framework — BUILT AND LIVE
 
-Single base plan per user. Module `src/modules/plans/` (13 files): plan ladder Free → Plus → Pro → Studio/Team → Enterprise (Studio covers Team; internal rows never gated), `FEATURE_GATES` = 206 implemented features each tagged with its With-Plans "Plan from" gate (86 free, 57 internal, 26 pro, 16 enterprise, 10 team, 10 plus, 1 engine), `ROUTE_GATES` = 288 wired routes, in-memory/SQLite/PostgreSQL stores + migrations, plans service (GET /v1/plans/me with prices from config, POST /v1/plans/check), gate middleware (401 then 402 plan_required with feature + gate + reason). Tests: `test/plans-engines.test.ts` + `test/plans.test.ts`. Doc: `docs/plans-gates.md`. Commits: 411334b, 94d1bd5, 8059e71 (CI green).
+Single base plan per user. Module `src/modules/plans/` (13 files): plan ladder Free → Plus → Pro → Studio/Team → Enterprise (Studio covers Team; internal rows never gated), `FEATURE_GATES` = 208 implemented features each tagged with its With-Plans "Plan from" gate (88 free, 57 internal, 26 pro, 16 enterprise, 10 team, 10 plus, 1 engine), `ROUTE_GATES` = 292 wired routes, in-memory/SQLite/PostgreSQL stores + migrations, plans service (GET /v1/plans/me with prices from config, POST /v1/plans/check), gate middleware (401 then 402 plan_required with feature + gate + reason). Tests: `test/plans-engines.test.ts` + `test/plans.test.ts`. Doc: `docs/plans-gates.md`. Commits: 411334b, 94d1bd5, 8059e71 (CI green).
 
 ### 2. Implemented feature tags (whole-repository audit, every gate enforced)
 
 - CO-001–CO-080 and CO-096 — implemented.
-- AI-001–AI-084 — implemented. Batches so far: batch 1 = AI-001/002/007/008; batch 2 = AI-009 + AI-010; batch 3 = AI-011 + AI-012; batch 4 = AI-015 + AI-016 (preference tuning pipelines and distillation, pure engines + in-memory session state, CI green at a10c2a1); batch 5 = AI-018 + AI-084 (experiment tracking; long-running tasks with checkpoints and resume, pure engines + in-memory session state, CI green at a4b7d30). Every feature shipped complete: engine + oracle tests + functional tests + feature doc.
+- AI-001–AI-086 — implemented. Batches so far: batch 1 = AI-001/002/007/008; batch 2 = AI-009 + AI-010; batch 3 = AI-011 + AI-012; batch 4 = AI-015 + AI-016 (preference tuning pipelines and distillation, pure engines + in-memory session state, CI green at a10c2a1); batch 5 = AI-018 + AI-084 (experiment tracking; long-running tasks with checkpoints and resume, pure engines + in-memory session state, CI green at a4b7d30); batch 6 = AI-085 + AI-086 (per-task budgets with named honest breaches; self-critique pass before presenting results, pure engines + in-memory session state, CI green at 86fd849). Every feature shipped complete: engine + oracle tests + functional tests + feature doc.
 - TQ-001–TQ-040 — implemented.
 
 ### 3. NOT implemented (nobody has built these)
 
-- AI-085–AI-150 and TQ-041–TQ-120 — not started.
+- AI-087–AI-150 and TQ-041–TQ-120 — not started.
+- Partially implemented rows (owner reminder, audit of 11 Nov 2026): CO-091 (health and readiness) and CO-093 (rate limiting) are coded on the claude lane but NOT registered in FEATURE_GATES; CO-030, CO-063, CO-064, CO-065, CO-076 and CO-096 are registered but their outstanding proofs are owner-dependent and listed in docs/CO_APPROVAL_NEEDED.md.
 - Everything in Part 02 (DP / OB / CG / RV / BD / SC) — not started on mistral.
 
 ### 4. Plan hooks retrofit — BATCH A BUILT (10–11 Nov 2026, CI green at 548dc32)

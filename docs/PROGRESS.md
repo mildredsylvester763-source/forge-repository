@@ -1752,3 +1752,26 @@ Implemented and CI green first try at commit a4b7d30973c2c72765530e8f8ca01f03158
 - AI-084 is the first Pro-gated AI row: a free or plus user answers 402 plan_required on every task route (pinned by a route test).
 - AI-085 is the next unimplemented AI row.
 
+
+## AI-085 + AI-086 — batch 6 (mistral lane, 11 Nov 2026)
+
+Implemented and CI green first try at commit 86fd849e71a18953a73873fb43c4987cbe3e44a0 (28s run, 11 Nov 2026). Catalog rows (Part 01 With Plans): AI-085 "Per-task budgets: time, cost, tool calls" — Free; AI-086 "Self-critique pass before presenting results" — Free. Engine: General, no pass needed.
+
+### Evidence
+- Engines (pure, deterministic, no engine imports another engine):
+  - src/modules/ai-training/engine/task-budget-engine.ts — defineTaskBudget (non-empty task id, at least one positive integer limit among timeMs/costUsdMicros/toolCalls, per-field named refusals) and chargeTaskBudget (non-negative integer charges, atomic; the crossing charge is recorded honestly with exceeded set to the field, later charges answer budget-already-exceeded:<field>; never mutates the caller).
+  - src/modules/ai-training/engine/self-critique-engine.ts — runSelfCritique (non-empty result id, summary and item list; kinds fact/caveat/uncertainty/action; verdict present only when at least one caveat or uncertainty is named, else revise with issue no-caveat-or-uncertainty; sc_ fingerprint; never mutates the caller).
+- Service: defineTaskBudget / chargeTaskBudget / taskBudgetStatus over a per-user in-memory Map (409 task-budget-duplicate, 404 task-budget-not-found) and selfCritique (stores the report per user, returns report + createdAt). No store or migration changes — persistence deliberately deferred.
+- Routes: /v1/ai-training/tasks/budget/define|charge|status (AI-085) and /v1/ai-training/critique/run (AI-086). All POST, session required.
+- Gates: FEATURE_GATES AI-085 free and AI-086 free (208 features: 88 free, 57 internal, 26 pro, 16 enterprise, 10 team, 10 plus, 1 engine); ROUTE_GATES +4 (292 routes). Pins updated in test/plans-engines.test.ts including spot pins for AI-085, AI-086 and the budget/define + critique/run routes.
+- Tests: oracle describes in test/ai-training-engines.test.ts (every named refusal, atomic charge math, the honest crossing charge, revise vs present verdicts, determinism, never-mutates) and end-to-end tests in test/ai-training.test.ts (refusals by name through the routes, 409 duplicate, 404, frozen-clock createdAt, breach lifecycle through status).
+- Docs: docs/features/AI-085.md, docs/features/AI-086.md.
+
+### Honest limits
+- Budgets and critique reports are in-memory session state: a restart clears them. Persistence deferred until the owner asks.
+- AI-087 is the next unimplemented AI row.
+
+## Partially implemented features — audit of 11 Nov 2026 (mistral head 86fd849)
+
+Every partially implemented row from the old build notes was re-verified live against FEATURE_GATES and ROUTE_GATES. Findings: CO-030 (free), CO-063 (internal), CO-064 (internal), CO-065 (internal), CO-076 (enterprise) and CO-096 (free) are registered but carry zero gated routes (kernel/infra code has no ROUTE_GATES entry by design; their outstanding proofs are owner-dependent and now listed item by item in docs/CO_APPROVAL_NEEDED.md). CO-091 (health and readiness) and CO-093 (rate limiting) are coded on the claude lane and are NOT registered in FEATURE_GATES — they are the top in-repo completion candidates for the next non-AI batch. Nothing was faked; nothing was silently promoted.
+
