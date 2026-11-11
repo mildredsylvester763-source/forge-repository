@@ -1699,3 +1699,21 @@ Batch A of the plan hooks retrofit is implemented and CI green at commit 548dc32
 
 ### Registry-vs-evidence note
 A lane summary or build-note bullet is not acceptance evidence. Promotion of any catalog row is based only on the per-feature source/test/migration evidence in this file. Where BUILD_NOTES.md and this file disagree, this file's evidence-backed classification stands and the gap is surfaced to the owner.
+
+## AI-015 + AI-016 — batch 4 (mistral lane, 11 Nov 2026)
+
+Implemented and CI green at commit a10c2a104714d3451fdeef46ea4cd86bc9cf690b (22s run, 11 Nov 2026). Catalog rows (Part 01 With Plans): AI-015 "Preference tuning pipelines (RLHF, DPO style)" and AI-016 "Distillation from larger models into small deployable ones" — both Free-plan/Internal, Engine: General, never sold.
+
+### Evidence
+- Engines (pure, deterministic, self-contained local hash — no engine imports another engine):
+  - src/modules/ai-training/engine/preference-tuning-engine.ts — defineTuningPipeline (rlhf stages collect, reward, optimize, evaluate; dpo stages prepare, optimize, evaluate; pair validation with named refusals; identical-pair dedupe counted in duplicatesDropped; hyperparam bounds; ptfp_ fingerprint) and advanceTuningStage (sequential machine; entering evaluate requires metrics {rewardMargin, acceptanceRate 0..1}; verdict accepted when acceptanceRate >= 0.6 and rewardMargin > 0, else rejected; past the end is pipeline-stage-invalid).
+  - src/modules/ai-training/engine/distillation-engine.ts — planDistillation (student must be strictly smaller than the teacher — distillation-student-too-large; qualityGate strictly inside (0,1); sample validation; honest compressionRatio at 4 decimal places; dist_ fingerprint; stages generate, compress, evaluate, register) and advanceDistillationStage (evaluate requires {studentAccuracy 0..1}; verdict accepted at the quality gate; complete at register).
+- Service: six methods on AiTrainingService (createTuningPipeline / tuningStatus / advanceTuningStage and planDistillation / distillationStatus / advanceDistillationStage) over per-user in-memory session Maps (the streaming-sessions precedent). No store or migration changes — persistence deliberately deferred.
+- Routes: /v1/ai-training/tuning/define, /tuning/advance, /tuning/status (AI-015); /v1/ai-training/distill/plan, /distill/advance, /distill/status (AI-016). All POST, session required.
+- Gates: FEATURE_GATES 'AI-015': 'internal' and 'AI-016': 'internal' (204 features: 86 free, 56 internal, 25 pro, 16 enterprise, 10 team, 10 plus, 1 engine); ROUTE_GATES +6 (278 routes). Pins updated in test/plans-engines.test.ts including new spot pins for AI-015, AI-016 and the tuning/distill routes.
+- Tests: oracle describes in test/ai-training-engines.test.ts (every named refusal, dedupe, verdict math, both stage machines, caller-owns-input) and end-to-end tests in test/ai-training.test.ts (refusals by name through the routes, duplicate 409, unknown 404, full stage walks to accepted verdicts, frozen-clock createdAt).
+- Docs: docs/features/AI-015.md, docs/features/AI-016.md.
+
+### Honest limits
+- Pipelines and plans are in-memory session state: a restart clears them. Persistence, stores and migrations are deferred until the owner asks.
+- AI-018 (experiment tracking) is the last unimplemented AI row in the 001–083 range; next batch.
