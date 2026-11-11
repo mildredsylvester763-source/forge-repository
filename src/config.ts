@@ -4,7 +4,8 @@ import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webaut
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
 import { isPlanId } from './modules/plans/index.ts';
-import type { FreeEngineLimits, PassCatalogEntry, PlanId } from './modules/plans/index.ts';
+import type { CountryRow, FreeEngineLimits, PassCatalogEntry, PlanId, RateLimitRule } from './modules/plans/index.ts';
+import { validateCountryRow, validateRateLimitRule } from './modules/plans/index.ts';
 
 export type Environment = 'development' | 'test' | 'production';
 
@@ -47,6 +48,16 @@ export interface ForgeConfig {
     passCatalog: readonly PassCatalogEntry[];
     /** Hook 6: the HMAC secret payment events are signed with. Required in production. */
     paymentWebhookSecret: Buffer;
+    /** Hook 11: the admin allowlist. Empty until the owner names the admins. */
+    adminUsers: readonly string[];
+    /** Hook 8: the country table. Empty until the owner supplies country data. */
+    countryCatalog: readonly CountryRow[];
+    /** Hook 14: per-user and per-device gateway limits. null = disabled. */
+    rateLimits: { user: RateLimitRule | null; device: RateLimitRule | null };
+    /** Hook 9: how many hours a signed access snapshot stays valid. */
+    accessSnapshotTtlHours: number;
+    /** Hook 9: the HMAC secret access snapshots are signed with. */
+    accessSecret: Buffer;
   };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
@@ -276,6 +287,73 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     warnings.push('FORGE_PAYMENT_WEBHOOK_SECRET not set: using the insecure development webhook secret. Never use this in production.');
   }
 
+  // Plan hooks batch B (11 Nov 2026): country table, admin allowlist, gateway rate limits, access snapshots.
+  const adminUsers: string[] = [];
+  for (const part of (env.FORGE_ADMIN_USERS ?? '').split(',')) {
+    const id = part.trim();
+    if (id === '') continue;
+    if (id.length > 64) throw new ConfigError('FORGE_ADMIN_USERS entries must be 1 to 64 characters');
+    adminUsers.push(id);
+  }
+  let countryCatalog: readonly CountryRow[] = [];
+  if (env.FORGE_COUNTRY_CATALOG !== undefined && env.FORGE_COUNTRY_CATALOG !== '') {
+    let parsedCountries: unknown;
+    try {
+      parsedCountries = JSON.parse(env.FORGE_COUNTRY_CATALOG);
+    } catch {
+      throw new ConfigError('FORGE_COUNTRY_CATALOG must be a JSON array of country rows');
+    }
+    if (!Array.isArray(parsedCountries)) throw new ConfigError('FORGE_COUNTRY_CATALOG must be a JSON array');
+    const rows: CountryRow[] = [];
+    for (const raw of parsedCountries) {
+      if (typeof raw !== 'object' || raw === null) throw new ConfigError('FORGE_COUNTRY_CATALOG entries must be objects');
+      const r = raw as Record<string, unknown>;
+      const checked = validateCountryRow({
+        code: typeof r.code === 'string' ? r.code : '',
+        currency: typeof r.currency === 'string' ? r.currency : '',
+        regionBand: typeof r.regionBand === 'string' ? r.regionBand : '',
+        taxRule: typeof r.taxRule === 'string' ? r.taxRule : '',
+        taxCheckedAt: typeof r.taxCheckedAt === 'number' ? r.taxCheckedAt : Number.NaN,
+        paymentMethods: Array.isArray(r.paymentMethods) ? (r.paymentMethods.filter((m) => typeof m === 'string') as string[]) : [],
+        enabled: r.enabled === true,
+        minimumPayoutMinor: typeof r.minimumPayoutMinor === 'number' ? r.minimumPayoutMinor : Number.NaN,
+      });
+      if (!checked.ok) throw new ConfigError('FORGE_COUNTRY_CATALOG: ' + checked.reason);
+      rows.push(checked.value);
+    }
+    countryCatalog = rows;
+  }
+  const parseLimitRule = (rawRule: unknown, name: string): RateLimitRule | null => {
+    if (rawRule === undefined || rawRule === null) return null;
+    if (typeof rawRule !== 'object' || Array.isArray(rawRule)) throw new ConfigError(name + ' must be an object with limit and windowMs');
+    const r = rawRule as Record<string, unknown>;
+    const checked = validateRateLimitRule({ limit: typeof r.limit === 'number' ? r.limit : Number.NaN, windowMs: typeof r.windowMs === 'number' ? r.windowMs : Number.NaN });
+    if (!checked.ok) throw new ConfigError(name + ': ' + checked.reason);
+    return checked.value;
+  };
+  let rateLimits: { user: RateLimitRule | null; device: RateLimitRule | null } = { user: null, device: null };
+  if (env.FORGE_RATE_LIMITS !== undefined && env.FORGE_RATE_LIMITS !== '') {
+    let parsedLimits: unknown;
+    try {
+      parsedLimits = JSON.parse(env.FORGE_RATE_LIMITS);
+    } catch {
+      throw new ConfigError('FORGE_RATE_LIMITS must be a JSON object');
+    }
+    if (typeof parsedLimits !== 'object' || parsedLimits === null || Array.isArray(parsedLimits)) {
+      throw new ConfigError('FORGE_RATE_LIMITS must be a JSON object');
+    }
+    const r = parsedLimits as Record<string, unknown>;
+    rateLimits = { user: parseLimitRule(r.user, 'FORGE_RATE_LIMITS.user'), device: parseLimitRule(r.device, 'FORGE_RATE_LIMITS.device') };
+  }
+  const accessSnapshotTtlHours = int(env, 'FORGE_ACCESS_SNAPSHOT_TTL_HOURS', 6, 1, 72);
+  let accessSecret: Buffer;
+  if (env.FORGE_ACCESS_SNAPSHOT_SECRET !== undefined && env.FORGE_ACCESS_SNAPSHOT_SECRET !== '') {
+    accessSecret = Buffer.from(env.FORGE_ACCESS_SNAPSHOT_SECRET, 'utf8');
+  } else {
+    accessSecret = paymentWebhookSecret;
+    if (production) warnings.push('FORGE_ACCESS_SNAPSHOT_SECRET not set: reusing the payment webhook secret for access snapshots. Set a dedicated secret.');
+  }
+
   const currentPepperVersion = Math.max(...peppers.keys());
 
   return {
@@ -323,6 +401,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       monthlyCredits,
       passCatalog,
       paymentWebhookSecret,
+      adminUsers,
+      countryCatalog,
+      rateLimits,
+      accessSnapshotTtlHours,
+      accessSecret,
     },
     storage: {
       databaseUrl,

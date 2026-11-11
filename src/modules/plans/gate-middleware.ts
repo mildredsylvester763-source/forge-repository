@@ -28,6 +28,10 @@ export function applyRouteGates(routes: RouteTable, plans: PlansService, identit
       gated[method] = async (ctx) => {
         const auth = await identity.authenticate(ctx.cookie(cookie.name));
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
+        const limited = await plans.enforceUserRateLimit(auth.user.id);
+        if (!limited.ok) {
+          throw new AppError(429, 'rate_limited', 'Too many requests. Slow down.', { details: { scope: 'user', retryAfterMs: limited.retryAfterMs } });
+        }
         const verdict = await plans.canUse(auth.user.id, decision.feature);
         if (verdict.allowed) return handler(ctx);
         if (verdict.reason === 'feature_off') {

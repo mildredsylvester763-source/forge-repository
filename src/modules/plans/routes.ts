@@ -107,5 +107,96 @@ export function plansRoutes(
         };
       },
     },
+    '/v1/plans/countries': {
+      GET: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const countries = await plans.listCountries();
+        return { status: 200, body: { countries: countries.map((row) => ({ ...row })) } };
+      },
+    },
+    '/v1/plans/countries/get': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const country = await plans.getCountry(await ctx.json());
+        return { status: 200, body: { country: { ...country } } };
+      },
+    },
+    '/v1/plans/access-snapshot': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await plans.buildAccessSnapshot(user.id);
+        return { status: 200, body: { snapshot: result.snapshot, signature: result.signature } };
+      },
+    },
+    '/v1/plans/access-snapshot/verify': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const result = await plans.verifyAccessSnapshot(await ctx.json());
+        return { status: 200, body: { valid: result.valid, remainingMs: result.remainingMs, serverState: result.serverState } };
+      },
+    },
+    '/v1/admin/credits/grant': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const entry = await plans.adminGrantCredits(user.id, await ctx.json());
+        return { status: 201, body: { entry: { ...entry } } };
+      },
+    },
+    '/v1/admin/plans/comp': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const record = await plans.adminCompPlan(user.id, await ctx.json());
+        return { status: 200, body: { record: { ...record } } };
+      },
+    },
+    '/v1/admin/accounts/pause': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await plans.adminPauseAccount(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/admin/ledger': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await plans.adminLedger(user.id, await ctx.json());
+        return { status: 200, body: { userId: result.userId, items: result.items.map((item) => ({ ...item })), ledger: result.ledger.map((entry) => ({ ...entry })), balances: result.balances } };
+      },
+    },
+    '/v1/promotions/define': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const promotion = await plans.definePromotion(user.id, await ctx.json());
+        return { status: 201, body: { promotion: { ...promotion } } };
+      },
+    },
+    '/v1/promotions/redeem': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await plans.redeemPromotion(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/promotions/status': {
+      POST: async (ctx): Promise<HttpResult> => {
+        await requireUser(ctx);
+        const result = await plans.promotionStatus(await ctx.json());
+        return { status: 200, body: { promotion: { ...result.promotion }, redemptions: result.redemptions } };
+      },
+    },
+    '/v1/account/export': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const bundle = await plans.exportAccountData(user.id);
+        return { status: 200, body: bundle };
+      },
+    },
+    '/v1/account/delete': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await plans.requestAccountDeletion(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
   };
 }

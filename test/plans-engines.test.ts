@@ -30,6 +30,23 @@ import {
   type PlanId,
   type SubscriptionItem,
 } from '../src/modules/plans/index.ts';
+import {
+  REGION_BAND_MULTIPLIERS,
+  bandPriceMinor,
+  lookupCountry,
+  validateCountryRow,
+  assembleAccessSnapshot,
+  verifyAccessSnapshot,
+  isAdmin,
+  validateAdminAction,
+  redeemPromotion,
+  validatePromotion,
+  consumeRateLimit,
+  validateRateLimitRule,
+  accountRetention,
+  buildAccountExport,
+  validateDeletionRequest,
+} from '../src/modules/plans/index.ts';
 
 /** The PLAN GATE LAW, pinned: one gate per feature, plans cumulative, Studio covers Team, internal never sold. */
 describe('plans engine (PLAN GATE LAW)', () => {
@@ -449,5 +466,182 @@ describe('plans hooks: access engine', () => {
     const lowDecision = canUse(input('AI-045', { legacyPlan: 'free' }));
     assert.equal(lowDecision.allowed, false);
     assert.equal(lowDecision.reason, 'plan_too_low');
+  });
+});
+
+/** Hook 8 - the country table, pure engine pinned. */
+describe('country registry (Hook 8)', () => {
+  const row = {
+    code: 'NG',
+    currency: 'NGN',
+    regionBand: 'B',
+    taxRule: 'VAT 7.5%',
+    taxCheckedAt: 1_760_000_000_000,
+    paymentMethods: ['paystack'],
+    enabled: true,
+    minimumPayoutMinor: 100_000,
+  };
+
+  it('names every row refusal and normalizes codes', () => {
+    const ok = validateCountryRow(row);
+    assert.ok(ok.ok);
+    if (ok.ok) {
+      assert.equal(ok.value.code, 'NG');
+      assert.equal(ok.value.regionBand, 'B');
+      assert.equal(ok.value.enabled, true);
+    }
+    const lowered = validateCountryRow({ ...row, code: 'ng' });
+    assert.ok(lowered.ok);
+    if (lowered.ok) assert.equal(lowered.value.code, 'NG');
+    assert.deepEqual(validateCountryRow({ ...row, code: 'NGA' }), { ok: false, reason: 'country-no-code' });
+    assert.deepEqual(validateCountryRow({ ...row, currency: 'NAIRA' }), { ok: false, reason: 'country-bad-currency' });
+    assert.deepEqual(validateCountryRow({ ...row, regionBand: 'D' }), { ok: false, reason: 'country-bad-band' });
+    assert.deepEqual(validateCountryRow({ ...row, taxRule: '' }), { ok: false, reason: 'country-no-tax-rule' });
+    assert.deepEqual(validateCountryRow({ ...row, taxCheckedAt: -1 }), { ok: false, reason: 'country-bad-tax-date' });
+    assert.deepEqual(validateCountryRow({ ...row, paymentMethods: [] }), { ok: false, reason: 'country-bad-payment-methods' });
+    assert.deepEqual(validateCountryRow({ ...row, minimumPayoutMinor: -5 }), { ok: false, reason: 'country-bad-min-payout' });
+  });
+
+  it('looks up countries and prices by region band (ALG-43)', () => {
+    assert.deepEqual(REGION_BAND_MULTIPLIERS, { A: 1, B: 0.7, C: 0.45 });
+    assert.equal(bandPriceMinor(1000, 'B').ok && (bandPriceMinor(1000, 'B') as { value: number }).value, 700);
+    assert.deepEqual(bandPriceMinor(1000, 'A'), { ok: true, value: 1000 });
+    assert.deepEqual(bandPriceMinor(1005, 'C'), { ok: true, value: Math.round(452.25) });
+    assert.deepEqual(bandPriceMinor(0, 'A'), { ok: false, reason: 'country-bad-base-price' });
+    const valid = validateCountryRow(row);
+    assert.ok(valid.ok);
+    if (valid.ok) {
+      assert.ok(lookupCountry([valid.value], 'NG').ok);
+      assert.deepEqual(lookupCountry([valid.value], 'GH'), { ok: false, reason: 'country-unknown:GH' });
+      const disabled = validateCountryRow({ ...row, code: 'GH', enabled: false });
+      assert.ok(disabled.ok);
+      if (disabled.ok) assert.deepEqual(lookupCountry([disabled.value], 'GH'), { ok: false, reason: 'country-disabled:GH' });
+    }
+  });
+});
+
+/** Hook 9 - cached access for bad networks, pure engine pinned. */
+describe('access snapshot (Hook 9)', () => {
+  it('assembles a snapshot with sorted unique passes and honest bounds', () => {
+    const ok = assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: ['music', 'painting', 'music'], now: 1000, ttlMs: 6 * 3_600_000 });
+    assert.ok(ok.ok);
+    if (ok.ok) assert.deepEqual({ plan: ok.value.plan, passes: [...ok.value.passes], issuedAt: ok.value.issuedAt, expiresAt: ok.value.expiresAt }, { plan: 'pro', passes: ['music', 'painting'], issuedAt: 1000, expiresAt: 1000 + 6 * 3_600_000 });
+    assert.deepEqual(assembleAccessSnapshot({ userId: '', plan: 'pro', passes: [], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-no-user' });
+    assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: '', passes: [], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-bad-plan' });
+    assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: [42 as unknown as string], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-bad-passes' });
+    assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: [], now: 1000, ttlMs: 0 }), { ok: false, reason: 'snapshot-bad-ttl' });
+  });
+
+  it('verifies shapes, expiry and remaining time; the server stays the boss', () => {
+    const built = assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: [], now: 1000, ttlMs: 3_600_000 });
+    assert.ok(built.ok);
+    if (built.ok) {
+      const valid = verifyAccessSnapshot(built.value, 1000 + 3_600_000 - 1);
+      assert.ok(valid.ok);
+      if (valid.ok) assert.equal(valid.value.remainingMs, 1);
+      assert.deepEqual(verifyAccessSnapshot(built.value, 1000 + 3_600_000 + 1), { ok: false, reason: 'snapshot-expired:u1' });
+    }
+    assert.deepEqual(verifyAccessSnapshot('nope', 1000), { ok: false, reason: 'snapshot-bad-shape' });
+    assert.deepEqual(verifyAccessSnapshot({ userId: '', plan: 'pro', passes: [], issuedAt: 0, expiresAt: 10 }, 5), { ok: false, reason: 'snapshot-bad-shape' });
+  });
+});
+
+/** Hook 11 - the basic admin console, pure engine pinned. */
+describe('admin console (Hook 11)', () => {
+  it('checks the allowlist and names every action refusal', () => {
+    assert.equal(isAdmin(['u_admin'], 'u_admin'), true);
+    assert.equal(isAdmin(['u_admin'], 'u_other'), false);
+    assert.equal(isAdmin([], 'u_admin'), false);
+    assert.equal(isAdmin(['u_admin'], ''), false);
+    const ok = validateAdminAction({ action: 'grant_credits', userId: 'u1', amount: 10, engine: 'music', reason: 'goodwill' });
+    assert.ok(ok.ok);
+    if (ok.ok) assert.deepEqual({ action: ok.value.action, amount: ok.value.amount, reason: ok.value.reason }, { action: 'grant_credits', amount: 10, reason: 'goodwill' });
+    assert.deepEqual(validateAdminAction({ action: 'nuke', userId: 'u1', reason: 'r' }), { ok: false, reason: 'admin-action-unknown:nuke' });
+    assert.deepEqual(validateAdminAction({ action: 'grant_credits', userId: '', reason: 'r', amount: 5 }), { ok: false, reason: 'admin-no-target' });
+    assert.deepEqual(validateAdminAction({ action: 'grant_credits', userId: 'u1', amount: 5, reason: '' }), { ok: false, reason: 'admin-reason-required' });
+    assert.deepEqual(validateAdminAction({ action: 'grant_credits', userId: 'u1', amount: 0, reason: 'r' }), { ok: false, reason: 'admin-grant-amount-invalid' });
+    assert.deepEqual(validateAdminAction({ action: 'comp_plan', userId: 'u1', plan: '', reason: 'r' }), { ok: false, reason: 'admin-comp-plan-invalid' });
+    assert.deepEqual(validateAdminAction({ action: 'pause_account', userId: 'u1', reason: 'r', pause: 'yes' as unknown as boolean }), { ok: false, reason: 'admin-pause-flag-invalid' });
+    const paused = validateAdminAction({ action: 'pause_account', userId: 'u1', reason: 'abuse', pause: true });
+    assert.ok(paused.ok);
+    if (paused.ok) assert.equal(paused.value.pause, true);
+  });
+});
+
+/** Hook 12 - coupons, trials and referrals as one model, pure engine pinned. */
+describe('promotions (Hook 12)', () => {
+  const now = 1_000_000;
+  const spec = { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: now + 500_000 };
+
+  it('names every definition refusal', () => {
+    const ok = validatePromotion(spec, now);
+    assert.ok(ok.ok);
+    if (ok.ok) assert.equal(ok.value.code, 'LAUNCH');
+    assert.deepEqual(validatePromotion({ ...spec, code: ' ' }, now), { ok: false, reason: 'promotion-no-code' });
+    assert.deepEqual(validatePromotion({ ...spec, kind: 'gift' }, now), { ok: false, reason: 'promotion-kind-unknown:gift' });
+    assert.deepEqual(validatePromotion({ ...spec, creditAmount: 0, days: 0 }, now), { ok: false, reason: 'promotion-no-benefit' });
+    assert.deepEqual(validatePromotion({ ...spec, creditAmount: 1.5 }, now), { ok: false, reason: 'promotion-bad-credits' });
+    assert.deepEqual(validatePromotion({ ...spec, days: -1 }, now), { ok: false, reason: 'promotion-bad-days' });
+    assert.deepEqual(validatePromotion({ ...spec, maxRedemptions: 0 }, now), { ok: false, reason: 'promotion-bad-limit' });
+    assert.deepEqual(validatePromotion({ ...spec, expiresAt: now }, now), { ok: false, reason: 'promotion-bad-expiry' });
+  });
+
+  it('redeems once per user and refuses expired codes and exhausted limits', () => {
+    const checked = validatePromotion(spec, now);
+    assert.ok(checked.ok);
+    if (checked.ok) {
+      const first = redeemPromotion(checked.value, [], 'u1', now);
+      assert.ok(first.ok);
+      if (first.ok) assert.equal(first.value.redemptionCount, 1);
+      assert.deepEqual(redeemPromotion(checked.value, [{ code: 'LAUNCH', userId: 'u1', at: now }], 'u1', now), { ok: false, reason: 'promotion-already-redeemed:LAUNCH' });
+      assert.deepEqual(redeemPromotion(checked.value, [], 'u1', now + 600_000), { ok: false, reason: 'promotion-expired:LAUNCH' });
+      const both = [{ code: 'LAUNCH', userId: 'u1', at: now }, { code: 'LAUNCH', userId: 'u2', at: now }];
+      assert.deepEqual(redeemPromotion(checked.value, both, 'u3', now), { ok: false, reason: 'promotion-limit-reached:LAUNCH' });
+    }
+  });
+});
+
+/** Hook 14 - rate limits at the gateway, pure engine pinned. */
+describe('rate limits (Hook 14)', () => {
+  it('validates rules and walks a fixed window honestly', () => {
+    assert.deepEqual(validateRateLimitRule({ limit: 0, windowMs: 1000 }), { ok: false, reason: 'rate-limit-rule-invalid:limit' });
+    assert.deepEqual(validateRateLimitRule({ limit: 5, windowMs: 100 }), { ok: false, reason: 'rate-limit-rule-invalid:windowMs' });
+    const rule = { limit: 2, windowMs: 60_000 };
+    const first = consumeRateLimit(null, rule, 1000);
+    assert.deepEqual(first, { ok: true, value: { count: 1, resetAt: 61_000 } });
+    const second = consumeRateLimit(first.ok ? first.value : null, rule, 2000);
+    assert.deepEqual(second, { ok: true, value: { count: 2, resetAt: 61_000 } });
+    const third = consumeRateLimit(second.ok ? second.value : null, rule, 3000);
+    assert.ok(!third.ok);
+    if (!third.ok) {
+      assert.equal(third.reason, 'rate-limited');
+      assert.equal(third.retryAfterMs, 61_000 - 3000);
+    }
+    const afterWindow = consumeRateLimit({ count: 2, resetAt: 5000 }, rule, 5000);
+    assert.deepEqual(afterWindow, { ok: true, value: { count: 1, resetAt: 65_000 } });
+    assert.deepEqual(consumeRateLimit(null, rule, -1), { ok: false, reason: 'rate-limit-bad-now', retryAfterMs: 0 });
+  });
+});
+
+/** Hook 16 - export and delete my data, pure engine pinned. */
+describe('account data (Hook 16)', () => {
+  it('builds an honest export bundle and names the retention policy', () => {
+    const retention = accountRetention();
+    assert.deepEqual(retention.keep, ['invoices']);
+    assert.ok(retention.erase.includes('credit_ledger'));
+    assert.ok(retention.verify.includes('nigeria_ndpr'));
+    const bundle = buildAccountExport({ userId: 'u1', plan: 'pro', passes: ['music'], items: [{ itemId: 'i1' }], ledger: [{ entryId: 'e1' }], now: 5000 });
+    assert.ok(bundle.ok);
+    if (bundle.ok) {
+      assert.deepEqual({ userId: bundle.value.userId, exportedAt: bundle.value.exportedAt, plan: bundle.value.plan, passes: [...bundle.value.passes], items: bundle.value.subscriptionItems.length, ledger: bundle.value.creditLedger.length }, { userId: 'u1', exportedAt: 5000, plan: 'pro', passes: ['music'], items: 1, ledger: 1 });
+      assert.deepEqual(bundle.value.retention, retention);
+    }
+    assert.deepEqual(buildAccountExport({ userId: '', plan: 'pro', passes: [], items: [], ledger: [], now: 1 }), { ok: false, reason: 'export-no-user' });
+  });
+
+  it('refuses an unconfirmed deletion request by name', () => {
+    assert.deepEqual(validateDeletionRequest({ userId: 'u1', confirm: false }), { ok: false, reason: 'account-delete-unconfirmed' });
+    assert.deepEqual(validateDeletionRequest({ userId: '', confirm: true }), { ok: false, reason: 'export-no-user' });
+    assert.deepEqual(validateDeletionRequest({ userId: 'u1', confirm: true }), { ok: true, value: { userId: 'u1' } });
   });
 });

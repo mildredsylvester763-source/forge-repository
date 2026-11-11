@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
-import { signPaymentPayload, type PlanId } from '../src/modules/plans/index.ts';
+import { InMemoryBillingStore, InMemoryPlanStore, PlansService, signPaymentPayload, type PlanId } from '../src/modules/plans/index.ts';
+import { systemClock } from '../src/kernel/clock.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
@@ -294,6 +295,199 @@ describe('plans (PLAN GATE LAW)', () => {
       const changed = events.find((e) => e.type === 'plans.plan.changed' && e.subject.id === user.id);
       assert.ok(changed);
       assert.equal((changed.payload as Record<string, unknown>).plan, 'enterprise');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** Batch B hooks (9, 11, 12, 14, 16) — end to end through the routes and the service. */
+describe('plan hooks batch B (country table, snapshots, admin console, promotions, rate limits, account data)', () => {
+  it('serves the country table and refuses unknown or disabled rows (Hook 8)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-countries@forge.test');
+      const list = await h.get('/v1/plans/countries', { cookie: user.cookie });
+      assert.equal(list.status, 200);
+      assert.deepEqual(((await list.json()) as { countries: unknown[] }).countries, []);
+      const unknown = await h.post('/v1/plans/countries/get', { code: 'NG' }, { cookie: user.cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'country-unknown:NG');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('builds and verifies a signed access snapshot and refuses tampering (Hook 9)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-snapshot@forge.test');
+      const built = await h.post('/v1/plans/access-snapshot', {}, { cookie: user.cookie });
+      assert.equal(built.status, 200);
+      const body = (await built.json()) as { snapshot: { userId: string; plan: string; expiresAt: number }; signature: string };
+      assert.equal(body.snapshot.plan, 'free');
+      assert.ok(body.signature.length > 0);
+      const verified = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: user.cookie });
+      assert.equal(verified.status, 200);
+      const verifiedBody = (await verified.json()) as { valid: boolean; remainingMs: number };
+      assert.equal(verifiedBody.valid, true);
+      assert.ok(verifiedBody.remainingMs > 0);
+      const tampered = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: 'deadbeef' }, { cookie: user.cookie });
+      assert.equal(tampered.status, 400);
+      assert.equal(await errorCode(tampered), 'snapshot-signature-invalid');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('refuses admin actions while the allowlist is empty and serves them to the named admin (Hook 11)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-admin@forge.test');
+      const denied = await h.post('/v1/admin/credits/grant', { userId: user.id, amount: 10, reason: 'test' }, { cookie: user.cookie });
+      assert.equal(denied.status, 403);
+      assert.equal(await errorCode(denied), 'admin_forbidden');
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      await svc.adminGrantCredits('u_admin', { userId: user.id, amount: 10, reason: 'goodwill' });
+      const entry = await svc.adminGrantCredits('u_admin', { userId: user.id, engine: 'music', amount: 5, reason: 'promo support' });
+      assert.equal(entry.amount, 5);
+      const ledger = await svc.adminLedger('u_admin', { userId: user.id, reason: 'audit' });
+      assert.equal(ledger.ledger.length, 2);
+      assert.ok(ledger.balances.general >= 10);
+      const comped = await svc.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'comp' });
+      assert.equal(comped.plan, 'pro');
+      await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'abuse', pause: true });
+      await assert.rejects(
+        () => svc.canUse(user.id, 'CO-001'),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'account_paused' || /paused/.test(err.message)),
+      );
+      await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'resolved', pause: false });
+      const resumed = await svc.canUse(user.id, 'CO-001');
+      assert.equal(resumed.allowed, true);
+      for (const bad of [
+        ['u_admin', { userId: user.id, amount: 0, reason: 'r' }, 'admin-grant-amount-invalid'],
+        ['u_admin', { userId: user.id, amount: 5 }, 'admin-reason-required'],
+        ['u_other', { userId: user.id, amount: 5, reason: 'r' }, 'admin_forbidden'],
+      ] as const) {
+        await assert.rejects(
+          () => svc.adminGrantCredits(bad[0], bad[1]),
+          (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === bad[2] || String(err).includes(bad[2])),
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('defines, redeems and refuses promotions (Hook 12)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-promo@forge.test');
+      const denied = await h.post('/v1/promotions/define', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 }, { cookie: user.cookie });
+      assert.equal(denied.status, 403);
+      assert.equal(await errorCode(denied), 'admin_forbidden');
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      await svc.definePromotion('u_admin', { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 });
+      await assert.rejects(
+        () => svc.definePromotion('u_admin', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-duplicate:LAUNCH' || String(err).includes('promotion-duplicate:LAUNCH')),
+      );
+      await assert.rejects(
+        () => svc.redeemPromotion(user.id, { code: 'MISSING' }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-not-found:MISSING' || String(err).includes('promotion-not-found:MISSING')),
+      );
+      const redeemed = await svc.redeemPromotion(user.id, { code: 'launch' });
+      assert.deepEqual({ code: redeemed.code, creditAmount: redeemed.creditAmount, redemptionCount: redeemed.redemptionCount }, { code: 'LAUNCH', creditAmount: 25, redemptionCount: 1 });
+      const balances = await svc.creditBalances(user.id);
+      assert.equal(balances.general, 25);
+      await assert.rejects(
+        () => svc.redeemPromotion(user.id, { code: 'launch' }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-already-redeemed:LAUNCH' || String(err).includes('promotion-already-redeemed:LAUNCH')),
+      );
+      const status = await svc.promotionStatus({ code: 'launch' });
+      assert.equal(status.redemptions, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces the per-user gateway rate limit only when it is configured (Hook 14)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-rate@forge.test');
+      const unlimited = await h.post('/v1/web-search/domain-rules/get', { workspace: 'w' }, { cookie: user.cookie });
+      assert.notEqual(unlimited.status, 429);
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: [],
+        countryCatalog: [],
+        rateLimits: { user: { limit: 2, windowMs: 60_000 }, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      assert.deepEqual(await svc.enforceUserRateLimit('u_dev'), { ok: true });
+      assert.deepEqual(await svc.enforceUserRateLimit('u_dev'), { ok: true });
+      const refused = await svc.enforceUserRateLimit('u_dev');
+      assert.ok(!refused.ok);
+      if (!refused.ok) assert.ok(refused.retryAfterMs > 0 && refused.retryAfterMs <= 60_000);
+      assert.deepEqual(await svc.enforceUserRateLimit('u_other'), { ok: true });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('exports the signed-in user\'s data and queues a confirmed deletion (Hook 16)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-data@forge.test');
+      const unconfirmed = await h.post('/v1/account/delete', {}, { cookie: user.cookie });
+      assert.equal(unconfirmed.status, 400);
+      assert.equal(await errorCode(unconfirmed), 'account-delete-unconfirmed');
+      const exported = await h.post('/v1/account/export', {}, { cookie: user.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = (await exported.json()) as { userId: string; plan: string; retention: { keep: string[]; erase: string[]; verify: string[] } };
+      assert.equal(bundle.userId, user.id);
+      assert.equal(bundle.plan, 'free');
+      assert.deepEqual(bundle.retention.keep, ['invoices']);
+      const deleted = await h.post('/v1/account/delete', { confirm: true }, { cookie: user.cookie });
+      assert.equal(deleted.status, 200);
+      const deletedBody = (await deleted.json()) as { queued: boolean };
+      assert.equal(deletedBody.queued, true);
+      const paused = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
+      assert.equal(paused.status, 403);
+      assert.equal(await errorCode(paused), 'account_paused');
     } finally {
       await h.close();
     }

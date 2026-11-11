@@ -363,6 +363,11 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     },
     monthlyCredits: config.plans.monthlyCredits,
     passCatalog: config.plans.passCatalog,
+    adminUsers: config.plans.adminUsers,
+    countryCatalog: config.plans.countryCatalog,
+    rateLimits: config.plans.rateLimits,
+    accessSnapshotTtlHours: config.plans.accessSnapshotTtlHours,
+    accessSecret: config.plans.accessSecret,
   });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
 
