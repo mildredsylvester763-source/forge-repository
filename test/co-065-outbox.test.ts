@@ -201,8 +201,10 @@ describe('CO-065 PostgreSQL transactional outbox (real PostgreSQL in CI)', () =>
         store: outbox,
         load: async (seq) => (await events.readFrom(seq, 1))[0] ?? null,
         deliver: () => {
-          failures -= 1;
-          throw new Error('pg subscriber down');
+          if (failures > 0) {
+            failures -= 1;
+            throw new Error('pg subscriber down');
+          }
         },
         clock,
         logger: silentLogger,
