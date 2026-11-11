@@ -1675,3 +1675,27 @@ typecheck pass, npm test pass, zero failing-test annotations.
 - `docs/BUILD_NOTES.md` (commit `d640031143ee278d001ec59ae20200c434c46907`) summarizes `CO-001–CO-080` and `CO-096` as implemented.
 - The detailed feature-by-feature evidence in this `docs/PROGRESS.md` still records partial, not-started or owner-blocked classifications across several of those ranges. The build-notes summary does not supply the per-feature source/test/migration evidence needed to promote each item.
 - Until the owner reconciles these two statements, preserve the detailed evidence-backed classifications and do not bulk-promote features based only on the summary.
+
+
+## Plan hooks retrofit — batch A (mistral lane, 10–11 Nov 2026)
+
+Batch A of the plan hooks retrofit is implemented and CI green at commit 548dc32 (run #931, 11 Nov 2026). Source of truth for the spec: Sylvester's Drive docs "Forge Feature — Plan Hooks (build notes)", "Forge Feature — Catalog Part 01/02 With Plans" and "Forge Feature — Engine Row Map" (read together with any feature work from 11 Nov 2026 on).
+
+### Engine law (owner-confirmed, amended 11 Nov 2026)
+- TEN engines with display names: painting, manhwa, music, voice, audio, video, film, 3d, games, writing (ENGINES + ENGINE_NAMES in src/modules/plans/engine/plan-engine.ts). Engine names are pinned law; new engines come only from the Engine Row Map.
+- Engines are NOT joined to base plans. Engine rows are NEVER locked: checkEntitlement always allows an engine row; the decision carries level free/paid. Unpaid engines run at free level: 40 credits per 5-hour window, 600-credit monthly ceiling (FORGE_FREE_WINDOW_CREDITS/HOURS/MONTHLY_CEILING).
+- Only implemented engine-tagged catalog row: TQ-027 → manhwa, 3d, music (verified against the Engine Row Map). AI-116..AI-120 and TQ-092 are engine rows in the catalog but their features are not built, so they carry no engine tags yet.
+
+### Built in batch A
+- Engine layer (pure engines + oracle tests, CI green at 5b78e3d and law fixup 9221363c): subscription-engine (Hook 1), access-engine (Hooks 2/2b, decision shape allowed/feature/gate/plan/passes/engine/level/limits/reason), ledger-engine (Hook 3, sourceEntryId netting so spent credits leave the pool), payment-provider (HMAC verify/sign).
+- Wiring (commit d773e028 + fixups 17b4711, 548dc32, CI green #931): migrations v2 subscription_items, v3 payment_events, v4 credit_ledger (SQLite STRICT + PostgreSQL; v1 untouched); Sqlite/Postgres/InMemory billing stores; PlansService rewrite (canUse the only access reader, processPaymentEvent idempotent by event id, grantCredits/spendCredits/creditBalances, getEntitlementState merging the subscription list with the legacy plan column, setPlan validates engine passes); gate middleware asks canUse on every gated route (feature_off → 503, plan_required → 402 with the same details shape); routes /v1/plans/me, /v1/plans/check → {decision}, NEW /v1/credits/me, NEW POST /v1/payments/event (HMAC webhook, no session); config.ts env vars (gates, switches, bundle plans, free limits, monthly credits 3000/7500/18000/11800, pass catalog JSON, webhook secret required in production, insecure dev default with warning); app.ts wiring per storage branch, CO-100 offline-sync wiring preserved.
+- Tests: test/plans-engines.test.ts (pure engines), test/plans.test.ts (route + decision shapes, webhook exactly-once with tagged credits 7500 general for pro, replay duplicate, ledger grant/spend/balances with mixed engine+general pools and insufficient_credits rejection), test/config.test.ts (production now requires FORGE_PAYMENT_WEBHOOK_SECRET).
+
+### Honest limits of this batch
+- Hooks 8, 9, 11, 12, 14 and 16 are NOT built (batch B).
+- PostgresBillingStore has NO main-CI coverage; like every other PostgreSQL adapter here it is exercised only against the SQL stand-in in focused workflows.
+- The pass catalog, prices and all-round engine bundle plans are EMPTY by design until the owner sets them. Nothing was invented.
+- The monthly credit numbers (3000/7500/18000/11800) come from the Numbers Plan of 2 Nov 2026 and are config-overridable.
+
+### Registry-vs-evidence note
+A lane summary or build-note bullet is not acceptance evidence. Promotion of any catalog row is based only on the per-feature source/test/migration evidence in this file. Where BUILD_NOTES.md and this file disagree, this file's evidence-backed classification stands and the gap is surfaced to the owner.
