@@ -338,7 +338,7 @@ export class PlansService {
       action: 'pause_account',
       userId: typeof dto.userId === 'string' ? dto.userId : '',
       reason: typeof dto.reason === 'string' ? dto.reason : '',
-      pause: dto.pause === undefined ? true : dto.pause,
+      pause: typeof dto.pause === 'boolean' ? dto.pause : true,
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
     if (action.value.pause) this.pausedAccounts.add(action.value.userId);
@@ -438,7 +438,7 @@ export class PlansService {
     const state = await this.getEntitlementState(userId);
     const items = await this.billing.listItems(userId);
     const ledger = await this.billing.listLedger(userId);
-    const bundle = buildAccountExport({ userId, plan: state.plan, passes: state.passes, items: items as readonly Record<string, unknown>[], ledger: ledger as readonly Record<string, unknown>[], now: this.clock() });
+    const bundle = buildAccountExport({ userId, plan: state.plan, passes: state.passes, items: items as unknown as readonly Record<string, unknown>[], ledger: ledger as unknown as readonly Record<string, unknown>[], now: this.clock() });
     if (!bundle.ok) throw new AppError(400, bundle.reason, 'The export is invalid.', { details: { reason: bundle.reason } });
     return bundle.value as unknown as Record<string, unknown>;
   }
