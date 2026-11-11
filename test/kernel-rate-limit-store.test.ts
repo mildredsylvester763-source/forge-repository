@@ -29,11 +29,11 @@ describe('CO-093 shared rate limiter (in-memory adapter)', () => {
     assert.deepEqual(await store.consume('user:u1', 2, 60_000, 1_020_000), { allowed: true, retryAfterMs: 0 });
     // other keys keep their own budget
     assert.deepEqual(await store.consume('user:u2', 2, 60_000, 1_010_000), { allowed: true, retryAfterMs: 0 });
-    assert.throws(() => store.consume('', 2, 60_000, 1), TypeError);
-    assert.throws(() => store.consume('x'.repeat(257), 2, 60_000, 1), TypeError);
-    assert.throws(() => store.consume('k', 0, 60_000, 1), RangeError);
-    assert.throws(() => store.consume('k', 1, 0, 1), RangeError);
-    assert.throws(() => store.consume('k', 1, 60_000, -1), TypeError);
+    await assert.rejects(store.consume('', 2, 60_000, 1), TypeError);
+    await assert.rejects(store.consume('x'.repeat(257), 2, 60_000, 1), TypeError);
+    await assert.rejects(store.consume('k', 0, 60_000, 1), RangeError);
+    await assert.rejects(store.consume('k', 1, 0, 1), RangeError);
+    await assert.rejects(store.consume('k', 1, 60_000, -1), TypeError);
   });
 });
 
@@ -48,7 +48,7 @@ describe('CO-093 shared rate limiter (SQLite adapter)', () => {
       const reopened = new SqliteRateLimitStore(db);
       assert.deepEqual(await reopened.consume('device:d1', 1, 60_000, 1_000_000), { allowed: false, retryAfterMs: 20_000 });
       assert.deepEqual(await store.consume('device:d1', 1, 60_000, 1_020_000), { allowed: true, retryAfterMs: 0 });
-      assert.throws(() => store.consume('k', 1, 60_000, 0.5), TypeError);
+      await assert.rejects(store.consume('k', 1, 60_000, 0.5), TypeError);
     } finally {
       db.close();
     }

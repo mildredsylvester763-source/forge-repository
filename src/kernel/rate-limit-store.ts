@@ -29,7 +29,8 @@ export interface SharedRateLimiter {
 const CONSUME_SQL = `
   INSERT INTO kernel_rate_limit_buckets (bucket_key, window_start, count) VALUES ($1, $2, 1)
   ON CONFLICT (bucket_key) DO UPDATE SET
-    count = CASE WHEN window_start = EXCLUDED.window_start THEN count + 1 ELSE 1 END,
+    count = CASE WHEN kernel_rate_limit_buckets.window_start = EXCLUDED.window_start
+                 THEN kernel_rate_limit_buckets.count + 1 ELSE 1 END,
     window_start = EXCLUDED.window_start
   RETURNING count
 `;
