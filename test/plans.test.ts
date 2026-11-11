@@ -183,7 +183,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const emptyBody = (await empty.json()) as { balances: { general: number; engines: unknown[] } };
       assert.equal(emptyBody.balances.general, 0);
       assert.deepEqual(emptyBody.balances.engines, []);
-      const now = Date.now();
+      const now = h.clock.now;
       const payload = {
         eventId: 'evt_plans_1',
         userId: user.id,
