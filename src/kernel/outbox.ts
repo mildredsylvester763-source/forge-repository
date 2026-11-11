@@ -124,10 +124,11 @@ export class InMemoryIdempotencyGuard implements IdempotencyGuard {
   }
 }
 
+/** Mutable tally used as an in-place accumulator while scanning rows. */
 export interface OutboxCounts {
-  readonly pending: number;
-  readonly delivered: number;
-  readonly deadLettered: number;
+  pending: number;
+  delivered: number;
+  deadLettered: number;
 }
 
 /** The durable queue the dispatcher drains. Implementations are In-memory, SQLite and PostgreSQL. */
@@ -263,7 +264,6 @@ export class InMemoryOutboxStore implements OutboxStore {
 
 /** Durable single-process queue: the SQLite driver is synchronous, so enqueue cannot interleave. */
 export class SqliteOutboxStore implements OutboxStore {
-  private readonly db: Database;
   private readonly enqueueStatement;
   private readonly dueStatement;
   private readonly deadStatement;
@@ -275,7 +275,6 @@ export class SqliteOutboxStore implements OutboxStore {
   private readonly replayAllStatement;
 
   constructor(db: Database) {
-    this.db = db;
     this.enqueueStatement = db.prepare(
       `INSERT INTO kernel_outbox (${OUTBOX_COLUMNS}) VALUES (?, ?, 'pending', 0, ?, NULL, NULL, ?)`,
     );
