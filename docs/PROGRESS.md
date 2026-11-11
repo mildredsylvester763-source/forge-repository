@@ -1775,3 +1775,22 @@ Implemented and CI green first try at commit 86fd849e71a18953a73873fb43c4987cbe3
 
 Every partially implemented row from the old build notes was re-verified live against FEATURE_GATES and ROUTE_GATES. Findings: CO-030 (free), CO-063 (internal), CO-064 (internal), CO-065 (internal), CO-076 (enterprise) and CO-096 (free) are registered but carry zero gated routes (kernel/infra code has no ROUTE_GATES entry by design; their outstanding proofs are owner-dependent and now listed item by item in docs/CO_APPROVAL_NEEDED.md). CO-091 (health and readiness) and CO-093 (rate limiting) are coded on the claude lane and are NOT registered in FEATURE_GATES — they are the top in-repo completion candidates for the next non-AI batch. Nothing was faked; nothing was silently promoted.
 
+
+## CO-091 + CO-093 — partials batch C1 (mistral lane, 11 Nov 2026)
+
+The audit's top in-repo completion candidates, both finished in one batch. CI green at commit 60297445e2494ba3f57bf3db90f3f8a43b08fede (CI #947, 29s) and the CO focused verification workflow green at the same commit (#410, real PostgreSQL 16 service).
+
+### CO-091 — health and readiness (internal)
+- The kernel health routes (/healthz, /readyz, wired in app.ts) were already exercised by test/co-091-readiness.test.ts in the CO focused workflow; this batch registers the row: FEATURE_GATES CO-091 = internal (210 features now: 88 free, 59 internal, 26 pro, 16 enterprise, 10 team, 10 plus, 1 engine), with spot pins in test/plans-engines.test.ts.
+
+### CO-093 — shared-store rate limiting (internal)
+- New pure kernel module src/kernel/rate-limit-store.ts: the SharedRateLimiter interface, the pure consumeSharedRateLimit decision (aligned windows, windowStart = floor(now/windowMs)*windowMs; a refused attempt still counts; retryAfterMs clamped at zero), and three adapters — InMemoryRateLimitStore (deterministic, tests and local), SqliteRateLimitStore (single atomic upsert), PostgresRateLimitStore (the same ONE upsert, so concurrent consumers on any number of replicas share one exact budget per key).
+- One upsert statement runs unchanged on both engines; PostgreSQL requires qualified column references in DO UPDATE, so the statement qualifies them and SQLite accepts the same form.
+- Kernel migration v3 (rate_limit_buckets) appended to both src/kernel/migrations.ts and src/kernel/postgres-migrations.ts; the offline-sync migration pin honestly includes kernel v3 now ([1,2,3]).
+- PlansService gains the optional rateLimitStore dependency (CO-093 wiring): the gateway's user/device limits drain the shared store when one is wired, and stay in-process otherwise. app.ts wires one per storage (Postgres/SQLite/In-memory).
+- FEATURE_GATES CO-093 = internal, registered the same batch, pins updated.
+- Tests: test/kernel-rate-limit-store.test.ts (pure decision, in-memory, sqlite persistence, PlansService with and without the store) and test/co-093-shared-rate-limit.test.ts (native PostgreSQL: 10 concurrent consumers share one exact budget of 3; aligned rollover; key isolation; also runs against the SQLite stand-in in main CI). Added to the CO focused workflow's paths and run list.
+
+### Honest limits
+- The shared store counts in the kernel_rate_limit_buckets table; production multi-replica honesty depends on pointing every replica at the same PostgreSQL. Gateway rules themselves stay empty until FORGE_RATE_LIMITS is set (unchanged Hook 14 law).
+- Remaining partials (next batches): C2 = CO-030 + CO-063 (audit wiring, acceptance records), C3 = CO-064 + CO-065 (CO-064 acceptance record, CO-065 durable outbox delivery), C4 = CO-076 + CO-096 (anchor/backup adapters and verification report).

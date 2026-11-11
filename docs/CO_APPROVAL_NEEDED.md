@@ -2,7 +2,7 @@
 
 **This is not an engineering approval queue.** Internal FORGE architecture, schemas, migrations, APIs, algorithms, security controls, tests, retry policies, recovery procedures, and provider-neutral adapters are to be designed and implemented in the repository without waiting for owner approval.
 
-Last reviewed: 2026-11-07
+Last reviewed: 2026-11-11
 Repository: mildredsylvester763-source/forge-repository
 Implementation branch: mistral
 
@@ -102,16 +102,15 @@ The CO-097–CO-100 branch evidence and current verification boundary are record
 - **CO-100 With-Plans gate:** `CO-100` has no entry in `src/modules/plans/engine/feature-gates.ts`, and the new `/v1/sync/*` paths have no entries in `src/modules/plans/engine/route-gates.ts`. The current gate middleware intentionally leaves routes without a catalog entry ungated. Supply the exact With-Plans catalog row and gate before a paid-plan restriction is assigned. Do not infer or invent a tier. Session authentication remains enforced independently.
 - **CO status source conflict:** `docs/BUILD_NOTES.md` states CO-001–CO-080 and CO-096 are implemented, while the detailed evidence in `docs/PROGRESS.md` records partial/not-started/owner-blocked states for some of the same ranges. Owner reconciliation is needed to decide which status statement is authoritative. Until then, retain per-feature evidence classifications and do not bulk-promote.
 
-## Partially implemented features — owner items (audit of 11 Nov 2026, mistral head 86fd849)
+## Partially implemented features — owner items (audit of 11 Nov 2026, updated after batch C1 at mistral head 6029744)
 
 Verified live against FEATURE_GATES and ROUTE_GATES on the mistral lane. Every partially implemented row from the old build notes, with what is still outstanding and who must bring it:
 
-- CO-030 (server-side session check) — registered free, zero gated routes. Needs a follow-up audit batch to verify where its code lives (kernel middleware has no ROUTE_GATES entry by design; confirm the check exists and is wired).
-- CO-063 (official catalog acceptance) — registered internal. Acceptance by the owner against the With-Plans catalog remains unverified.
-- CO-064 (append-only/hash-chain PostgreSQL proof) — registered internal. Native PostgreSQL proof outstanding: the owner must provide FORGE_TEST_POSTGRES_URL as a CI secret plus a reachable Postgres instance.
-- CO-065 (durable subscriber delivery) — registered internal. The durable delivery contract needs the owner to choose the delivery infrastructure (queue provider or in-house), then a build batch.
-- CO-076 (independent external anchor) — registered enterprise. The external anchor service must be deployed by the owner; nothing can be faked in-repo.
-- CO-091 (health and readiness) — coded on the claude lane, NOT registered in FEATURE_GATES. Completing it (readiness checks + registration + gate) is an in-repo batch candidate.
-- CO-093 (rate limiting) — coded on the claude lane, NOT registered in FEATURE_GATES. The mistral lane already ships gateway rate limits (Hook 14, disabled until FORGE_RATE_LIMITS is set); the row still needs its own scope decision by the owner plus registration.
-- CO-096 (verified backups) — registered free, SQLite only. Nightly backup to Cloudflare R2 needs the owner to bring R2 credentials and a bucket (already an approved next step).
-
+- CO-030 (server-side session check) — registered free, zero gated routes. Needs the C2 audit batch: verify where its code lives (kernel middleware has no ROUTE_GATES entry by design; confirm the check exists and is wired) and record the acceptance evidence.
+- CO-063 (official catalog acceptance) — registered internal. Acceptance by the owner against the With-Plans catalog remains unverified; the C2 batch records the in-repo evidence, the acceptance call stays with the owner.
+- CO-064 (append-only/hash-chain proof) — registered internal. The native PostgreSQL proof now runs in CI on the disposable PostgreSQL service (no owner secret needed for CI); what remains is the acceptance record in the C3 batch, plus the production database at deployment (already in the handover list above).
+- CO-065 (durable subscriber delivery) — registered internal. The transactional outbox is the approved engineering default (see above); the in-repo build is the C3 batch. Only a production queue provider choice at deployment touches the owner.
+- CO-076 (independent external anchor) — registered enterprise. The anchor interface and R2 adapter are the C4 build batch (engineering); the deployed external anchor needs the owner's Cloudflare account and R2 credentials (listed above).
+- CO-091 (health and readiness) — COMPLETE as of batch C1 (11 Nov 2026, mistral head 6029744): registered internal in FEATURE_GATES, readiness tests run in the CO focused workflow. No owner item remains.
+- CO-093 (rate limiting) — COMPLETE as of batch C1 (11 Nov 2026, mistral head 6029744): registered internal, shared-store limiter (atomic upsert, In-memory/SQLite/PostgreSQL adapters, kernel migration v3, PlansService wiring) with native PostgreSQL concurrency proof. Production enforcement still needs the owner to set FORGE_RATE_LIMITS (configuration, not a credential); multi-replica honesty needs every replica pointed at the same PostgreSQL.
+- CO-096 (verified backups) — registered free. The off-site upload manifest and R2 backup adapter are the C4 build batch (engineering); the nightly backup to Cloudflare R2 needs the owner to bring R2 credentials and a bucket (already an approved next step, listed above).
