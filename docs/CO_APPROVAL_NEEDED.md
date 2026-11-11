@@ -106,8 +106,8 @@ The CO-097–CO-100 branch evidence and current verification boundary are record
 
 Verified live against FEATURE_GATES and ROUTE_GATES on the mistral lane. Every partially implemented row from the old build notes, with what is still outstanding and who must bring it:
 
-- CO-030 (server-side session check) — registered free, zero gated routes. Needs the C2 audit batch: verify where its code lives (kernel middleware has no ROUTE_GATES entry by design; confirm the check exists and is wired) and record the acceptance evidence.
-- CO-063 (official catalog acceptance) — registered internal. Acceptance by the owner against the With-Plans catalog remains unverified; the C2 batch records the in-repo evidence, the acceptance call stays with the owner.
+- CO-030 (server-side enforcement) — C2 batch CLOSED (11 Nov 2026): the wiring was verified and the acceptance evidence recorded in docs/PROGRESS.md; enforcement is pinned by co-030-route-auth + authorization tests in CI. No owner item remains beyond formal catalog acceptance.
+- CO-063 (official event envelope) — C2 batch CLOSED (11 Nov 2026): the envelope contract is implemented and CI-pinned (co-063-canonical-payload); the acceptance call against the owner catalog wording stays with the owner.
 - CO-064 (append-only/hash-chain proof) — registered internal. The native PostgreSQL proof now runs in CI on the disposable PostgreSQL service (no owner secret needed for CI); what remains is the acceptance record in the C3 batch, plus the production database at deployment (already in the handover list above).
 - CO-065 (durable subscriber delivery) — registered internal. The transactional outbox is the approved engineering default (see above); the in-repo build is the C3 batch. Only a production queue provider choice at deployment touches the owner.
 - CO-076 (independent external anchor) — registered enterprise. The anchor interface and R2 adapter are the C4 build batch (engineering); the deployed external anchor needs the owner's Cloudflare account and R2 credentials (listed above).

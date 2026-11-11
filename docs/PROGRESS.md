@@ -1794,3 +1794,19 @@ The audit's top in-repo completion candidates, both finished in one batch. CI gr
 ### Honest limits
 - The shared store counts in the kernel_rate_limit_buckets table; production multi-replica honesty depends on pointing every replica at the same PostgreSQL. Gateway rules themselves stay empty until FORGE_RATE_LIMITS is set (unchanged Hook 14 law).
 - Remaining partials (next batches): C2 = CO-030 + CO-063 (audit wiring, acceptance records), C3 = CO-064 + CO-065 (CO-064 acceptance record, CO-065 durable outbox delivery), C4 = CO-076 + CO-096 (anchor/backup adapters and verification report).
+## CO-030 + CO-063 — partials batch C2: acceptance records (mistral lane, 11 Nov 2026)
+
+No new code: both rows were already registered and already enforced by tests that run in CI on every push. This batch verifies the wiring live and records the acceptance evidence. CI green at commit 7b4b49fb09f404e212fb18ef1717b3f935b8e959 (CI #948) before this record; the verification below reads that head.
+
+### CO-030 — server-side enforcement (free)
+- Where its code lives: the plan-gate middleware (src/modules/plans, applyRouteGates in app.ts) enforces every gated route server-side — an anonymous caller answers 401, a caller under the feature's gate answers 402 plan_required with feature + gate + reason, and a switched-off feature answers 503 feature_off. Session checks are kernel middleware with no ROUTE_GATES entry BY DESIGN (infra routes are authenticated, not plan-gated).
+- Proof already in CI: test/co-030-route-auth.test.ts (route auth boundary) and test/authorization.test.ts (deny-by-default authorization) both run in the CO focused verification workflow with a real PostgreSQL service on every mistral push; test/plans.test.ts pins the 401/402/503 ladder in main CI.
+- Conclusion: the check exists, is wired, and is enforced on every push. The audit's "confirm the wiring" item is closed. What remains with the owner: nothing for this row's engineering; formal acceptance against the With-Plans catalog row (gate free) is recorded here.
+
+### CO-063 — official event envelope / catalog acceptance (internal)
+- Where its code lives: the kernel event envelope (id, type, version, occurredAt, actor, subject, payload, correlation/causation ids, hash chain) in src/kernel/events.ts, with the canonical payload contract pinned by test/co-063-canonical-payload.test.ts, which runs in the CO focused verification workflow on every mistral push.
+- Conclusion: the envelope contract is implemented, hash-chained (CO-064) and CI-pinned. The acceptance call against the owner's With-Plans catalog wording remains with the owner; no in-repo engineering is outstanding for the envelope itself.
+
+### Honest limits
+- Zero gated routes for both rows is by design: CO-030's enforcement lives in middleware every route already passes through, and CO-063 is internal forge machinery (never sold, never gated).
+- Remaining partials: C3 = CO-064 (acceptance record — native PG proof already runs in CI) + CO-065 (durable outbox delivery, real build), C4 = CO-076 + CO-096.

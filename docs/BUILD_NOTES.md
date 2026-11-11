@@ -2,7 +2,7 @@
 
 One place where every lane records what it has ALREADY built as code, so no lane rebuilds another lane's work. Sylvester's Drive doc "Forge Feature — Plan Hooks (build notes)" is the human spec; this file is the in-repo mirror every agent can read and write. Update it in the same batch as any feature work.
 
-## mistral lane (Vibe) — 11 Nov 2026, head 6029744, CI green at 6029744
+## mistral lane (Vibe) — 11 Nov 2026, head 7b4b49f, CI green at 7b4b49f (C1 code at 6029744)
 
 ### 1. Plans gate framework — BUILT AND LIVE
 
