@@ -139,7 +139,7 @@ test('dry-run candidates are gated the same way, and free rows never block', asy
     // The plans routes answer for the same session.
     const me = routes['/v1/plans/me']?.GET;
     assert.ok(me);
-    const meResult = await me({ ...context({}), method: 'GET' } as RequestContext);
+    const meResult = await me({ ...context({}, 'valid-session'), method: 'GET' } as RequestContext);
     assert.equal(meResult.status, 200);
     assert.equal((meResult.body as { plan: string }).plan, 'free');
 
