@@ -53,4 +53,11 @@ jobs:
       - name: Run complete test suite against real PostgreSQL
         run: |
           set -o pipefail
-          npm test 2>&1 | tee /tmp/test.log | tail -c 120000 | { echo '~~~'; cat; echo '~~~'; } >> "${GITHUB_STEP_SUMMARY}"
+          npm test 2>&1 | tee /tmp/test.log
+      - name: Surface failing test lines as annotations
+        if: failure()
+        run: |
+          grep -E "^(not ok|# (fail|pass|tests) )|AssertionError|Error \\[" /tmp/test.log | head -60 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          tail -c 2500 /tmp/test.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do echo "::error::$line"; done
