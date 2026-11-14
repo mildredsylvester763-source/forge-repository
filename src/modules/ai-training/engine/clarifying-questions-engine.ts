@@ -60,11 +60,8 @@ export function decideClarification(input: { intent: unknown; signals: unknown; 
   }
   if (!Array.isArray(input.questions)) return { ok: false, reason: 'clarify-questions-not-a-list' };
   const needed = signals.length > 0;
-  // the law: questions ONLY when the intent is truly ambiguous — checked before
-  // anchor resolution, so a question on a clear intent is refused as such even
-  // when its anchors point at nothing (there are no signals to point at).
-  if (!needed && input.questions.length > 0) return { ok: false, reason: 'clarify-no-ambiguity' };
-  const questions: ClarifyingQuestion[] = [];
+  // pass 1: structural validation of every question
+  const drafted: Array<{ text: string; anchors: readonly string[] }> = [];
   for (let i = 0; i < input.questions.length; i++) {
     const raw = input.questions[i];
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, reason: 'clarify-question-invalid:' + String(i) };
@@ -72,13 +69,22 @@ export function decideClarification(input: { intent: unknown; signals: unknown; 
     const text = typeof rec.text === 'string' ? rec.text.trim() : '';
     if (text === '') return { ok: false, reason: 'clarify-question-no-text:' + String(i) };
     if (!Array.isArray(rec.anchors) || rec.anchors.length === 0) return { ok: false, reason: 'clarify-question-unanchored:' + String(i) };
-    const anchors: string[] = [];
     for (const a of rec.anchors) {
       if (typeof a !== 'string' || a.trim() === '') return { ok: false, reason: 'clarify-anchor-invalid:' + String(i) };
-      if (!ids.has(a.trim())) return { ok: false, reason: 'clarify-anchor-unknown:' + a.trim() };
-      anchors.push(a.trim());
     }
-    questions.push({ text, anchors });
+    drafted.push({ text, anchors: (rec.anchors as string[]).map((a) => a.trim()) });
+  }
+  // the law: questions ONLY when the intent is truly ambiguous. Checked after
+  // structure but before anchor resolution, so a well-formed question on a clear
+  // intent is refused as such even when its anchors point at nothing.
+  if (!needed && drafted.length > 0) return { ok: false, reason: 'clarify-no-ambiguity' };
+  // pass 2: every question must anchor to a NAMED ambiguity
+  const questions: ClarifyingQuestion[] = [];
+  for (let i = 0; i < drafted.length; i++) {
+    for (const a of drafted[i]!.anchors) {
+      if (!ids.has(a)) return { ok: false, reason: 'clarify-anchor-unknown:' + a };
+    }
+    questions.push({ text: drafted[i]!.text, anchors: drafted[i]!.anchors });
   }
   const issues: string[] = [];
   if (needed && questions.length === 0) issues.push('no-questions-drafted');
