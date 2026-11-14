@@ -116,7 +116,7 @@ export class R2AnchorStore implements AnchorStore {
     if (!/^https:\/\//.test(config.endpoint)) throw new TypeError('R2 endpoint must be an https URL');
     if (!config.bucket) throw new TypeError('R2 bucket is required');
     if (!config.accessKeyId || !config.secretAccessKey) throw new TypeError('R2 credentials are required');
-    this.config = { region: 'auto', key: 'forge/event-chain-anchor.json', ...config, region: config.region ?? 'auto', key: config.key ?? 'forge/event-chain-anchor.json' };
+    this.config = { ...config, region: config.region ?? 'auto', key: config.key ?? 'forge/event-chain-anchor.json' };
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
   }
 

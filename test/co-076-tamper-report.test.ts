@@ -67,8 +67,10 @@ describe('CO-076 R2 SigV4 signing (pinned wire format)', () => {
     const signed = signR2Request(config, 'PUT', fixedNow, 'deadbeef' + '0'.repeat(56), body);
     assert.equal(signed.method, 'PUT');
     assert.equal(signed.url, 'https://acct.r2.cloudflarestorage.com/forge-anchor/forge/event-chain-anchor.json');
-    assert.equal(signed.headers['x-amz-date'], '20261111T000000Z');
-    assert.equal(signed.headers['content-length'], '9');
+    const amzDate = signed.headers['x-amz-date'];
+    assert.equal(amzDate, '20261111T000000Z');
+    const contentLength = signed.headers['content-length'];
+    assert.equal(contentLength, '9');
     assert.match(signed.headers.authorization, /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261111\/auto\/s3\/aws4_request, SignedHeaders=content-length;host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
     // pin the canonical request hash so signing rules cannot drift silently
     const canonicalRequest = [
@@ -91,7 +93,7 @@ describe('CO-076 R2 SigV4 signing (pinned wire format)', () => {
 
   it('the R2 store round-trips through a stubbed fetch and answers null before the first anchor', async () => {
     let served: string | null = null;
-    const fetchImpl = (async (url: string | URL, init?: { method?: string; body?: Uint8Array }) => {
+    const fetchImpl = (async (_url: string | URL, init?: { method?: string; body?: Uint8Array }) => {
       const method = init?.method ?? 'GET';
       if (method === 'PUT') {
         served = Buffer.from(init?.body ?? new Uint8Array()).toString('utf8');
