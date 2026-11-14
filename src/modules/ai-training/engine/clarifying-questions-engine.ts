@@ -59,6 +59,11 @@ export function decideClarification(input: { intent: unknown; signals: unknown; 
     signals.push({ id, kind: kind as AmbiguityKind, description });
   }
   if (!Array.isArray(input.questions)) return { ok: false, reason: 'clarify-questions-not-a-list' };
+  const needed = signals.length > 0;
+  // the law: questions ONLY when the intent is truly ambiguous — checked before
+  // anchor resolution, so a question on a clear intent is refused as such even
+  // when its anchors point at nothing (there are no signals to point at).
+  if (!needed && input.questions.length > 0) return { ok: false, reason: 'clarify-no-ambiguity' };
   const questions: ClarifyingQuestion[] = [];
   for (let i = 0; i < input.questions.length; i++) {
     const raw = input.questions[i];
@@ -75,9 +80,6 @@ export function decideClarification(input: { intent: unknown; signals: unknown; 
     }
     questions.push({ text, anchors });
   }
-  const needed = signals.length > 0;
-  // the law: questions ONLY when the intent is truly ambiguous
-  if (!needed && questions.length > 0) return { ok: false, reason: 'clarify-no-ambiguity' };
   const issues: string[] = [];
   if (needed && questions.length === 0) issues.push('no-questions-drafted');
   return {
