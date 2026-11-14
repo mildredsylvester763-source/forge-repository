@@ -301,6 +301,8 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/ai-training/tasks/budget/charge': 'AI-085',
   '/v1/ai-training/tasks/budget/status': 'AI-085',
   '/v1/ai-training/critique/run': 'AI-086',
+  '/v1/ai-training/uncertainty/report': 'AI-087',
+  '/v1/ai-training/clarify/decide': 'AI-088',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */
@@ -310,3 +312,4 @@ export function gateForRoute(path: string): { feature: string; gate: GateId } | 
   const gate = FEATURE_GATES[feature];
   return gate === undefined ? null : { feature, gate };
 }
+

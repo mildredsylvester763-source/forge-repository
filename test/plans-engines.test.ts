@@ -70,8 +70,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
   it('pins the catalog gate counts (210 features, one gate each)', () => {
     const counts: Record<string, number> = {};
     for (const gate of Object.values(FEATURE_GATES)) counts[gate] = (counts[gate] ?? 0) + 1;
-    assert.equal(Object.keys(FEATURE_GATES).length, 210);
-    assert.deepEqual(counts, { free: 88, internal: 59, pro: 26, enterprise: 16, team: 10, plus: 10, engine: 1 });
+    assert.equal(Object.keys(FEATURE_GATES).length, 212);
+    assert.deepEqual(counts, { free: 90, internal: 59, pro: 26, enterprise: 16, team: 10, plus: 10, engine: 1 });
   });
 
   it('pins spot-checked gates from the With-Plans catalog', () => {
@@ -90,6 +90,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['AI-084', 'pro'],
     ['AI-085', 'free'],
     ['AI-086', 'free'],
+    ['AI-087', 'free'],
+    ['AI-088', 'free'],
     ['AI-045', 'pro'],
     ['AI-050', 'plus'],
     ['AI-052', 'team'],
@@ -140,7 +142,7 @@ describe('plans engine (PLAN GATE LAW)', () => {
   });
 
   it('pins every wired route to a catalog feature (292 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 292);
+    assert.equal(Object.keys(ROUTE_GATES).length, 294);
     for (const [path, feature] of Object.entries(ROUTE_GATES)) {
       assert.notEqual(FEATURE_GATES[feature], undefined, path + ' -> ' + feature);
     }
@@ -162,6 +164,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['/v1/ai-training/tasks/start', 'AI-084', 'pro'],
     ['/v1/ai-training/tasks/budget/define', 'AI-085', 'free'],
     ['/v1/ai-training/critique/run', 'AI-086', 'free'],
+    ['/v1/ai-training/uncertainty/report', 'AI-087', 'free'],
+    ['/v1/ai-training/clarify/decide', 'AI-088', 'free'],
     ['/v1/test-quality/matrix/plan', 'TQ-040', 'pro'],
     ['/v1/test-generation/property/plan', 'TQ-034', 'pro'],
     ['/v1/search-integrity/packs', 'AI-072', 'plus'],
@@ -655,4 +659,5 @@ describe('account data (Hook 16)', () => {
     assert.deepEqual(validateDeletionRequest({ userId: 'u1', confirm: true }), { ok: true, value: { userId: 'u1' } });
   });
 });
+
 
