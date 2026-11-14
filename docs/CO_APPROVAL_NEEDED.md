@@ -2,7 +2,7 @@
 
 **This is not an engineering approval queue.** Internal FORGE architecture, schemas, migrations, APIs, algorithms, security controls, tests, retry policies, recovery procedures, and provider-neutral adapters are to be designed and implemented in the repository without waiting for owner approval.
 
-Last reviewed: 2026-11-11
+Last reviewed: 2026-11-14
 Repository: mildredsylvester763-source/forge-repository
 Implementation branch: mistral
 
@@ -110,7 +110,8 @@ Verified live against FEATURE_GATES and ROUTE_GATES on the mistral lane. Every p
 - CO-063 (official event envelope) — C2 batch CLOSED (11 Nov 2026): the envelope contract is implemented and CI-pinned (co-063-canonical-payload); the acceptance call against the owner catalog wording stays with the owner.
 - CO-064 (append-only/hash-chain proof) — C3 batch CLOSED (11 Nov 2026): the acceptance record is in docs/PROGRESS.md; the native PostgreSQL proof runs in CI on the disposable PostgreSQL service (no owner secret needed for CI). Only the production database at deployment remains (already in the handover list above).
 - CO-065 (durable subscriber delivery) — C3 batch CLOSED (11 Nov 2026): the transactional outbox is BUILT (src/kernel/outbox.ts — the outbox row joins the event's transaction on PostgreSQL, SQLite and in-memory; at-least-once delivery with persisted attempts, bounded exponential backoff, dead-letter and explicit replay; event-ID idempotency guard; kernel migration v4; wired on every storage branch in app.ts; test/co-065-outbox.test.ts runs against real PostgreSQL in CI). Only the production queue/provider wiring at deployment touches the owner.
-- CO-076 (independent external anchor) — registered enterprise. The anchor interface and R2 adapter are the C4 build batch (engineering); the deployed external anchor needs the owner's Cloudflare account and R2 credentials (listed above).
+- CO-076 (independent external anchor) — C4 batch CLOSED (14 Nov 2026): the AnchorStore interface, the dependency-free R2 SigV4 adapter (src/kernel/anchor-r2.ts) and the fail-closed tamper-evidence report are built and CI-pinned (mistral head 0443271). Only the deployed external anchor remains owner-dependent: the owner's Cloudflare account, R2 bucket and credentials at deployment (listed above).
 - CO-091 (health and readiness) — COMPLETE as of batch C1 (11 Nov 2026, mistral head 6029744): registered internal in FEATURE_GATES, readiness tests run in the CO focused workflow. No owner item remains.
 - CO-093 (rate limiting) — COMPLETE as of batch C1 (11 Nov 2026, mistral head 6029744): registered internal, shared-store limiter (atomic upsert, In-memory/SQLite/PostgreSQL adapters, kernel migration v3, PlansService wiring) with native PostgreSQL concurrency proof. Production enforcement still needs the owner to set FORGE_RATE_LIMITS (configuration, not a credential); multi-replica honesty needs every replica pointed at the same PostgreSQL.
-- CO-096 (verified backups) — registered free. The off-site upload manifest and R2 backup adapter are the C4 build batch (engineering); the nightly backup to Cloudflare R2 needs the owner to bring R2 credentials and a bucket (already an approved next step, listed above).
+- CO-096 (verified backups) — C4 batch CLOSED (14 Nov 2026): the off-site upload manifest, HMAC-sealed manifests, receipt verification and manifest integrity checks (src/kernel/backup-offsite.ts) are built and CI-pinned (mistral head 0443271). Only the nightly copy to Cloudflare R2 remains owner-dependent: R2 credentials and a bucket at deployment (listed above).
+

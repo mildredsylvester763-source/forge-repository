@@ -2,7 +2,7 @@
 
 One place where every lane records what it has ALREADY built as code, so no lane rebuilds another lane's work. Sylvester's Drive doc "Forge Feature — Plan Hooks (build notes)" is the human spec; this file is the in-repo mirror every agent can read and write. Update it in the same batch as any feature work.
 
-## mistral lane (Vibe) — 11 Nov 2026, head 54e5486, CI green at 54e5486 (C1 code 6029744, C2 records 809446c, C3 outbox 54e5486)
+## mistral lane (Vibe) — 14 Nov 2026, head 0443271, CI green at 0443271 (C1 6029744, C2 809446c, C3 54e5486, C4 CO-076+CO-096 69ca84c/36449cf/0443271)
 
 ### 1. Plans gate framework — BUILT AND LIVE
 
@@ -17,7 +17,7 @@ Single base plan per user. Module `src/modules/plans/` (13 files): plan ladder F
 ### 3. NOT implemented (nobody has built these)
 
 - AI-087–AI-150 and TQ-041–TQ-120 — not started.
-- Partially implemented rows (owner reminder, audit of 11 Nov 2026, updated after batch C3): CO-091, CO-093, CO-030, CO-063, CO-064 and CO-065 are NOW complete (C1 health/rate-limit at 6029744, C2 acceptance records at 809446c, C3 transactional outbox — src/kernel/outbox.ts, the outbox row joins the event's transaction on every store, at-least-once delivery with persisted attempts, bounded backoff, dead-letter and explicit replay, kernel migration v4 — at 54e5486, all CI green). CO-076 and CO-096 remain pending in-repo batch C4 and are listed in docs/CO_APPROVAL_NEEDED.md; after C4 the lane returns to AI batches (batch 7 = AI-087 + AI-088).
+- Partially implemented rows (owner reminder, audit of 11 Nov 2026, updated after batch C3): CO-091, CO-093, CO-030, CO-063, CO-064 and CO-065 are NOW complete (C1 health/rate-limit at 6029744, C2 acceptance records at 809446c, C3 transactional outbox — src/kernel/outbox.ts, the outbox row joins the event's transaction on every store, at-least-once delivery with persisted attempts, bounded backoff, dead-letter and explicit replay, kernel migration v4 — at 54e5486, all CI green). CO-076 and CO-096 are NOW complete (C4 at 0443271: AnchorStore + R2 SigV4 adapter + tamper-evidence report in src/kernel/anchor-store.ts, anchor-r2.ts, tamper-report.ts; off-site upload manifest with receipt verification in src/kernel/backup-offsite.ts; CI #957 green). No C-range partials remain; the lane returns to AI batches (batch 7 = AI-087 + AI-088).
 - Everything in Part 02 (DP / OB / CG / RV / BD / SC) — not started on mistral.
 
 ### 4. Plan hooks retrofit — BATCH A BUILT (10–11 Nov 2026, CI green at 548dc32)
@@ -30,3 +30,4 @@ Hooks 1, 2/2b, 3, 4, 5, 6 and 7 are now live on mistral: subscriptions as a list
 - Max 2 features per batch. Every feature ships complete: engine + oracle tests + functional tests + stores + migration + service + routes + docs, with its gate written in the same batch.
 - Engines are pinned law — never modify a shipped engine; verify byte-level before touching product code.
 - Registry honesty: a summary in this file (or any lane's summary) is NOT evidence. Feature status promotes only on the per-feature source/test/migration evidence recorded in docs/PROGRESS.md. When the two disagree, PROGRESS.md wins and the gap is shown to the owner.
+
