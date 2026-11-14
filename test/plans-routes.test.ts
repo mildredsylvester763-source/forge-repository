@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { buildCiRoutes } from '../src/modules/build-ci/routes.ts';
 import { gateBuildCiRoutes } from '../src/modules/plans/build-ci-gate.ts';
+import { plansRoutes } from '../src/modules/plans/routes.ts';
 import { InMemoryPlanStore, PlansService } from '../src/modules/plans/plans-service.ts';
 import type { IdentityService } from '../src/modules/identity/identity-service.ts';
 import { AppError } from '../src/kernel/errors.ts';
@@ -60,12 +61,15 @@ test('plan gates wrap the Build & CI routes: free users build plain pipelines, c
       : null,
   } as unknown as IdentityService;
   const plans = new PlansService({ store: new InMemoryPlanStore() });
-  const routes = gateBuildCiRoutes(
-    buildCiRoutes(app.buildCi, identity, { name: 'forge_session' }, () => Date.parse('2026-11-04T00:00:00.000Z')),
-    plans,
-    identity,
-    { name: 'forge_session' },
-  );
+  const routes = {
+    ...gateBuildCiRoutes(
+      buildCiRoutes(app.buildCi, identity, { name: 'forge_session' }, () => Date.parse('2026-11-04T00:00:00.000Z')),
+      plans,
+      identity,
+      { name: 'forge_session' },
+    ),
+    ...plansRoutes(plans, identity, { name: 'forge_session' }),
+  };
   try {
     const create = routes['/v1/build-ci/pipelines']?.POST;
     assert.ok(create);
@@ -99,12 +103,15 @@ test('dry-run candidates are gated the same way, and free rows never block', asy
       : null,
   } as unknown as IdentityService;
   const plans = new PlansService({ store: new InMemoryPlanStore() });
-  const routes = gateBuildCiRoutes(
-    buildCiRoutes(app.buildCi, identity, { name: 'forge_session' }, () => Date.parse('2026-11-04T00:00:00.000Z')),
-    plans,
-    identity,
-    { name: 'forge_session' },
-  );
+  const routes = {
+    ...gateBuildCiRoutes(
+      buildCiRoutes(app.buildCi, identity, { name: 'forge_session' }, () => Date.parse('2026-11-04T00:00:00.000Z')),
+      plans,
+      identity,
+      { name: 'forge_session' },
+    ),
+    ...plansRoutes(plans, identity, { name: 'forge_session' }),
+  };
   try {
     const dryRun = routes['/v1/build-ci/pipelines/dry-run']?.POST;
     assert.ok(dryRun);
