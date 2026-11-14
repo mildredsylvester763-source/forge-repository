@@ -71,7 +71,7 @@ describe('CO-076 R2 SigV4 signing (pinned wire format)', () => {
     assert.equal(amzDate, '20261111T000000Z');
     const contentLength = signed.headers['content-length'];
     assert.equal(contentLength, '9');
-    assert.match(signed.headers.authorization, /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261111\/auto\/s3\/aws4_request, SignedHeaders=content-length;host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
+    assert.match(signed.headers.authorization ?? '', /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261111\/auto\/s3\/aws4_request, SignedHeaders=content-length;host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
     // pin the canonical request hash so signing rules cannot drift silently
     const canonicalRequest = [
       'PUT',
