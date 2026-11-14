@@ -51,4 +51,6 @@ jobs:
       - name: Build production output
         run: npm run build
       - name: Run complete test suite against real PostgreSQL
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test.log | tail -c 120000 | { echo '~~~'; cat; echo '~~~'; } >> "${GITHUB_STEP_SUMMARY}"
