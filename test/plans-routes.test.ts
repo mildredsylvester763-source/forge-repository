@@ -80,7 +80,7 @@ test('plan gates wrap the Build & CI routes: free users build plain pipelines, c
     assert.equal(details.gate, 'plus');
 
     // Upgrading the plan unlocks the same definition, nothing else changed.
-    await app.plans.setPlan('plan-user', 'plus');
+    await plans.setPlan('plan-user', 'plus');
     const upgraded = await create(context({ workspaceId: 'workspace-a', definition: conditionalDefinition }, 'valid-session'));
     assert.equal(upgraded.status, 201);
   } finally {
