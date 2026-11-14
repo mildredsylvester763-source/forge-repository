@@ -48,6 +48,16 @@ import {
 } from './modules/build-ci/index.ts';
 import { SqliteEventStore } from './kernel/sqlite-events.ts';
 import {
+  PlansService,
+  InMemoryPlanStore,
+  SqlitePlanStore,
+  PostgresPlanStore,
+  gateBuildCiRoutes,
+  plansRoutes,
+  migratePlansSqlite,
+  type PlanStore,
+} from './modules/plans/index.ts';
+import {
   CompositeBreachChecker,
   DEFAULT_THROTTLE,
   HibpBreachChecker,
@@ -107,6 +117,7 @@ export interface ForgeApp {
   events: EventStore;
   identity: IdentityService;
   buildCi: BuildCiService;
+  plans: PlansService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
   db: Database | null;
@@ -133,6 +144,7 @@ interface Storage {
   providerConnections: ProviderConnectionStore;
   scheduleOccurrences: ScheduleOccurrenceStore;
   workspaceMemberships: WorkspaceMembershipReader;
+  plans: PlanStore;
 }
 
 function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrides: AppOverrides): Storage {
@@ -152,6 +164,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       providerConnections: new PostgresProviderConnectionStore(pool),
       scheduleOccurrences: new PostgresScheduleOccurrenceStore(pool),
       workspaceMemberships: new PostgresWorkspaceMembershipReader(pool),
+      plans: new PostgresPlanStore(pool),
     };
   }
   const path = config.storage.databasePath;
@@ -161,6 +174,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'identity', identityMigrations);
     migrateBuildCiSqlite(db);
     migrate(db, 'workspace_access', workspaceAccessMigrations);
+    migratePlansSqlite(db);
     const events = new SqliteEventStore({ db, clock, logger });
     const users = new SqliteUserStore(db);
     const sessionStore = new SqliteSessionStore(db);
@@ -174,6 +188,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
       providerConnections: new SqliteProviderConnectionStore(db),
       scheduleOccurrences: new SqliteScheduleOccurrenceStore(db),
       workspaceMemberships: new SqliteWorkspaceMembershipReader(db),
+      plans: new SqlitePlanStore(db),
     };
   }
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger });
@@ -193,6 +208,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     providerConnections: new SqliteProviderConnectionStore(buildCiDb),
     scheduleOccurrences: new SqliteScheduleOccurrenceStore(buildCiDb),
     workspaceMemberships: new SqliteWorkspaceMembershipReader(buildCiDb),
+    plans: new InMemoryPlanStore(),
   };
 }
 
@@ -208,6 +224,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
   const logger = overrides.logger ?? createLogger({ level: config.logLevel });
   const storage = buildStorage(config, clock, logger, overrides);
   const { events } = storage;
+  const plansService = new PlansService({ store: storage.plans });
   // Workspace permissions are read from persisted membership records; identity alone grants no access.
   const authorizeBuildCi = overrides.buildCiAuthorize ?? createWorkspacePipelineAuthorizer(storage.workspaceMemberships);
   const buildCi = new BuildCiService({
@@ -314,7 +331,11 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
       },
     },
     ...identityRoutes(identity, config.cookie, clock),
-    ...buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress, webhookDeliveryOperations, providerConnectionOperations),
+    ...gateBuildCiRoutes(
+      buildCiRoutes(buildCi, identity, config.cookie, clock, webhookIngress, webhookDeliveryOperations, providerConnectionOperations),
+      plansService, identity, config.cookie,
+    ),
+    ...plansRoutes(plansService, identity, config.cookie),
   };
 
   const handler = createHttpHandler({
@@ -334,5 +355,5 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, buildCi, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), scheduleDispatcher, ...(worker ? { worker } : {}), close };
+  return { handler, events, identity, buildCi, plans: plansService, logger, db: storage.db, ...(webhookIngress ? { webhookIngress } : {}), ...(webhookProcessor ? { webhookProcessor } : {}), scheduleDispatcher, ...(worker ? { worker } : {}), close };
 }
