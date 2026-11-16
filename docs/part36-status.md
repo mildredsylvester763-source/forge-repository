@@ -28,7 +28,7 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-762 | NOT STARTED | Needs vetted detector/model, fixed benchmark, recall acceptance criteria (settings), red-team/evasion harness, alerting/incident integration. |
 | TS-763 | PARTIAL | Mutable state excludes the floor; no release gate that proves policy changes cannot weaken it yet. |
 | TS-764 | PARTIAL | User state reads ON and the service policy refuses writes to the user lane; account-integrated route and component-wide enforcement remain absent. |
-| TS-765 | NOT STARTED | Requires complete protection catalog and public/user panel; use free access, never plan-gate safety. |
+| TS-765 | PARTIAL | Complete plain-language catalog and live service transparency response are added and functionally tested; public route/UI, `canUse` authorization, accessibility, and deployed-state parity remain absent. |
 | TS-766 | NOT STARTED | Notification and appeal/review integrations absent. |
 | TS-767 | NOT STARTED | Plain-language safety lessons absent. |
 | TS-768 | PARTIAL | Personalization is categorized and defaults on at the protection layer; explicit consent capture and no-consent measurement are absent. |
@@ -59,7 +59,7 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-793 | NOT STARTED | False-positive measurement and review task trigger absent. |
 | TS-794 | NOT STARTED | Versioned harm-set harness and release blocking absent. |
 | TS-795 | NOT STARTED | Safety incident postmortem workflow absent. |
-| TS-796 | NOT STARTED | Plain-language descriptions/readability check absent. |
+| TS-796 | PARTIAL | Each catalog protection has a plain-language description; automated readability review and product/UI review are absent. |
 | TS-797 | NOT STARTED | Research subscription/update-ticket workflow absent. |
 | TS-798 | NOT STARTED | Classifier registry, evaluation and rollback integration absent. |
 | TS-799 | NOT STARTED | Independent annual review process absent. |

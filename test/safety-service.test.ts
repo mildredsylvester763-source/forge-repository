@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SafetyToggleService, type SafetyToggleAuditEvent, type SafetyToggleRepository } from '../src/modules/safety/safety-service.ts';
 import { SAFETY_CATEGORIES, type SafetyCategory, type ToggleScope, type ToggleState } from '../src/modules/safety/engine/toggle-state-engine.ts';
+import { SAFETY_CATALOG } from '../src/modules/safety/safety-catalog.ts';
 
 class MemorySafetyRepository implements SafetyToggleRepository {
   readonly states = new Map<string, ToggleState>();
@@ -42,6 +43,21 @@ test('functional: safety service defaults every category ON and isolates user an
   assert.ok(ownerSnapshot.states.every((state) => state.enabled));
 });
 
+test('functional: transparency lists every protection and the immutable floor with plain-language explanations', async () => {
+  const service = new SafetyToggleService(new MemorySafetyRepository());
+  const panel = await service.transparency(owner);
+  assert.equal(panel.degraded, false);
+  assert.equal(panel.rows.length, SAFETY_CATEGORIES.length + 1);
+  assert.deepEqual(panel.rows.map((row) => row.id), SAFETY_CATALOG.map((item) => item.id));
+  assert.ok(panel.rows.every((row) => row.label.length > 0 && row.description.length > 0));
+  const floor = panel.rows.find((row) => row.id === 'floor.csam');
+  assert.equal(floor?.enabled, true);
+  assert.equal(floor?.canToggle, false);
+  assert.equal(floor?.source, 'immutable_floor');
+  assert.equal(panel.rows.find((row) => row.id === 'jurisdictional_compliance')?.canToggle, false);
+  assert.equal(panel.rows.find((row) => row.id === 'minor_ceiling')?.canToggle, false);
+});
+
 test('functional: owner can switch off a safety control only in an owner-scoped workspace, with an audit event', async () => {
   const repository = new MemorySafetyRepository();
   const service = new SafetyToggleService(repository);
@@ -67,6 +83,14 @@ test('functional: owner can switch off a safety control only in an owner-scoped 
   assert.equal(inScope.version, 2);
   assert.equal(globalOwner.enabled, true);
   assert.equal(userState.enabled, true);
+  const ownerPanel = await service.transparency(workspace);
+  const ownerRow = ownerPanel.rows.find((row) => row.id === 'content');
+  assert.equal(ownerRow?.enabled, false);
+  assert.equal(ownerRow?.version, 2);
+  assert.equal(ownerRow?.canToggle, true);
+  const userPanel = await service.transparency(user);
+  assert.equal(userPanel.rows.find((row) => row.id === 'content')?.enabled, true);
+  assert.equal(userPanel.rows.find((row) => row.id === 'content')?.canToggle, false);
 });
 
 test('functional: failed user-lane, floor, legal, and minor writes do not persist or emit events', async () => {
@@ -97,6 +121,10 @@ test('functional: a storage outage returns a degraded, all-ON snapshot rather th
   const snapshot = await service.snapshot(owner);
   assert.equal(snapshot.degraded, true);
   assert.ok(snapshot.states.every((state) => state.enabled && state.source === 'fail_safe'));
+  const panel = await service.transparency(owner);
+  assert.equal(panel.degraded, true);
+  assert.ok(panel.rows.every((row) => row.enabled));
+  assert.ok(panel.rows.every((row) => !row.canToggle));
 });
 
 test('functional: commit failure leaves the fake repository state and audit log unchanged', async () => {

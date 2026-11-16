@@ -11,6 +11,7 @@ import {
   type ToggleState,
 } from './engine/toggle-state-engine.ts';
 import { decideToggleWrite, type ToggleWriteDecision } from './engine/toggle-write-engine.ts';
+import { buildSafetyTransparency, type SafetyTransparencySnapshot } from './safety-catalog.ts';
 
 /** Audit record required for every persisted owner-lane state change. */
 export interface SafetyToggleAuditEvent {
@@ -88,6 +89,11 @@ export class SafetyToggleService {
       floor: this.failSafe.snapshot(scope).floor,
       degraded: states.some((state) => state.source === 'fail_safe'),
     });
+  }
+
+  async transparency(scope: ToggleScope): Promise<SafetyTransparencySnapshot> {
+    const snapshot = await this.snapshot(scope);
+    return buildSafetyTransparency(snapshot, scope);
   }
 
   async setOwnerToggle(input: {
