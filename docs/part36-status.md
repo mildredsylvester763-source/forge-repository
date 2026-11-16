@@ -27,18 +27,18 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-761 | **BLOCKED / floor primitive only** | Immutable constant exists. Hash matching, classifier, grooming detection, evaluated test samples, and jurisdiction-specific reporting integration are absent. Do not claim operational CSAM detection or reporting. Requires owner-approved provider/process, privacy/legal review, and validated safe test corpus. |
 | TS-762 | NOT STARTED | Needs vetted detector/model, fixed benchmark, recall acceptance criteria (settings), red-team/evasion harness, alerting/incident integration. |
 | TS-763 | PARTIAL | Mutable state excludes the floor; no release gate that proves policy changes cannot weaken it yet. |
-| TS-764 | PARTIAL | All-on defaults implemented in the reference reader; no account-integrated user write-refusal route or component-wide enforcement yet. |
+| TS-764 | PARTIAL | User state reads ON and the service policy refuses writes to the user lane; account-integrated route and component-wide enforcement remain absent. |
 | TS-765 | NOT STARTED | Requires complete protection catalog and public/user panel; use free access, never plan-gate safety. |
 | TS-766 | NOT STARTED | Notification and appeal/review integrations absent. |
 | TS-767 | NOT STARTED | Plain-language safety lessons absent. |
 | TS-768 | PARTIAL | Personalization is categorized and defaults on at the protection layer; explicit consent capture and no-consent measurement are absent. |
-| TS-769 | NOT STARTED | No age/AA age-law integration or minor-specific immutable maximum profile; no exception path exists yet. Must remain non-exemptible. |
+| TS-769 | PARTIAL | `minor_ceiling` is represented and has no OFF path in the policy engine/service; age/AA age-law integration and maximum-profile wiring are absent. Must remain non-exemptible. |
 | TS-770 | NOT STARTED | Appeal workflow/review queue and verified restoration path absent. |
-| TS-771 | NOT STARTED | Owner-only mutation lane and per-scope switch logic absent. |
+| TS-771 | PARTIAL | Owner-only decision/service path can change owner-lane state and requires an audit event; durable repository adapter, optimistic concurrency implementation, and runtime console are absent. |
 | TS-772 | PARTIAL | Legal/dual-use/authorization categories are represented and default on; no country law adapter or authorization review integration. |
 | TS-773 | NOT STARTED | Admin console and state display/enforcement parity absent. |
-| TS-774 | NOT STARTED | Scope fields exist in read contract; actual global/workspace/sandbox scoped toggling does not. |
-| TS-775 | NOT STARTED | Existing event store is hash-chained, but safety toggle actions are not yet written to it. |
+| TS-774 | PARTIAL | Owner target scope is validated and scoped reads/writes are represented; persistent workspace/sandbox adapters and Enterprise workspace-admin lane are absent. |
+| TS-775 | PARTIAL | Safety audit-event shape is built and passed with state to an atomic-commit port; it is not yet written to the existing hash-chained event store. |
 | TS-776 | NOT STARTED | No self-audit report. |
 | TS-777 | NOT STARTED | No mutation history/restore-all action. |
 | TS-778 | NOT STARTED | No delegation/role model for scoped toggles. |
@@ -48,10 +48,10 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-782 | NOT STARTED | Expiry scheduler and automatic restore absent. |
 | TS-783 | NOT STARTED | Platform-wide revoke-all absent. |
 | TS-784 | NOT STARTED | User-facing override notice absent. |
-| TS-785 | PARTIAL | Single-source reader interface and reference implementation added; persistent storage, runtime component adoption, and mutable state/version propagation absent. |
-| TS-786 | NOT STARTED | Toggle events are not appended to the existing hash chain. |
+| TS-785 | PARTIAL | Public state reader and service boundary with versioned scoped writes are added; persistent storage, runtime component adoption, and app-level version propagation absent. |
+| TS-786 | PARTIAL | Versioned toggle audit-event payload is generated with each allowed service write; hash-chain persistence and chain verification are not wired. |
 | TS-787 | NOT STARTED | Owner alert integration absent. |
-| TS-788 | PARTIAL | Fail-safe reader defaults every represented category ON when selected; runtime adapter/outage injection and truthful user/admin degraded-state messaging absent. |
+| TS-788 | PARTIAL | Fail-safe and resilient readers plus service outage handling return ON/degraded snapshots; truthful user/admin degraded-state messaging and deployed adapter outage tests remain absent. |
 | TS-789 | PARTIAL | Jurisdictional compliance category is hard-pinned ON in the reference reader; country-specific law mapping and enforcement integration absent. |
 | TS-790 | NOT STARTED | Agent runner does not yet consume this public toggle contract. |
 | TS-791 | NOT STARTED | Legal basis is not yet stored per protection or release-validated. |
@@ -67,7 +67,7 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 
 ## Separate Plan Hooks settings/count-only reconciliation still required
 
-Existing `src/config.ts` contains hard-coded default prices and credit quantities (including figures from Plan Hooks) and `src/modules/plans/engine/ledger-engine.ts` plus plan storage persist `costUsdMicros` on credit entries. These predate the owner's latest instruction and are not changed in this first safety slice. Before plan/billing completion, move all unsettled prices, credit quantities, caps, and plan limits into one settings-table/config object with no numeric policy defaults in algorithms; make the credit meter/ledger count-only and remove any monetary value from its entries while preserving money/payment accounting in a separate billing/cost-telemetry domain. This requires a forward-only migration in both SQLite and PostgreSQL, updating plan services, config parsing, exports, and tests; never edit shipped migrations.
+Existing `src/config.ts` contains hard-coded default prices and credit quantities (including figures from Plan Hooks) and plan storage retains the existing `costUsdMicros` placeholder. They are not changed in this safety slice. Owner clarification: preserve every existing monetary placeholder field; do not delete or set a price. The remaining config work is additive: provide one settings-table/config location for undecided values, leaving them unselected and without invented amounts. The displayed meter may count credits; do not change existing ledger/schema fields absent a later explicit instruction. Never edit shipped migrations.
 
 ## Baseline verification caveats
 

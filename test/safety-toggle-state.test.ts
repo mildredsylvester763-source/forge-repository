@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { decideToggleWrite } from '../src/modules/safety/engine/toggle-write-engine.ts';
 import {
   DefaultToggleStateReader,
   FailSafeToggleStateReader,
@@ -108,5 +109,70 @@ test('Part 36 TS-788: a valid serialized snapshot preserves the immutable floor 
   const result = new ResilientToggleStateReader(source).snapshot(scope);
   assert.equal(result.degraded, false);
   assert.deepEqual(result.floor, IMMUTABLE_FLOOR);
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.floor), true);
+  assert.equal(Object.isFrozen(result.states), true);
+  assert.ok(result.states.every((state) => Object.isFrozen(state)));
   assert.equal(result.states.find((state) => state.category === 'jurisdictional_compliance')?.source, 'jurisdiction');
+});
+
+test('Part 36 TS-771/774: owner may request an audited change only within the owner lane and scope', () => {
+  const decision = decideToggleWrite({
+    actor: { lane: 'owner_admin', subjectId: 'owner-1' },
+    target: { lane: 'owner_admin', subjectId: 'owner-1', workspaceId: 'workspace-1' },
+    category: 'content',
+    enabled: false,
+    reason: 'Isolated owner test workspace',
+  });
+  assert.deepEqual(decision, {
+    allowed: true,
+    actorId: 'owner-1',
+    target: { lane: 'owner_admin', subjectId: 'owner-1', workspaceId: 'workspace-1' },
+    category: 'content',
+    enabled: false,
+    reason: 'Isolated owner test workspace',
+    auditRequired: true,
+  });
+});
+
+test('Part 36 TS-764/779: user lane cannot switch off safety, even when actor is owner', () => {
+  assert.deepEqual(decideToggleWrite({
+    actor: { lane: 'owner_admin', subjectId: 'owner-1' },
+    target: { lane: 'user', subjectId: 'user-1' },
+    category: 'content',
+    enabled: false,
+    reason: 'Not a formal override',
+  }), { allowed: false, reason: 'user_lane_locked' });
+});
+
+test('Part 36 TS-761/772/769: floor, law overlay, and minor ceiling have no OFF path', () => {
+  const actor: ToggleScope = { lane: 'owner_admin', subjectId: 'owner-1' };
+  const target: ToggleScope = { lane: 'owner_admin', subjectId: 'owner-1' };
+  const request = { actor, target, enabled: false, reason: 'test' };
+  assert.deepEqual(decideToggleWrite({ ...request, category: 'floor.csam' }), {
+    allowed: false, reason: 'child_safety_floor_immutable',
+  });
+  assert.deepEqual(decideToggleWrite({ ...request, category: 'jurisdictional_compliance' }), {
+    allowed: false, reason: 'jurisdiction_law_pinned',
+  });
+  assert.deepEqual(decideToggleWrite({ ...request, category: 'minor_ceiling' }), {
+    allowed: false, reason: 'minor_protection_non_exemptible',
+  });
+});
+
+test('Part 36 owner-toggle policy rejects other roles, foreign scopes, malformed toggles, and missing reasons', () => {
+  const target: ToggleScope = { lane: 'owner_admin', subjectId: 'owner-1' };
+  const base = { target, category: 'tool', enabled: true, reason: 'Enable test' };
+  assert.deepEqual(decideToggleWrite({ ...base, actor: { lane: 'user', subjectId: 'user-1' } }), {
+    allowed: false, reason: 'invalid_actor',
+  });
+  assert.deepEqual(decideToggleWrite({ ...base, actor: { lane: 'owner_admin', subjectId: 'owner-2' } }), {
+    allowed: false, reason: 'owner_self_scope_only',
+  });
+  assert.deepEqual(decideToggleWrite({ ...base, actor: { lane: 'owner_admin', subjectId: 'owner-1' }, category: 'not-a-toggle' }), {
+    allowed: false, reason: 'invalid_category',
+  });
+  assert.deepEqual(decideToggleWrite({ ...base, actor: { lane: 'owner_admin', subjectId: 'owner-1' }, reason: '  ' }), {
+    allowed: false, reason: 'reason_required',
+  });
 });

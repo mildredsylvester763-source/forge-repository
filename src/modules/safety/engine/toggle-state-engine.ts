@@ -10,12 +10,17 @@ export const SAFETY_CATEGORIES = [
   'action',
   'tool',
   'data_access',
+  'region_restrictions',
+  'persona_guards',
+  'rate_limits',
+  'verbosity_limits',
   'financial',
   'behavioural',
   'personalization',
   'dual_use_review',
   'authorization_review',
   'jurisdictional_compliance',
+  'minor_ceiling',
 ] as const;
 export type SafetyCategory = (typeof SAFETY_CATEGORIES)[number];
 export type SafetyLane = 'user' | 'owner_admin' | 'workspace_admin' | 'system';
@@ -36,8 +41,8 @@ export interface ToggleScope {
 }
 export interface ToggleState {
   readonly category: SafetyCategory;
-  readonly enabled: true;
-  readonly source: 'default' | 'jurisdiction' | 'fail_safe';
+  readonly enabled: boolean;
+  readonly source: 'default' | 'jurisdiction' | 'owner_admin' | 'fail_safe';
   readonly version: number;
 }
 export interface ToggleSnapshot {
@@ -60,12 +65,17 @@ export const SAFETY_DEFAULTS: Readonly<Record<SafetyCategory, true>> = Object.fr
   action: true,
   tool: true,
   data_access: true,
+  region_restrictions: true,
+  persona_guards: true,
+  rate_limits: true,
+  verbosity_limits: true,
   financial: true,
   behavioural: true,
   personalization: true,
   dual_use_review: true,
   authorization_review: true,
   jurisdictional_compliance: true,
+  minor_ceiling: true,
 });
 
 /**
@@ -87,18 +97,18 @@ export class FailSafeToggleStateReader implements ToggleStateReader {
 
 /**
  * In-memory reference reader for tests and later adapters. It intentionally exposes no
- * mutation API in this first slice. Mutable admin controls, overrides, audit persistence,
- * and jurisdiction data are separate rows/hooks and must be added behind this interface.
+ * mutation API. Mutable admin controls, overrides, audit persistence, and jurisdiction data
+ * are separate hooks and must be added behind this interface.
  */
 export class DefaultToggleStateReader implements ToggleStateReader {
   private readonly fallback = new FailSafeToggleStateReader();
   read(scope: ToggleScope, toggle: SafetyCategory): ToggleState {
-    if (!isScope(scope) || !isSafetyCategory(toggle)) return this.fallback.read(scope, toggle);
+    if (!isToggleScope(scope) || !isSafetyCategory(toggle)) return this.fallback.read(scope, toggle);
     const source = toggle === 'jurisdictional_compliance' ? 'jurisdiction' : 'default';
     return Object.freeze({ category: toggle, enabled: true, source, version: 1 });
   }
   snapshot(scope: ToggleScope): ToggleSnapshot {
-    if (!isScope(scope)) return this.fallback.snapshot(scope);
+    if (!isToggleScope(scope)) return this.fallback.snapshot(scope);
     return Object.freeze({
       states: SAFETY_CATEGORIES.map((category) => this.read(scope, category)),
       floor: IMMUTABLE_FLOOR,
@@ -123,10 +133,10 @@ export class ResilientToggleStateReader implements ToggleStateReader {
   read(scope: ToggleScope, toggle: SafetyCategory): ToggleState {
     try {
       const result = this.authoritative.read(scope, toggle);
-      if (!isSafetyCategory(result?.category) || result.category !== toggle || result.enabled !== true || !isValidVersion(result.version)) {
+      if (!isSafetyCategory(result?.category) || result.category !== toggle || !isValidVersion(result.version) || !isToggleStateAllowedInScope(result, scope)) {
         return this.fallback.read(scope, toggle);
       }
-      return result;
+      return Object.freeze({ ...result });
     } catch {
       return this.fallback.read(scope, toggle);
     }
@@ -134,8 +144,12 @@ export class ResilientToggleStateReader implements ToggleStateReader {
   snapshot(scope: ToggleScope): ToggleSnapshot {
     try {
       const result = this.authoritative.snapshot(scope);
-      if (!isCompleteSafeSnapshot(result)) return this.fallback.snapshot(scope);
-      return result;
+      if (!isCompleteSafeSnapshot(result, scope)) return this.fallback.snapshot(scope);
+      return Object.freeze({
+        states: Object.freeze(result.states.map((state) => Object.freeze({ ...state }))),
+        floor: IMMUTABLE_FLOOR,
+        degraded: result.degraded,
+      });
     } catch {
       return this.fallback.snapshot(scope);
     }
@@ -145,7 +159,7 @@ export class ResilientToggleStateReader implements ToggleStateReader {
 function isValidVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
-function isCompleteSafeSnapshot(value: unknown): value is ToggleSnapshot {
+function isCompleteSafeSnapshot(value: unknown, scope: ToggleScope): value is ToggleSnapshot {
   if (typeof value !== 'object' || value === null) return false;
   const snapshot = value as Record<string, unknown>;
   if (!isImmutableFloor(snapshot.floor) || !Array.isArray(snapshot.states)) return false;
@@ -153,10 +167,17 @@ function isCompleteSafeSnapshot(value: unknown): value is ToggleSnapshot {
   const states = snapshot.states as unknown[];
   return SAFETY_CATEGORIES.every((category) => {
     const state = states.find((candidate) => typeof candidate === 'object' && candidate !== null && (candidate as Record<string, unknown>).category === category) as Record<string, unknown> | undefined;
-    const validSource = state?.source === 'default' || state?.source === 'jurisdiction' || state?.source === 'fail_safe';
-    const legalSourcePinned = category !== 'jurisdictional_compliance' || state?.source === 'jurisdiction' || state?.source === 'fail_safe';
-    return state !== undefined && state.enabled === true && isValidVersion(state.version) && validSource && legalSourcePinned;
+    return state !== undefined && isSafetyCategory(state.category) && isValidVersion(state.version) &&
+      isToggleStateAllowedInScope(state as unknown as ToggleState, scope);
   }) && typeof snapshot.degraded === 'boolean';
+}
+export function isToggleStateAllowedInScope(state: ToggleState, scope: ToggleScope): boolean {
+  if (typeof state.enabled !== 'boolean') return false;
+  if (state.source !== 'default' && state.source !== 'jurisdiction' && state.source !== 'owner_admin' && state.source !== 'fail_safe') return false;
+  if (state.category === 'jurisdictional_compliance' && state.source !== 'jurisdiction' && state.source !== 'fail_safe') return false;
+  if (state.category === 'minor_ceiling' && state.enabled === false) return false;
+  if (state.enabled === false) return scope.lane === 'owner_admin' && state.source === 'owner_admin';
+  return state.source !== 'owner_admin' || scope.lane === 'owner_admin';
 }
 function isImmutableFloor(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
@@ -167,7 +188,7 @@ function isImmutableFloor(value: unknown): boolean {
 export function isSafetyCategory(value: unknown): value is SafetyCategory {
   return typeof value === 'string' && (SAFETY_CATEGORIES as readonly string[]).includes(value);
 }
-function isScope(value: unknown): value is ToggleScope {
+export function isToggleScope(value: unknown): value is ToggleScope {
   if (typeof value !== 'object' || value === null) return false;
   const scope = value as Record<string, unknown>;
   return (
