@@ -44,9 +44,9 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-778 | NOT STARTED | No delegation/role model for scoped toggles. |
 | TS-779 | PARTIAL | Owner-only user/workspace artifact validation, matching-scope resolution, and hard exclusions exist; durable grant/revoke workflow, logged integration, and end-user delivery remain absent. |
 | TS-780 | PARTIAL | Strict versioned artifact includes target, category, explicit start/expiry, reason, and revocation plan; no unstated min/max duration is invented. Persistent artifact store and owner-configured duration policy remain absent. |
-| TS-781 | NOT STARTED | Override history and export absent. |
+| TS-781 | PARTIAL | Owner-authorized service history returns validated immutable artifacts and lifecycle operations emit appendable audit events; durable history/export and compliance evidence wiring are absent. |
 | TS-782 | PARTIAL | Deterministic evaluation returns scheduled/active/expired/revoked and stops applying an exception at expiry; no scheduler, persisted restore event, or deployed expiry integration exists. |
-| TS-783 | NOT STARTED | Platform-wide revoke-all absent. |
+| TS-783 | PARTIAL | Owner-only revoke-all service selects active artifacts, prepares per-item plus aggregate events, and requires atomic expected-set commit; no production store/console or measured within-a-minute deployment guarantee. |
 | TS-784 | PARTIAL | Backend notice identifies category, scope, exact expiry, reason, and appeal availability only for affected active users; notification transport and client presentation are absent. |
 | TS-785 | PARTIAL | Public state reader and service boundary with versioned scoped writes are added; persistent storage, runtime component adoption, and app-level version propagation absent. |
 | TS-786 | PARTIAL | Versioned toggle audit-event payload is generated with each allowed service write; hash-chain persistence and chain verification are not wired. |

@@ -105,7 +105,7 @@ export function createSafetyOverride(input: CreateOverrideInput): OverrideCreati
 export type OverrideState = 'scheduled' | 'active' | 'expired' | 'revoked';
 export function getOverrideState(artifact: SafetyOverrideArtifact, now: number): OverrideState {
   if (!isTimestamp(now) || !isValidSafetyOverrideArtifact(artifact)) return 'expired';
-  if (artifact.revokedAt !== null) return 'revoked';
+  if (artifact.revokedAt !== null && now >= artifact.revokedAt) return 'revoked';
   if (now < artifact.startsAt) return 'scheduled';
   if (now >= artifact.expiresAt) return 'expired';
   return 'active';
