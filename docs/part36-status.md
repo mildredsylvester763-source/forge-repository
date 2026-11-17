@@ -37,20 +37,19 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-771 | PARTIAL | Owner-only decision/service path can change owner-lane state and requires an audit event; durable repository adapter, optimistic concurrency implementation, and runtime console are absent. |
 | TS-772 | PARTIAL | Legal/dual-use/authorization categories are represented and default on; no country law adapter or authorization review integration. |
 | TS-773 | NOT STARTED | Admin console and state display/enforcement parity absent. |
-| TS-774 | PARTIAL | Owner target scope is validated and scoped reads/writes are represented; persistent workspace/sandbox adapters and Enterprise workspace-admin lane are absent. |
-| TS-775 | PARTIAL | Safety audit-event shape is built and passed with state to an atomic-commit port; it is not yet written to the existing hash-chained event store. |
+| TS-774 | PARTIAL | Added `TS-774` with the Enterprise gate, a backend lane requiring `canUse(user, TS-774)` plus an Enterprise workspace-type/admin membership, workspace-only staff operations, and scoped toggle policy. The existing workspace record has no persisted workspace-type field; app/auth, storage adapters, routes, and production membership enforcement remain open. |
 | TS-776 | NOT STARTED | No self-audit report. |
-| TS-777 | NOT STARTED | No mutation history/restore-all action. |
-| TS-778 | NOT STARTED | No delegation/role model for scoped toggles. |
+| TS-777 | PARTIAL | Owner audit/revoke-one and Enterprise toggle restore-all contracts exist; they are fake-repository tested and not backed by production storage or console action. |
+| TS-778 | PARTIAL | Enterprise workspace-admin is a distinct lower lane with same-workspace staff scope and protected-category refusals; persistent identity/role wiring and route authorization remain open. |
 | TS-779 | PARTIAL | Owner-only user/workspace artifact validation, matching-scope resolution, and hard exclusions exist; durable grant/revoke workflow, logged integration, and end-user delivery remain absent. |
 | TS-780 | PARTIAL | Strict versioned artifact includes target, category, explicit start/expiry, reason, and revocation plan; no unstated min/max duration is invented. Persistent artifact store and owner-configured duration policy remain absent. |
 | TS-781 | PARTIAL | Owner-authorized service history returns validated immutable artifacts and lifecycle operations emit appendable audit events; durable history/export and compliance evidence wiring are absent. |
 | TS-782 | PARTIAL | Deterministic evaluation returns scheduled/active/expired/revoked and stops applying an exception at expiry; no scheduler, persisted restore event, or deployed expiry integration exists. |
-| TS-783 | PARTIAL | Owner-only revoke-all service selects active artifacts, prepares per-item plus aggregate events, and requires atomic expected-set commit; no production store/console or measured within-a-minute deployment guarantee. |
+| TS-783 | PARTIAL | Existing override emergency revoke-all remains intact. The shared SafetyToggleService now exposes a CAS/atomic Enterprise toggle restore-all hook, but that hook is not yet connected to the existing TS-783 operation in a production unit of work; no production store/console or measured within-a-minute guarantee. |
 | TS-784 | PARTIAL | Backend notice identifies category, scope, exact expiry, reason, and appeal availability only for affected active users; notification transport and client presentation are absent. |
-| TS-785 | PARTIAL | Public state reader and service boundary with versioned scoped writes are added; persistent storage, runtime component adoption, and app-level version propagation absent. |
-| TS-786 | PARTIAL | Versioned toggle audit-event payload is generated with each allowed service write; hash-chain persistence and chain verification are not wired. |
-| TS-787 | NOT STARTED | Owner alert integration absent. |
+| TS-785 | PARTIAL | The same `SafetyToggleService` handles owner and Enterprise toggle reads/writes; Enterprise writes re-check `canUse`, workspace type, actor role, and staff workspace membership. Persistent storage and app-level runtime adoption remain absent. |
+| TS-786 | PARTIAL | Tenant success and refusal events include workspace IDs and are passed to repository contracts that require hash-chain append; concrete event-store persistence and chain verification are not wired. |
+| TS-787 | PARTIAL | Enterprise mutation/refusal contracts require durable owner-alert queueing with the audit write; no production notifier/outbox or delivery evidence exists. |
 | TS-788 | PARTIAL | Fail-safe and resilient readers plus service outage handling return ON/degraded snapshots; truthful user/admin degraded-state messaging and deployed adapter outage tests remain absent. |
 | TS-789 | PARTIAL | Jurisdictional compliance category is hard-pinned ON in the reference reader; country-specific law mapping and enforcement integration absent. |
 | TS-790 | NOT STARTED | Agent runner does not yet consume this public toggle contract. |

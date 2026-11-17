@@ -33,7 +33,7 @@ export const SAFETY_CATALOG: readonly SafetyCatalogItem[] = Object.freeze(([
 
 export interface SafetyTransparencyRow extends SafetyCatalogItem {
   readonly enabled: boolean;
-  readonly source: 'default' | 'jurisdiction' | 'owner_admin' | 'fail_safe' | 'immutable_floor';
+  readonly source: 'default' | 'jurisdiction' | 'owner_admin' | 'workspace_admin' | 'fail_safe' | 'immutable_floor';
   readonly version: number;
   readonly canToggle: boolean;
 }

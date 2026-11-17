@@ -3,4 +3,6 @@ export * from './engine/toggle-write-engine.ts';
 export * from './safety-service.ts';
 export * from './safety-catalog.ts';
 export * from './engine/override-engine.ts';
+export * from './engine/enterprise-admin-engine.ts';
 export * from './override-service.ts';
+export * from './enterprise-workspace-admin-service.ts';

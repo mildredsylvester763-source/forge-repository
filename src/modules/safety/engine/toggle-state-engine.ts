@@ -42,7 +42,7 @@ export interface ToggleScope {
 export interface ToggleState {
   readonly category: SafetyCategory;
   readonly enabled: boolean;
-  readonly source: 'default' | 'jurisdiction' | 'owner_admin' | 'fail_safe';
+  readonly source: 'default' | 'jurisdiction' | 'owner_admin' | 'workspace_admin' | 'fail_safe';
   readonly version: number;
 }
 export interface ToggleSnapshot {
@@ -173,10 +173,18 @@ function isCompleteSafeSnapshot(value: unknown, scope: ToggleScope): value is To
 }
 export function isToggleStateAllowedInScope(state: ToggleState, scope: ToggleScope): boolean {
   if (typeof state.enabled !== 'boolean') return false;
-  if (state.source !== 'default' && state.source !== 'jurisdiction' && state.source !== 'owner_admin' && state.source !== 'fail_safe') return false;
+  if (state.source !== 'default' && state.source !== 'jurisdiction' && state.source !== 'owner_admin' && state.source !== 'workspace_admin' && state.source !== 'fail_safe') return false;
   if (state.category === 'jurisdictional_compliance' && state.source !== 'jurisdiction' && state.source !== 'fail_safe') return false;
   if (state.category === 'minor_ceiling' && state.enabled === false) return false;
-  if (state.enabled === false) return scope.lane === 'owner_admin' && state.source === 'owner_admin';
+  if (state.source === 'workspace_admin' && (
+    scope.lane !== 'user' || scope.workspaceId === undefined ||
+    state.category === 'minor_ceiling' || state.category === 'jurisdictional_compliance' ||
+    state.category === 'dual_use_review' || state.category === 'authorization_review'
+  )) return false;
+  if (state.enabled === false) {
+    return (scope.lane === 'owner_admin' && state.source === 'owner_admin') ||
+      (scope.lane === 'user' && state.source === 'workspace_admin' && scope.workspaceId !== undefined);
+  }
   return state.source !== 'owner_admin' || scope.lane === 'owner_admin';
 }
 function isImmutableFloor(value: unknown): boolean {
