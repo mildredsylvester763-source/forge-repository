@@ -42,12 +42,12 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-776 | NOT STARTED | No self-audit report. |
 | TS-777 | NOT STARTED | No mutation history/restore-all action. |
 | TS-778 | NOT STARTED | No delegation/role model for scoped toggles. |
-| TS-779 | NOT STARTED | Formal, visible, time-boxed user/workspace overrides and minor/floor exclusions absent. |
-| TS-780 | NOT STARTED | Override artifact schema/validation absent; duration bounds remain configuration decisions. |
+| TS-779 | PARTIAL | Owner-only user/workspace artifact validation, matching-scope resolution, and hard exclusions exist; durable grant/revoke workflow, logged integration, and end-user delivery remain absent. |
+| TS-780 | PARTIAL | Strict versioned artifact includes target, category, explicit start/expiry, reason, and revocation plan; no unstated min/max duration is invented. Persistent artifact store and owner-configured duration policy remain absent. |
 | TS-781 | NOT STARTED | Override history and export absent. |
-| TS-782 | NOT STARTED | Expiry scheduler and automatic restore absent. |
+| TS-782 | PARTIAL | Deterministic evaluation returns scheduled/active/expired/revoked and stops applying an exception at expiry; no scheduler, persisted restore event, or deployed expiry integration exists. |
 | TS-783 | NOT STARTED | Platform-wide revoke-all absent. |
-| TS-784 | NOT STARTED | User-facing override notice absent. |
+| TS-784 | PARTIAL | Backend notice identifies category, scope, exact expiry, reason, and appeal availability only for affected active users; notification transport and client presentation are absent. |
 | TS-785 | PARTIAL | Public state reader and service boundary with versioned scoped writes are added; persistent storage, runtime component adoption, and app-level version propagation absent. |
 | TS-786 | PARTIAL | Versioned toggle audit-event payload is generated with each allowed service write; hash-chain persistence and chain verification are not wired. |
 | TS-787 | NOT STARTED | Owner alert integration absent. |
