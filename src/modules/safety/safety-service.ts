@@ -47,6 +47,17 @@ export interface EnterpriseToggleRefusalEvent {
   readonly ownerAlertRequired: true;
 }
 
+export interface SafetyToggleRestoreAllEvent {
+  readonly eventType: 'safety.toggle.restore_all';
+  readonly schemaVersion: 1;
+  readonly actorId: string;
+  readonly target: ToggleScope;
+  readonly reason: string;
+  readonly changedAt: number;
+  readonly restoredCount: number;
+  readonly restoredScopeCount: number;
+}
+
 export interface EnterpriseMembership {
   readonly workspaceId: string;
   readonly workspaceType: 'enterprise' | 'standard';
@@ -57,6 +68,11 @@ export interface EnterpriseAccessResolver {
   getMembership(userId: string, workspaceId: string): Promise<EnterpriseMembership | null>;
 }
 export interface EnterpriseStoredToggle {
+  readonly scope: ToggleScope;
+  readonly category: SafetyCategory;
+  readonly state: ToggleState;
+}
+export interface OwnerStoredToggle {
   readonly scope: ToggleScope;
   readonly category: SafetyCategory;
   readonly state: ToggleState;
@@ -75,6 +91,15 @@ export interface SafetyToggleRepository {
     readonly expectedVersion: number;
     readonly nextState: ToggleState;
     readonly event: SafetyToggleAuditEvent;
+  }): Promise<void>;
+  /** Must return all persisted owner-lane scopes for this owner in one consistent snapshot. */
+  listOwnerToggles?(ownerId: string): Promise<readonly OwnerStoredToggle[]>;
+  commitOwnerRestoreAll?(input: {
+    readonly ownerId: string;
+    readonly expected: readonly OwnerStoredToggle[];
+    readonly next: readonly OwnerStoredToggle[];
+    readonly events: readonly SafetyToggleAuditEvent[];
+    readonly summaryEvent: SafetyToggleRestoreAllEvent;
   }): Promise<void>;
   /** Optional until the maintainer wires the Enterprise read/revoke adapter. */
   listEnterpriseToggles?(): Promise<readonly EnterpriseStoredToggle[]>;
@@ -99,6 +124,10 @@ export type OwnerToggleWriteResult =
         | 'commit_failed'
         | 'invalid_time';
     };
+
+export type OwnerRestoreAllResult =
+  | { readonly ok: true; readonly restored: number; readonly events: readonly SafetyToggleAuditEvent[]; readonly summaryEvent: SafetyToggleRestoreAllEvent }
+  | { readonly ok: false; readonly reason: 'invalid_actor' | 'reason_required' | 'invalid_time' | 'restore_adapter_unavailable' | 'state_unavailable' | 'commit_failed' };
 
 export type EnterpriseToggleWriteResult =
   | { readonly ok: true; readonly state: ToggleState; readonly event: SafetyToggleAuditEvent }
@@ -209,6 +238,66 @@ export class SafetyToggleService {
     try {
       await this.repository.commit({ expectedVersion: previous.version, nextState, event });
       return Object.freeze({ ok: true, state: nextState, event });
+    } catch {
+      return { ok: false, reason: 'commit_failed' };
+    }
+  }
+
+  /** TS-777 owner action: restore every persisted owner-admin toggle in every owned scope to ON. */
+  async ownerRestoreAll(input: {
+    readonly actor: ToggleScope;
+    readonly reason: unknown;
+    readonly changedAt: number;
+  }): Promise<OwnerRestoreAllResult> {
+    if (!isGlobalOwnerScope(input?.actor)) return { ok: false, reason: 'invalid_actor' };
+    if (typeof input.reason !== 'string' || input.reason.trim().length === 0 || input.reason.length > 500) return { ok: false, reason: 'reason_required' };
+    if (!Number.isSafeInteger(input.changedAt) || input.changedAt < 0) return { ok: false, reason: 'invalid_time' };
+    if (!this.repository.listOwnerToggles || !this.repository.commitOwnerRestoreAll) return { ok: false, reason: 'restore_adapter_unavailable' };
+
+    let current: readonly OwnerStoredToggle[];
+    try {
+      current = await this.repository.listOwnerToggles(input.actor.subjectId);
+    } catch {
+      return { ok: false, reason: 'state_unavailable' };
+    }
+    const seen = new Set<string>();
+    if (!Array.isArray(current) || !current.every((row) => {
+      if (!row || !isStrictOwnerScope(row.scope) || row.scope.subjectId !== input.actor.subjectId || !isSafetyCategory(row.category) ||
+          row.state?.category !== row.category || !Number.isSafeInteger(row.state.version) || row.state.version < 1 ||
+          (row.state.enabled === false && row.state.version >= Number.MAX_SAFE_INTEGER) ||
+          !isToggleStateAllowedInScope(row.state, row.scope) || seen.has(ownerToggleKey(row.scope, row.category))) return false;
+      seen.add(ownerToggleKey(row.scope, row.category));
+      return true;
+    })) return { ok: false, reason: 'state_unavailable' };
+
+    const expected = Object.freeze([...current]
+      .sort((left, right) => {
+        const leftKey = ownerToggleKey(left.scope, left.category);
+        const rightKey = ownerToggleKey(right.scope, right.category);
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+      })
+      .map((row) => Object.freeze({ scope: Object.freeze({ ...row.scope }), category: row.category, state: Object.freeze({ ...row.state }) })));
+    const changes = expected.filter((row) => row.state.enabled === false);
+    const next = Object.freeze(changes.map((row) => Object.freeze({
+      ...row,
+      state: Object.freeze({ category: row.category, enabled: true, source: row.category === 'jurisdictional_compliance' ? 'jurisdiction' as const : 'default' as const, version: row.state.version + 1 }),
+    })));
+    const reason = input.reason.trim();
+    const events = Object.freeze(changes.map((row, index) => Object.freeze({
+      eventType: 'safety.toggle.changed' as const, schemaVersion: 1 as const,
+      actorId: input.actor.subjectId, target: Object.freeze({ ...row.scope }), category: row.category,
+      previousEnabled: false, enabled: true, previousVersion: row.state.version,
+      version: next[index]!.state.version, reason, changedAt: input.changedAt,
+    })));
+    const summaryEvent: SafetyToggleRestoreAllEvent = Object.freeze({
+      eventType: 'safety.toggle.restore_all', schemaVersion: 1,
+      actorId: input.actor.subjectId, target: Object.freeze({ lane: 'owner_admin', subjectId: input.actor.subjectId }),
+      reason, changedAt: input.changedAt, restoredCount: changes.length,
+      restoredScopeCount: new Set(changes.map((row) => ownerScopeKey(row.scope))).size,
+    });
+    try {
+      await this.repository.commitOwnerRestoreAll({ ownerId: input.actor.subjectId, expected, next, events, summaryEvent });
+      return Object.freeze({ ok: true, restored: changes.length, events, summaryEvent });
     } catch {
       return { ok: false, reason: 'commit_failed' };
     }
@@ -418,6 +507,18 @@ export class SafetyToggleService {
 
 function isOwnerScope(value: unknown): value is ToggleScope {
   return isToggleScope(value) && value.lane === 'owner_admin';
+}
+function isStrictOwnerScope(value: unknown): value is ToggleScope {
+  return isOwnerScope(value) && Object.keys(value).every((key) => ['lane', 'subjectId', 'workspaceId', 'sandboxId'].includes(key));
+}
+function isGlobalOwnerScope(value: unknown): value is ToggleScope {
+  return isStrictOwnerScope(value) && value.workspaceId === undefined && value.sandboxId === undefined;
+}
+function ownerScopeKey(scope: ToggleScope): string {
+  return JSON.stringify([scope.lane, scope.subjectId, scope.workspaceId ?? null, scope.sandboxId ?? null]);
+}
+function ownerToggleKey(scope: ToggleScope, category: SafetyCategory): string {
+  return JSON.stringify([scope.lane, scope.subjectId, scope.workspaceId ?? null, scope.sandboxId ?? null, category]);
 }
 function isUserWorkspaceScope(value: unknown): value is ToggleScope {
   return isToggleScope(value) && value.lane === 'user' && typeof value.workspaceId === 'string' && value.workspaceId.length > 0 &&
