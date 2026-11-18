@@ -12,6 +12,8 @@ import {
 } from './engine/toggle-state-engine.ts';
 import { decideToggleWrite, type ToggleWriteDecision } from './engine/toggle-write-engine.ts';
 import { decideEnterpriseToggleWrite, type EnterpriseToggleRefusal } from './engine/enterprise-admin-engine.ts';
+import { decideDelegatedToggleWrite, type DelegatedToggleDecision } from './engine/delegation-engine.ts';
+import type { SafetyDelegationGrantResolver } from './safety-delegation-service.ts';
 import { buildSafetyTransparency, type SafetyTransparencySnapshot } from './safety-catalog.ts';
 
 export const ENTERPRISE_WORKSPACE_ADMIN_FEATURE_ID = 'TS-774';
@@ -33,6 +35,9 @@ export interface SafetyToggleAuditEvent {
   readonly workspaceId?: string;
   /** Required on Enterprise staff changes; the store must durably queue an owner alert. */
   readonly ownerAlertRequired?: true;
+  /** Present for owner-issued sub-admin writes; retain attribution and alert the owner. */
+  readonly actorLane?: 'delegated_admin';
+  readonly delegationId?: string;
 }
 export interface EnterpriseToggleRefusalEvent {
   readonly eventType: 'safety.enterprise.toggle_refused';
@@ -40,6 +45,19 @@ export interface EnterpriseToggleRefusalEvent {
   readonly actorId: string;
   readonly staffUserId: string;
   readonly workspaceId: string;
+  readonly attemptedCategory: string | null;
+  readonly attemptedEnabled: boolean | null;
+  readonly refusalReason: string;
+  readonly changedAt: number;
+  readonly ownerAlertRequired: true;
+}
+
+export interface SafetyDelegationRefusalEvent {
+  readonly eventType: 'safety.delegation.toggle_refused';
+  readonly schemaVersion: 1;
+  readonly actorId: string;
+  readonly ownerId: string;
+  readonly target: ToggleScope;
   readonly attemptedCategory: string | null;
   readonly attemptedEnabled: boolean | null;
   readonly refusalReason: string;
@@ -112,6 +130,8 @@ export interface SafetyToggleRepository {
     readonly next: readonly EnterpriseStoredToggle[];
     readonly events: readonly SafetyToggleAuditEvent[];
   }): Promise<void>;
+  /** Must append a refused delegated attempt and durably queue the owner alert atomically. */
+  recordDelegationRefusal?(event: SafetyDelegationRefusalEvent): Promise<void>;
 }
 
 export type OwnerToggleWriteResult =
@@ -124,6 +144,10 @@ export type OwnerToggleWriteResult =
         | 'commit_failed'
         | 'invalid_time';
     };
+
+export type DelegatedToggleWriteResult =
+  | { readonly ok: true; readonly state: ToggleState; readonly event: SafetyToggleAuditEvent }
+  | { readonly ok: false; readonly reason: Extract<DelegatedToggleDecision, { allowed: false }>['reason'] | 'delegation_unavailable' | 'refusal_audit_failed' | 'state_unavailable' | 'commit_failed' | 'invalid_time' | 'invalid_actor' | 'invalid_target' };
 
 export type OwnerRestoreAllResult =
   | { readonly ok: true; readonly restored: number; readonly events: readonly SafetyToggleAuditEvent[]; readonly summaryEvent: SafetyToggleRestoreAllEvent }
@@ -154,12 +178,14 @@ export type EnterpriseWorkspaceAuditResult =
 export class SafetyToggleService {
   private readonly repository: SafetyToggleRepository;
   private readonly enterpriseAccess: EnterpriseAccessResolver | null;
+  private readonly delegationAccess: SafetyDelegationGrantResolver | null;
   private readonly defaults = new DefaultToggleStateReader();
   private readonly failSafe = new FailSafeToggleStateReader();
 
-  constructor(repository: SafetyToggleRepository, enterpriseAccess?: EnterpriseAccessResolver) {
+  constructor(repository: SafetyToggleRepository, enterpriseAccess?: EnterpriseAccessResolver, delegationAccess?: SafetyDelegationGrantResolver) {
     this.repository = repository;
     this.enterpriseAccess = enterpriseAccess ?? null;
+    this.delegationAccess = delegationAccess ?? null;
   }
 
   async read(scope: ToggleScope, category: SafetyCategory): Promise<ToggleState> {
@@ -235,6 +261,80 @@ export class SafetyToggleService {
         reason: decision.reason,
         changedAt: input.changedAt,
       });
+    try {
+      await this.repository.commit({ expectedVersion: previous.version, nextState, event });
+      return Object.freeze({ ok: true, state: nextState, event });
+    } catch {
+      return { ok: false, reason: 'commit_failed' };
+    }
+  }
+
+  /** TS-778: delegated writes use this same toggle store; the route must supply trusted auth identity. */
+  async setDelegatedToggle(input: {
+    readonly actorUserId: unknown;
+    readonly target: unknown;
+    readonly category: unknown;
+    readonly enabled: unknown;
+    readonly reason: unknown;
+    readonly changedAt: unknown;
+  }): Promise<DelegatedToggleWriteResult> {
+    if (!isBoundedId(input?.actorUserId)) return { ok: false, reason: 'invalid_actor' };
+    if (!isStrictOwnerScope(input?.target) || (input.target.workspaceId !== undefined && input.target.sandboxId !== undefined)) return { ok: false, reason: 'invalid_target' };
+    if (typeof input.changedAt !== 'number' || !Number.isSafeInteger(input.changedAt) || input.changedAt < 0) return { ok: false, reason: 'invalid_time' };
+
+    let grant = null;
+    let lookupFailed = false;
+    try {
+      if (!this.delegationAccess) lookupFailed = true;
+      else grant = await this.delegationAccess.getActiveGrant({ ownerId: input.target.subjectId, delegateId: input.actorUserId, target: input.target });
+    } catch {
+      lookupFailed = true;
+    }
+    const decision = lookupFailed
+      ? null
+      : decideDelegatedToggleWrite({ grant, actorId: input.actorUserId, target: input.target, category: input.category, enabled: input.enabled, reason: input.reason, changedAt: input.changedAt });
+    if (lookupFailed || !decision?.allowed) {
+      const refusalReason: Extract<DelegatedToggleDecision, { allowed: false }>['reason'] | 'delegation_unavailable' =
+        decision && !decision.allowed ? decision.reason : 'delegation_unavailable';
+      if (!this.repository.recordDelegationRefusal) return { ok: false, reason: 'refusal_audit_failed' };
+      const event: SafetyDelegationRefusalEvent = Object.freeze({
+        eventType: 'safety.delegation.toggle_refused', schemaVersion: 1,
+        actorId: input.actorUserId, ownerId: input.target.subjectId, target: Object.freeze({ ...input.target }),
+        attemptedCategory: typeof input.category === 'string' ? input.category.slice(0, 128) : null,
+        attemptedEnabled: typeof input.enabled === 'boolean' ? input.enabled : null,
+        refusalReason, changedAt: input.changedAt, ownerAlertRequired: true,
+      });
+      try {
+        await this.repository.recordDelegationRefusal(event);
+      } catch {
+        return { ok: false, reason: 'refusal_audit_failed' };
+      }
+      return { ok: false, reason: refusalReason };
+    }
+
+    let priorStored: ToggleState | null;
+    try {
+      priorStored = await this.repository.read(decision.target, decision.category);
+    } catch {
+      return { ok: false, reason: 'state_unavailable' };
+    }
+    const previous = priorStored ?? this.defaults.read(decision.target, decision.category);
+    if (previous.category !== decision.category || !Number.isSafeInteger(previous.version) || previous.version < 1 ||
+        previous.version >= Number.MAX_SAFE_INTEGER || !isToggleStateAllowedInScope(previous, decision.target)) {
+      return { ok: false, reason: 'state_unavailable' };
+    }
+    const nextState: ToggleState = Object.freeze({
+      category: decision.category, enabled: decision.enabled, source: 'delegated_admin', version: previous.version + 1,
+    });
+    const event: SafetyToggleAuditEvent = Object.freeze({
+      eventType: 'safety.toggle.changed', schemaVersion: 1, actorId: decision.actorId,
+      actorLane: 'delegated_admin', delegationId: decision.delegationId,
+      target: decision.target, category: decision.category,
+      previousEnabled: previous.enabled, enabled: nextState.enabled,
+      previousVersion: previous.version, version: nextState.version,
+      reason: decision.reason, changedAt: input.changedAt,
+      workspaceId: decision.target.workspaceId, ownerAlertRequired: true,
+    });
     try {
       await this.repository.commit({ expectedVersion: previous.version, nextState, event });
       return Object.freeze({ ok: true, state: nextState, event });

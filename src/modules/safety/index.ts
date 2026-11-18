@@ -9,3 +9,5 @@ export * from './override-service.ts';
 export * from './enterprise-workspace-admin-service.ts';
 export * from './safety-self-audit-service.ts';
 export * from './safety-emergency-restore-service.ts';
+export * from './engine/delegation-engine.ts';
+export * from './safety-delegation-service.ts';
