@@ -8,3 +8,4 @@ export * from './engine/self-audit-engine.ts';
 export * from './override-service.ts';
 export * from './enterprise-workspace-admin-service.ts';
 export * from './safety-self-audit-service.ts';
+export * from './safety-emergency-restore-service.ts';
