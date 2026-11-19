@@ -49,7 +49,10 @@ export function isEngineCode(value: unknown): value is string {
 }
 
 /** Engine rows name their engines here (Engine Row Map, 10 Nov 2026). TQ-027 spans three. */
-export const ENGINE_BY_FEATURE: Readonly<Record<string, readonly string[]>> = { 'TQ-027': ['manhwa', '3d', 'music'] };
+export const ENGINE_BY_FEATURE: Readonly<Record<string, readonly string[]>> = {
+  'TQ-027': ['manhwa', '3d', 'music'],
+  'RV-035': ENGINES,
+};
 
 export interface PlanRecord {
   readonly userId: string;
