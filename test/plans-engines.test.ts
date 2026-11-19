@@ -325,6 +325,16 @@ describe('plans hooks: credit ledger engine', () => {
     assert.equal(first.entries.length, 1);
   });
 
+  it('expires negative spend allocations with their source grant', () => {
+    const grant = appendGrant([], 'u', parsed({ source: 'free_window', amount: 10, expiresAt: 300 }), 100);
+    const result = spend(grant.entries, 'u', { engine: '', amount: 4, jobId: 'expiring_job', costUsdMicros: 500 }, 200);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(creditBalance(result.entries, 200, ''), 6);
+      assert.equal(creditBalance(result.entries, 300, ''), 0);
+    }
+  });
+
   it('counts expired positive grants as dead and negatives always', () => {
     let entries: readonly LedgerEntry[] = [];
     entries = appendGrant(entries, 'u', parsed({ source: 'free_window', amount: 10, expiresAt: 100 }), now).entries;
