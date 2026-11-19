@@ -7,6 +7,7 @@
  * batch — never later.
  */
 import type { GateId } from './plan-engine.ts';
+import { PART02_FEATURE_GATES } from './part02-feature-gates.ts';
 
 export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'CO-001': 'free',
@@ -226,6 +227,7 @@ export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'TS-774': 'enterprise',
   'TS-792': 'internal',
   'TS-793': 'internal',
-  'TS-794': 'internal',
+  'TS-794': 'internal',,
+  ...PART02_FEATURE_GATES
 };
 
