@@ -1,5 +1,6 @@
 export * from './engine/plan-engine.ts';
 export * from './engine/feature-gates.ts';
+export * from './engine/part02-feature-gates.ts';
 export * from './engine/route-gates.ts';
 export * from './engine/country-registry-engine.ts';
 export * from './engine/access-snapshot-engine.ts';
