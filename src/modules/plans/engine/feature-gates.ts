@@ -227,7 +227,7 @@ export const FEATURE_GATES: Readonly<Record<string, GateId>> = {
   'TS-774': 'enterprise',
   'TS-792': 'internal',
   'TS-793': 'internal',
-  'TS-794': 'internal',,
+  'TS-794': 'internal',
   ...PART02_FEATURE_GATES
 };
 
