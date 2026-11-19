@@ -7,6 +7,8 @@ import {
   ENGINE_NAMES,
   ENGINES,
   FEATURE_GATES,
+  PART02_FEATURE_GATES,
+  PART02_NOT_TIERED_FEATURES,
   gateForRoute,
   isEngineCode,
   isPlanId,
@@ -70,8 +72,22 @@ describe('plans engine (PLAN GATE LAW)', () => {
   it('pins the catalog gates plus the Enterprise workspace-admin feature', () => {
     const counts: Record<string, number> = {};
     for (const gate of Object.values(FEATURE_GATES)) counts[gate] = (counts[gate] ?? 0) + 1;
-    assert.equal(Object.keys(FEATURE_GATES).length, 218);
-    assert.deepEqual(counts, { free: 90, internal: 64, pro: 26, enterprise: 17, team: 10, plus: 10, engine: 1 });
+    assert.equal(Object.keys(FEATURE_GATES).length, 670);
+    assert.deepEqual(counts, { free: 211, internal: 85, pro: 138, enterprise: 65, team: 56, plus: 113, engine: 2 });
+  });
+
+  it('registers every tiered Part 02 row and excludes the seven not-tiered security rows', () => {
+    assert.equal(Object.keys(PART02_FEATURE_GATES).length, 452);
+    for (const [feature, gate] of Object.entries(PART02_FEATURE_GATES)) {
+      assert.equal(FEATURE_GATES[feature], gate, feature);
+    }
+    assert.deepEqual([...PART02_NOT_TIERED_FEATURES], [
+      'SC-020', 'SC-021', 'SC-022', 'SC-023', 'SC-041', 'SC-062', 'SC-063',
+    ]);
+    for (const feature of PART02_NOT_TIERED_FEATURES) {
+      assert.equal(Object.hasOwn(PART02_FEATURE_GATES, feature), false, feature);
+      assert.equal(Object.hasOwn(FEATURE_GATES, feature), false, feature);
+    }
   });
 
   it('pins spot-checked gates from the With-Plans catalog', () => {
