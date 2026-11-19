@@ -225,7 +225,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
 
   // Plan hooks (10 Nov 2026): switches, bundle plans, free-engine limits, monthly credits, pass catalog, webhook secret.
-  const gatesEnabled = env.FORGE_GATES_ENABLED !== 'false';
+  const rawGatesEnabled = env.FORGE_GATES_ENABLED ?? 'true';
+  if (rawGatesEnabled !== 'true' && rawGatesEnabled !== 'false') {
+    throw new ConfigError('FORGE_GATES_ENABLED must be true or false');
+  }
+  const gatesEnabled = rawGatesEnabled === 'true';
+  if (production && !gatesEnabled) {
+    throw new ConfigError('FORGE_GATES_ENABLED cannot be false in production');
+  }
   const featureSwitches: Record<string, boolean> = {};
   for (const part of (env.FORGE_FEATURE_SWITCHES ?? '').split(',')) {
     const entry = part.trim();
