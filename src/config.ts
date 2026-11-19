@@ -59,6 +59,10 @@ export interface ForgeConfig {
     /** Hook 9: the HMAC secret access snapshots are signed with. */
     accessSecret: Buffer;
   };
+  safety: {
+    /** TS-793: owner-configured wrongful-block rate threshold; null keeps automatic tasking disabled until decided. */
+    maxWrongfulBlockRate: number | null;
+  };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
     databaseUrl: string | null;
@@ -98,6 +102,14 @@ function money(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new ConfigError(`${name} must be a number between 0 and 1000000`);
   return n;
+}
+
+function optionalUnitRate(env: NodeJS.ProcessEnv, name: string): number | null {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1) throw new ConfigError(`${name} must be a number between 0 and 1`);
+  return value;
 }
 
 function secret(raw: string, name: string): Buffer {
@@ -355,6 +367,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   }
 
   const currentPepperVersion = Math.max(...peppers.keys());
+  const maxWrongfulBlockRate = optionalUnitRate(env, 'FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE');
 
   return {
     env: mode,
@@ -407,6 +420,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       accessSnapshotTtlHours,
       accessSecret,
     },
+    safety: { maxWrongfulBlockRate },
     storage: {
       databaseUrl,
       databaseSsl: sslSetting,

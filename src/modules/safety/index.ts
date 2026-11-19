@@ -17,3 +17,5 @@ export * from './engine/safety-evaluation-engine.ts';
 export * from './safety-evaluation-service.ts';
 export * from './engine/compliance-mapping-engine.ts';
 export * from './safety-compliance-service.ts';
+export * from './engine/false-positive-engine.ts';
+export * from './safety-false-positive-service.ts';

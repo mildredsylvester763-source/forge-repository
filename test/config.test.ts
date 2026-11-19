@@ -88,4 +88,13 @@ describe('configuration safety', () => {
     const c = loadConfig({ FORGE_ENV: 'development' });
     assert.ok(c.warnings.length >= 2);
   });
+  it('keeps the TS-793 rate threshold unconfigured until supplied through central config', () => {
+    assert.equal(loadConfig({ FORGE_ENV: 'test' }).safety.maxWrongfulBlockRate, null);
+    assert.equal(loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '0.025' }).safety.maxWrongfulBlockRate, 0.025);
+    assert.equal(loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '0' }).safety.maxWrongfulBlockRate, 0);
+    assert.equal(loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '1' }).safety.maxWrongfulBlockRate, 1);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '-0.01' }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '1.01' }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: 'unknown' }), ConfigError);
+  });
 });
