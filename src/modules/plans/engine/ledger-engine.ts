@@ -89,7 +89,8 @@ export function creditBalance(entries: readonly LedgerEntry[], now: number, engi
   let balance = 0;
   for (const entry of entries) {
     if (entry.engine !== engine) continue;
-    if (entry.amount > 0 && entry.expiresAt !== null && entry.expiresAt <= now) continue;
+    // A spend allocation expires with the grant it consumes; otherwise an expired grant can leave a negative balance.
+    if (entry.expiresAt !== null && entry.expiresAt <= now) continue;
     balance += entry.amount;
   }
   return balance;
