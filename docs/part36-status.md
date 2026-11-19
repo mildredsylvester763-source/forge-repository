@@ -54,7 +54,7 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-789 | PARTIAL | Jurisdictional compliance category is hard-pinned ON in the reference reader; country-specific law mapping and enforcement integration absent. |
 | TS-790 | NOT STARTED | Agent runner does not yet consume this public toggle contract. |
 | TS-791 | NOT STARTED | Legal basis is not yet stored per protection or release-validated. |
-| TS-792 | NOT STARTED | Safety dashboard/incident feed absent. |
+| TS-792 | PARTIAL | Added a backend dashboard provider over the canonical safety transparency snapshot, with override-count and incident-feed reader ports, workspace scoping, runtime data validation, and an explicit immutable always-ON floor status. Functionality tests cover parity and access isolation. No production override-count/incident adapter, route, or UI is wired; the repository had no incident-feed schema to reuse. |
 | TS-793 | NOT STARTED | False-positive measurement and review task trigger absent. |
 | TS-794 | NOT STARTED | Versioned harm-set harness and release blocking absent. |
 | TS-795 | NOT STARTED | Safety incident postmortem workflow absent. |

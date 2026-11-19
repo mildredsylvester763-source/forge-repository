@@ -12,3 +12,4 @@ export * from './safety-emergency-restore-service.ts';
 export * from './engine/delegation-engine.ts';
 export * from './safety-delegation-service.ts';
 export * from './admin-console-service.ts';
+export * from './safety-dashboard-service.ts';
