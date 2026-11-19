@@ -25,6 +25,14 @@ describe('configuration safety', () => {
     assert.throws(() => loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `x:${key()}` })), ConfigError);
     assert.throws(() => loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},1:${key()}` })), ConfigError);
   });
+  it('never permits plan gates to be disabled in production', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_GATES_ENABLED: 'false' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_GATES_ENABLED: 'disabled' })), ConfigError);
+    const dev = loadConfig({ FORGE_ENV: 'development', FORGE_GATES_ENABLED: 'false' });
+    assert.equal(dev.plans.gatesEnabled, false);
+    assert.equal(loadConfig(prod()).plans.gatesEnabled, true);
+  });
+
   it('enforces production hardening: https origins, strong scrypt cost, secure cookie', () => {
     assert.throws(() => loadConfig(prod({ FORGE_ALLOWED_ORIGINS: 'http://app.example.com' })), ConfigError);
     assert.throws(() => loadConfig(prod({ FORGE_SCRYPT_LOG_N: '12' })), ConfigError);
