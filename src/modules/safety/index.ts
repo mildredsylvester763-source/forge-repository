@@ -13,3 +13,5 @@ export * from './engine/delegation-engine.ts';
 export * from './safety-delegation-service.ts';
 export * from './admin-console-service.ts';
 export * from './safety-dashboard-service.ts';
+export * from './engine/safety-evaluation-engine.ts';
+export * from './safety-evaluation-service.ts';

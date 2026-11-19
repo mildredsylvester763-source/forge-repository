@@ -56,7 +56,7 @@ Source: **Catalog Part 36 Safety Toggles and the Hard Floor (With Plans)**, date
 | TS-791 | NOT STARTED | Legal basis is not yet stored per protection or release-validated. |
 | TS-792 | PARTIAL | Added a backend dashboard provider over the canonical safety transparency snapshot, with override-count and incident-feed reader ports, workspace scoping, runtime data validation, and an explicit immutable always-ON floor status. Functionality tests cover parity and access isolation. No production override-count/incident adapter, route, or UI is wired; the repository had no incident-feed schema to reuse. |
 | TS-793 | NOT STARTED | False-positive measurement and review task trigger absent. |
-| TS-794 | NOT STARTED | Versioned harm-set harness and release blocking absent. |
+| TS-794 | PARTIAL | Added a deterministic versioned harm-set engine and release-evaluation service. It requires complete coverage of every toggle system plus the immutable floor, reuses AI-025 grading, and blocks on any per-system score drop against an exact approved baseline. Functionality tests pass. The trusted harm-set/runner/baseline adapters and actual release-pipeline hook are not wired. |
 | TS-795 | NOT STARTED | Safety incident postmortem workflow absent. |
 | TS-796 | PARTIAL | Each catalog protection has a plain-language description; automated readability review and product/UI review are absent. |
 | TS-797 | NOT STARTED | Research subscription/update-ticket workflow absent. |
