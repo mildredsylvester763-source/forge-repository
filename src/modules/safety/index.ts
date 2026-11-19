@@ -15,3 +15,5 @@ export * from './admin-console-service.ts';
 export * from './safety-dashboard-service.ts';
 export * from './engine/safety-evaluation-engine.ts';
 export * from './safety-evaluation-service.ts';
+export * from './engine/compliance-mapping-engine.ts';
+export * from './safety-compliance-service.ts';
