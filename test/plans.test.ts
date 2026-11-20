@@ -339,6 +339,23 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('keeps unpaid engines at Free cost limits even when the account has a paid base plan (Hook 2b)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await registerAndSetPlan(h, 'plans-paid-base-unpaid-engine@forge.test', 'plus');
+      const decision = await h.app.plans.canUse(user.id, 'TQ-027');
+      assert.equal(decision.allowed, true);
+      assert.equal(decision.level, 'free');
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'paid-base-free-engine-max', costUsdMicros: 200_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 1, jobId: 'paid-base-free-engine-over', costUsdMicros: 1 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'free_engine_cost_cap_reached',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   it('treats repeated credit spends with the same job id as idempotent (Hook 3)', async () => {
     const h = await startHarness();
     try {
@@ -457,9 +474,13 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       const user = await freeUser(h, 'batchb-snapshot@forge.test');
       const built = await h.post('/v1/plans/access-snapshot', {}, { cookie: user.cookie });
       assert.equal(built.status, 200);
-      const body = (await built.json()) as { snapshot: { userId: string; plan: string; expiresAt: number }; signature: string };
+      const body = (await built.json()) as { snapshot: { userId: string; plan: string; planExpiresAt: number | null; passExpiresAt: Record<string, number | null>; expiresAt: number }; signature: string };
       assert.equal(body.snapshot.plan, 'free');
       assert.ok(body.signature.length > 0);
+      const other = await freeUser(h, 'batchb-snapshot-other@forge.test');
+      const crossAccount = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: other.cookie });
+      assert.equal(crossAccount.status, 403);
+      assert.equal(await errorCode(crossAccount), 'snapshot-user-mismatch');
       const verified = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: user.cookie });
       assert.equal(verified.status, 200);
       const verifiedBody = (await verified.json()) as { valid: boolean; remainingMs: number };

@@ -130,8 +130,8 @@ export function plansRoutes(
     },
     '/v1/plans/access-snapshot/verify': {
       POST: async (ctx): Promise<HttpResult> => {
-        await requireUser(ctx);
-        const result = await plans.verifyAccessSnapshot(await ctx.json());
+        const user = await requireUser(ctx);
+        const result = await plans.verifyAccessSnapshot(user.id, await ctx.json());
         return { status: 200, body: { valid: result.valid, remainingMs: result.remainingMs, serverState: result.serverState } };
       },
     },

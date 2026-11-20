@@ -568,14 +568,37 @@ describe('country registry (Hook 8)', () => {
 
 /** Hook 9 - cached access for bad networks, pure engine pinned. */
 describe('access snapshot (Hook 9)', () => {
-  it('assembles a snapshot with sorted unique passes and honest bounds', () => {
-    const ok = assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: ['music', 'painting', 'music'], now: 1000, ttlMs: 6 * 3_600_000 });
+  it('assembles a snapshot with sorted unique passes and independent entitlement expiries', () => {
+    const ok = assembleAccessSnapshot({
+      userId: 'u1',
+      plan: 'pro',
+      passes: ['music', 'painting', 'music'],
+      planExpiresAt: 2500,
+      passExpiresAt: { music: 3000, painting: null },
+      now: 1000,
+      ttlMs: 6 * 3_600_000,
+    });
     assert.ok(ok.ok);
-    if (ok.ok) assert.deepEqual({ plan: ok.value.plan, passes: [...ok.value.passes], issuedAt: ok.value.issuedAt, expiresAt: ok.value.expiresAt }, { plan: 'pro', passes: ['music', 'painting'], issuedAt: 1000, expiresAt: 1000 + 6 * 3_600_000 });
+    if (ok.ok) {
+      assert.deepEqual(
+        { plan: ok.value.plan, passes: [...ok.value.passes], planExpiresAt: ok.value.planExpiresAt, passExpiresAt: ok.value.passExpiresAt, issuedAt: ok.value.issuedAt, expiresAt: ok.value.expiresAt },
+        { plan: 'pro', passes: ['music', 'painting'], planExpiresAt: 2500, passExpiresAt: { music: 3000, painting: null }, issuedAt: 1000, expiresAt: 1000 + 6 * 3_600_000 },
+      );
+      const afterPlanExpiry = verifyAccessSnapshot(ok.value, 2500);
+      assert.ok(afterPlanExpiry.ok);
+      if (afterPlanExpiry.ok) {
+        assert.equal(afterPlanExpiry.value.snapshot.plan, 'free');
+        assert.deepEqual([...afterPlanExpiry.value.snapshot.passes], ['music', 'painting']);
+      }
+      const afterMusicExpiry = verifyAccessSnapshot(ok.value, 3000);
+      assert.ok(afterMusicExpiry.ok);
+      if (afterMusicExpiry.ok) assert.deepEqual([...afterMusicExpiry.value.snapshot.passes], ['painting']);
+    }
     assert.deepEqual(assembleAccessSnapshot({ userId: '', plan: 'pro', passes: [], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-no-user' });
     assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: '', passes: [], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-bad-plan' });
     assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: [42 as unknown as string], now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-bad-passes' });
     assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: [], now: 1000, ttlMs: 0 }), { ok: false, reason: 'snapshot-bad-ttl' });
+    assert.deepEqual(assembleAccessSnapshot({ userId: 'u1', plan: 'pro', passes: ['music'], passExpiresAt: { voice: 3000 }, now: 1000, ttlMs: 3_600_000 }), { ok: false, reason: 'snapshot-unknown-pass-expiry' });
   });
 
   it('verifies shapes, expiry and remaining time; the server stays the boss', () => {

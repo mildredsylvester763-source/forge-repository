@@ -175,3 +175,13 @@ The repository audit found that the earlier "handled once" wording overstated th
 Admin actions now emit append-only `plans.admin.action` events with the authenticated admin actor, target, action and required reason. Promotion redemptions and account-deletion requests also emit named events. The admin promotion-definition endpoint now requires a written reason.
 
 These changes close the storage race conditions in the SQLite and PostgreSQL adapters, but do not close every Plan Hooks requirement. Remaining gaps are tracked in `docs/part02-audit-ledger.md`: durable account pause/deletion state, durable promotion definitions/redemptions and atomic redemption limits, complete pass-product/price validation (including multi-engine credit allocation and the ALG-52/ALG-56 inputs not contained in the two governing documents), full account export/purge policy approval, device identity at the gateway, explicit payment test-mode lifecycle coverage, and an atomic audit outbox tying the hash-chained event log to billing commits. Native PostgreSQL CI must still be run against a real PostgreSQL service; the SQLite-backed adapter harness is not equivalent evidence.
+
+
+### Audit correction — 20 November 2026 (follow-up)
+
+The follow-up review found and fixed two edge cases in the plan hooks:
+
+- Hook 2b now applies the free-engine monthly cost ceiling to every unpaid engine, including accounts with a paid base plan that does not include that engine. A paid base plan is not treated as an all-round engine entitlement.
+- Hook 9 snapshots now carry separate base-plan and per-engine pass expiry timestamps. A plan downgrades to Free and an individual pass disappears at its own expiry, without invalidating other still-live entitlements. Snapshot verification is bound to the authenticated user and refuses paused or deletion-queued accounts.
+
+These changes are covered by regression tests. They do not resolve the remaining owner-input and lifecycle blockers recorded in `docs/part02-audit-ledger.md`.

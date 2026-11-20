@@ -1,11 +1,12 @@
 import { AppError } from '../../kernel/errors.ts';
+import { timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../../kernel/clock.ts';
 import type { EventStore } from '../../kernel/events.ts';
 import { DEFAULT_PLAN, isEngineCode, isPlanId, type GateId, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
 import { FEATURE_GATES } from './engine/feature-gates.ts';
 import { gateForRoute } from './engine/route-gates.ts';
 import { canUse as decideUse, type AccessConfig, type AccessDecision } from './engine/access-engine.ts';
-import { activeBasePlan, activePasses, applyPaymentEvent, type PaymentEvent, type SubscriptionItem } from './engine/subscription-engine.ts';
+import { activeBasePlan, activePasses, applyPaymentEvent, isItemLive, type PaymentEvent, type SubscriptionItem } from './engine/subscription-engine.ts';
 import { appendGrant, balanceByEngine, creditBalance, parseGrant, spend, type GrantInput, type LedgerEntry, type SpendBreakdownEntry, type SpendInput } from './engine/ledger-engine.ts';
 import { lookupCountry as runLookupCountry, type CountryRow } from './engine/country-registry-engine.ts';
 import { assembleAccessSnapshot, verifyAccessSnapshot as runVerifySnapshot, type AccessSnapshot } from './engine/access-snapshot-engine.ts';
@@ -274,7 +275,9 @@ export class PlansService {
     const paidEngine = input.engine !== '' &&
       (state.passes.includes(input.engine) || this.access.engineBundlePlans.includes(state.plan));
     const usesFreeWindow = input.engine === '' ? state.plan === 'free' : !paidEngine;
-    const freeLevelEngine = input.engine !== '' && !paidEngine && state.plan === 'free';
+    // Hook 2b: every engine without its own pass or an all-round plan stays at Free limits,
+    // even when the user has paid for a general base plan.
+    const freeLevelEngine = input.engine !== '' && !paidEngine;
     const monthDate = new Date(now);
     const monthStart = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1);
     const monthEnd = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1);
@@ -405,26 +408,55 @@ export class PlansService {
 
   /** Hook 9 - a signed copy of what the user may use, valid for a few hours offline. */
   async buildAccessSnapshot(userId: string): Promise<{ snapshot: AccessSnapshot; signature: string }> {
+    const now = this.clock();
+    const accountState = await this.billing.getAccountState(userId);
+    if (accountState.paused || accountState.deletionQueuedAt !== null) {
+      throw new AppError(403, 'account_paused', 'This account is paused or has a pending deletion request. Contact support.');
+    }
     const state = await this.getEntitlementState(userId);
+    const basePlan = activeBasePlan(state.items, now);
+    const passExpiresAt: Record<string, number | null> = {};
+    for (const pass of state.passes) {
+      const liveItems = state.items.filter((item) =>
+        item.itemType === 'engine_pass' && item.itemCode === pass && isItemLive(item, now),
+      );
+      // Multiple overlapping purchases for one engine remain valid until the latest one ends.
+      passExpiresAt[pass] = liveItems.length === 0 ? null : Math.max(...liveItems.map((item) => item.endsAt));
+    }
     const assembled = assembleAccessSnapshot({
       userId,
       plan: state.plan,
       passes: state.passes,
-      now: this.clock(),
+      planExpiresAt: basePlan?.endsAt ?? null,
+      passExpiresAt,
+      now,
       ttlMs: this.accessSnapshotTtlHours * 3_600_000,
     });
     if (!assembled.ok) throw new AppError(400, assembled.reason, 'The access snapshot is invalid.', { details: { reason: assembled.reason } });
     return { snapshot: assembled.value, signature: signPaymentPayload(this.accessSecret, assembled.value) };
   }
 
-  async verifyAccessSnapshot(body: unknown): Promise<{ valid: true; remainingMs: number; serverState: { plan: PlanId; passes: readonly string[] } }> {
+  async verifyAccessSnapshot(userId: string, body: unknown): Promise<{ valid: true; remainingMs: number; serverState: { plan: PlanId; passes: readonly string[] } }> {
     const dto = (body ?? {}) as Record<string, unknown>;
-    const checked = runVerifySnapshot(dto.snapshot, this.clock());
-    if (!checked.ok) throw new AppError(400, checked.reason, 'The access snapshot is invalid.', { details: { reason: checked.reason } });
-    if (typeof dto.signature !== 'string' || signPaymentPayload(this.accessSecret, checked.value.snapshot) !== dto.signature) {
+    const rawSnapshot = dto.snapshot;
+    if (typeof rawSnapshot !== 'object' || rawSnapshot === null || (rawSnapshot as Record<string, unknown>).userId !== userId) {
+      throw new AppError(403, 'snapshot-user-mismatch', 'The access snapshot belongs to a different account.', {});
+    }
+    if (typeof dto.signature !== 'string' || !/^[a-f0-9]{64}$/i.test(dto.signature)) {
       throw new AppError(400, 'snapshot-signature-invalid', 'The access snapshot signature does not match.', {});
     }
-    const state = await this.getEntitlementState(checked.value.snapshot.userId);
+    const expected = Buffer.from(signPaymentPayload(this.accessSecret, rawSnapshot), 'hex');
+    const supplied = Buffer.from(dto.signature, 'hex');
+    if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied)) {
+      throw new AppError(400, 'snapshot-signature-invalid', 'The access snapshot signature does not match.', {});
+    }
+    const checked = runVerifySnapshot(rawSnapshot, this.clock());
+    if (!checked.ok) throw new AppError(400, checked.reason, 'The access snapshot is invalid.', { details: { reason: checked.reason } });
+    const accountState = await this.billing.getAccountState(userId);
+    if (accountState.paused || accountState.deletionQueuedAt !== null) {
+      throw new AppError(403, 'account_paused', 'This account is paused or has a pending deletion request. Contact support.');
+    }
+    const state = await this.getEntitlementState(userId);
     return { valid: true, remainingMs: checked.value.remainingMs, serverState: { plan: state.plan, passes: state.passes } };
   }
 
