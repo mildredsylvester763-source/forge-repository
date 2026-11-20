@@ -222,7 +222,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const checkBody = (await check.json()) as { decision: { allowed: boolean; plan: string } };
       assert.equal(checkBody.decision.allowed, true);
       assert.equal(checkBody.decision.plan, 'pro');
-      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
+      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
       assert.equal(credits.balances.general, 7500);
       assert.deepEqual(credits.balances.engines, [{ engine: 'music', balance: 100 }]);
       const replay = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
