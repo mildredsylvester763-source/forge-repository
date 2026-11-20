@@ -88,6 +88,25 @@ describe('configuration safety', () => {
     assert.equal(configured.passkeys.rpName, 'FORGE Workspace');
   });
 
+  it('validates pass product codes and their plan/engine mappings', () => {
+    const catalog = JSON.stringify([
+      { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 500, billingPeriod: 'monthly', sellable: true },
+      { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
+    ]);
+    const configured = loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: catalog });
+    assert.equal(configured.plans.passCatalog.length, 2);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['sonar'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
+      { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['painting'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError);
+  });
+
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
     assert.equal(c.password.currentPepperVersion, 3);

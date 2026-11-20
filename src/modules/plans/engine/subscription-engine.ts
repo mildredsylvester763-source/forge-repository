@@ -9,7 +9,7 @@
  * payment events, never from the app by itself. Workspace type is a separate concept and
  * lives outside this module. Money is whole smallest-unit integers with a currency code.
  */
-import { isEngineCode, isPlanId } from './plan-engine.ts';
+import { isPlanId } from './plan-engine.ts';
 
 export type SubscriptionItemType = 'base_plan' | 'engine_pass';
 export type SubscriptionStatus = 'active' | 'grace' | 'cancelled' | 'expired';
@@ -27,6 +27,7 @@ export interface SubscriptionItem {
 
 export interface PaymentProduct {
   readonly itemType: SubscriptionItemType;
+  /** The configured productCode from Hook 4; PlansService resolves it to plan/engine item codes. */
   readonly itemCode: string;
   readonly startsAt: number;
   readonly endsAt: number;
@@ -72,9 +73,12 @@ export function parsePaymentEvent(raw: unknown): PaymentParseResult {
     if (itemType === 'base_plan') {
       basePlans += 1;
       if (basePlans > 1) return { ok: false, reason: 'bad_products' };
-      if (itemCode === 'free') return { ok: false, reason: 'free_not_sellable' };
-      if (!isPlanId(itemCode)) return { ok: false, reason: 'plan_unknown' };
-    } else if (!isEngineCode(itemCode)) {
+      const planCode = itemCode.endsWith('_plan') ? itemCode.slice(0, -5) : itemCode;
+      if (planCode === 'free') return { ok: false, reason: 'free_not_sellable' };
+      if (!isPlanId(planCode)) return { ok: false, reason: 'plan_unknown' };
+    } else if (!/^[a-z][a-z0-9_]{0,63}$/.test(itemCode)) {
+      // Engine-pass itemCode is a productCode (for example music_pass), not an engine code.
+      // The configured, sellable catalog is checked by PlansService after signature verification.
       return { ok: false, reason: 'engine_unknown' };
     }
     const key = itemType + ':' + itemCode;

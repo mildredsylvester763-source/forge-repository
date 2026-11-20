@@ -33,7 +33,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         clock: () => now,
         access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
         monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
-        passCatalog: [],
+        passCatalog: [{ productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true }],
         adminUsers: [],
         countryCatalog: [],
         rateLimits: { user: null, device: null },
@@ -46,7 +46,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         amountMinor: 999,
         currency: 'USD',
         occurredAt: now,
-        products: [{ itemType: 'base_plan', itemCode: 'plus', startsAt: now, endsAt: now + 30 * 24 * 60 * 60 * 1000 }],
+        products: [{ itemType: 'base_plan', itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 24 * 60 * 60 * 1000 }],
       };
       const results = await Promise.all([service.processPaymentEvent(event), service.processPaymentEvent(event)]);
       assert.equal(results.filter((result) => !result.duplicate).length, 1);

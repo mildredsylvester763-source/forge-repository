@@ -247,7 +247,7 @@ describe('plans hooks: subscription engine', () => {
       [event([{ itemType: 'base_plan', itemCode: '', startsAt: 0, endsAt: 2000 }]), 'bad_item_code'],
       [event([{ itemType: 'base_plan', itemCode: 'free', startsAt: 0, endsAt: 2000 }]), 'free_not_sellable'],
       [event([{ itemType: 'base_plan', itemCode: 'diamond', startsAt: 0, endsAt: 2000 }]), 'plan_unknown'],
-      [event([{ itemType: 'engine_pass', itemCode: 'sonar', startsAt: 0, endsAt: 2000 }]), 'engine_unknown'],
+      [event([{ itemType: 'engine_pass', itemCode: 'bad pass', startsAt: 0, endsAt: 2000 }]), 'engine_unknown'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 500, endsAt: 500 }]), 'bad_window'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }, { itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 3000 }]), 'bad_products'],
     ];
@@ -267,6 +267,14 @@ describe('plans hooks: subscription engine', () => {
       assert.equal(result.event.currency, 'USD');
       assert.equal(result.event.products.length, 1);
     }
+  });
+
+  it('accepts configured product-code identifiers for base plans and engine passes', () => {
+    const base = parsePaymentEvent(event([{ itemType: 'base_plan', itemCode: 'plus_plan', startsAt: 0, endsAt: 2000 }]));
+    const pass = parsePaymentEvent(event([{ itemType: 'engine_pass', itemCode: 'music_painting_pass', startsAt: 0, endsAt: 2000 }]));
+    assert.equal(base.ok, true);
+    assert.equal(pass.ok, true);
+    if (pass.ok) assert.equal(pass.event.products[0]?.itemCode, 'music_painting_pass');
   });
 
   it('supersedes the active base plan only when the event carries a base plan', () => {

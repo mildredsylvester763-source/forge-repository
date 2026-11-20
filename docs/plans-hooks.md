@@ -185,3 +185,10 @@ The follow-up review found and fixed two edge cases in the plan hooks:
 - Hook 9 snapshots now carry separate base-plan and per-engine pass expiry timestamps. A plan downgrades to Free and an individual pass disappears at its own expiry, without invalidating other still-live entitlements. Snapshot verification is bound to the authenticated user and refuses paused or deletion-queued accounts.
 
 These changes are covered by regression tests. They do not resolve the remaining owner-input and lifecycle blockers recorded in `docs/part02-audit-ledger.md`.
+
+
+### Audit correction — 20 November 2026 (pass product mapping)
+
+Payment events now carry configured product codes (for example `plus_plan`, `music_pass`, or `music_painting_pass`) rather than relying on engine codes being sent as product identifiers. The service requires a matching sellable catalog entry, resolves base-plan products to their plan code, and expands multi-engine passes into one subscription item and one engine-tagged credit grant per included engine. In this implementation, `creditsIncluded` is interpreted per included engine so the ledger never creates a cross-engine credit pool.
+
+The catalog still must remain non-sellable/empty until the owner supplies the missing regional minor-unit price book, per-window cap values, and the ALG-43/52/56 guard inputs. Those values are not specified in the two governing PDFs and were not invented here.

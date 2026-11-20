@@ -6,6 +6,14 @@ import { systemClock } from '../src/kernel/clock.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
+const PAYMENT_CATALOG = JSON.stringify([
+  { productCode: 'pro_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'team_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+]);
+
 interface TestUser {
   cookie: string;
   id: string;
@@ -176,7 +184,7 @@ describe('plans (PLAN GATE LAW)', () => {
 
 
   it('processes signed payment events exactly once and grants tagged credits (Hooks 1, 3, 6)', async () => {
-    const h = await startHarness();
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
       const user = await freeUser(h, 'plans-pay@forge.test');
       const empty = await h.get('/v1/credits/me', { cookie: user.cookie });
@@ -192,8 +200,8 @@ describe('plans (PLAN GATE LAW)', () => {
         currency: 'USD',
         occurredAt: now,
         products: [
-          { itemType: 'base_plan', itemCode: 'pro', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
-          { itemType: 'engine_pass', itemCode: 'music', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+          { itemType: 'base_plan', itemCode: 'pro_plan', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+          { itemType: 'engine_pass', itemCode: 'music_pass', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
         ],
       };
       const bad = await h.post('/v1/payments/event', { payload, signature: 'deadbeef' });
@@ -216,6 +224,7 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(checkBody.decision.plan, 'pro');
       const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
       assert.equal(credits.balances.general, 7500);
+      assert.deepEqual(credits.balances.engines, [{ engine: 'music', balance: 100 }]);
       const replay = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
       const replayBody = (await replay.json()) as { processed: boolean; duplicate: boolean };
       assert.equal(replayBody.processed, false);
@@ -228,7 +237,7 @@ describe('plans (PLAN GATE LAW)', () => {
   });
 
   it('claims payment ids and commits subscription/credit effects atomically under concurrent retries (Hook 6)', async () => {
-    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
       const user = await freeUser(h, 'plans-atomic-payment@forge.test');
       const now = h.clock.now;
@@ -238,7 +247,7 @@ describe('plans (PLAN GATE LAW)', () => {
         amountMinor: 2499,
         currency: 'USD',
         occurredAt: now,
-        products: [{ itemType: 'base_plan' as const, itemCode: 'pro', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+        products: [{ itemType: 'base_plan' as const, itemCode: 'pro_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
       };
       const duplicates = await Promise.all([
         h.app.plans.processPaymentEvent(event),
@@ -250,12 +259,12 @@ describe('plans (PLAN GATE LAW)', () => {
       const second = {
         ...event,
         eventId: 'evt_atomic_second',
-        products: [{ itemType: 'base_plan' as const, itemCode: 'plus', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+        products: [{ itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
       };
       const third = {
         ...event,
         eventId: 'evt_atomic_third',
-        products: [{ itemType: 'base_plan' as const, itemCode: 'team', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+        products: [{ itemType: 'base_plan' as const, itemCode: 'team_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
       };
       await Promise.all([
         h.app.plans.processPaymentEvent(second),
@@ -269,6 +278,33 @@ describe('plans (PLAN GATE LAW)', () => {
         h.clock.now < item.endsAt,
       );
       assert.equal(liveBasePlans.length, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('maps a multi-engine product to separate tagged passes and credit grants (Hook 4)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-multi-engine-pass@forge.test');
+      const now = h.clock.now;
+      const event = {
+        eventId: 'evt_multi_engine_pass',
+        userId: user.id,
+        amountMinor: 1999,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'engine_pass' as const, itemCode: 'music_painting_pass', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const result = await h.app.plans.processPaymentEvent(event);
+      assert.equal(result.duplicate, false);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.deepEqual(state.passes, ['music', 'painting']);
+      const balances = await h.app.plans.creditBalances(user.id);
+      assert.deepEqual(balances.engines, [
+        { engine: 'music', balance: 100 },
+        { engine: 'painting', balance: 100 },
+      ]);
     } finally {
       await h.close();
     }

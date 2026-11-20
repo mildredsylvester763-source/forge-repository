@@ -28,6 +28,9 @@ const FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS = 200_000;
  * price book, never in code, and it stays empty until the owner sets prices. Every price
  * passes the margin guard (ALG-52) before sellable is switched to yes; a pass never costs
  * more than the all-round plan that already includes that engine (ALG-56).
+ *
+ * Hook 4 mapping: provider itemCode is productCode. Engine-pass creditsIncluded is allocated
+ * per engine in enginesIncluded so every ledger grant has exactly one engine tag.
  */
 export interface PassCatalogEntry {
   readonly productCode: string;
@@ -176,37 +179,56 @@ export class PlansService {
   async processPaymentEvent(event: PaymentEvent): Promise<ProcessedPaymentResult> {
     const now = this.clock();
     const committed = await this.billing.processPaymentEvent(event, now, (items, ledger) => {
-      const applied = applyPaymentEvent(items, event);
       let nextLedger = [...ledger];
       const ledgerEntries: LedgerEntry[] = [];
+      const normalizedProducts: PaymentEvent['products'][number][] = [];
       for (const product of event.products) {
-        let engine = '';
-        let source: 'plan' | 'pass' = 'plan';
-        let amount = 0;
+        const catalog = this.passCatalog.find((candidate) =>
+          candidate.productCode === product.itemCode && candidate.type === product.itemType,
+        );
+        if (catalog === undefined || !catalog.sellable) {
+          throw new AppError(400, 'payment_product_not_sellable', 'The payment event references a product that is not configured and sellable.', {
+            details: { productCode: product.itemCode, itemType: product.itemType },
+          });
+        }
         if (product.itemType === 'base_plan') {
-          amount = this.monthlyCredits[product.itemCode as keyof MonthlyCredits] ?? 0;
-          source = 'plan';
-        } else {
-          source = 'pass';
-          const entry = this.passCatalog.find((candidate) =>
-            candidate.type === 'engine_pass' &&
-            candidate.sellable &&
-            candidate.creditsIncluded > 0 &&
-            candidate.enginesIncluded.includes(product.itemCode),
-          );
-          if (entry !== undefined && entry.enginesIncluded.length === 1) {
-            engine = product.itemCode;
-            amount = entry.creditsIncluded;
+          const planCode = catalog.productCode.endsWith('_plan') ? catalog.productCode.slice(0, -5) : catalog.productCode;
+          if (!isPlanId(planCode) || planCode === 'free' || catalog.enginesIncluded.length !== 0) {
+            throw new AppError(400, 'payment_product_invalid', 'The configured base-plan product is invalid.', {
+              details: { productCode: catalog.productCode },
+            });
+          }
+          normalizedProducts.push({ ...product, itemCode: planCode });
+          const amount = this.monthlyCredits[planCode as keyof MonthlyCredits] ?? 0;
+          if (amount > 0) {
+            const grant = appendGrant(nextLedger, event.userId, {
+              engine: '', source: 'plan', amount, expiresAt: product.endsAt, jobId: null,
+            }, now);
+            nextLedger = [...grant.entries];
+            ledgerEntries.push(grant.entry);
+          }
+          continue;
+        }
+
+        const engines = [...new Set(catalog.enginesIncluded)];
+        if (engines.length === 0 || engines.some((engine) => !isEngineCode(engine))) {
+          throw new AppError(400, 'payment_product_invalid', 'The configured engine-pass product must name one or more catalog engines.', {
+            details: { productCode: catalog.productCode },
+          });
+        }
+        for (const engine of engines) {
+          normalizedProducts.push({ ...product, itemCode: engine });
+          if (catalog.creditsIncluded > 0) {
+            const grant = appendGrant(nextLedger, event.userId, {
+              engine, source: 'pass', amount: catalog.creditsIncluded, expiresAt: product.endsAt, jobId: null,
+            }, now);
+            nextLedger = [...grant.entries];
+            ledgerEntries.push(grant.entry);
           }
         }
-        if (amount > 0) {
-          const grant = appendGrant(nextLedger, event.userId, {
-            engine, source, amount, expiresAt: product.endsAt, jobId: null,
-          }, now);
-          nextLedger = [...grant.entries];
-          ledgerEntries.push(grant.entry);
-        }
       }
+      const normalizedEvent: PaymentEvent = { ...event, products: normalizedProducts };
+      const applied = applyPaymentEvent(items, normalizedEvent);
       return {
         superseded: applied.superseded,
         granted: applied.granted,
@@ -236,7 +258,7 @@ export class PlansService {
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'service', id: 'plans' },
       subject: { type: 'payment_event', id: event.eventId },
-      payload: { eventId: event.eventId, userId: event.userId, amountMinor: event.amountMinor, currency: event.currency },
+      payload: { eventId: event.eventId, userId: event.userId, amountMinor: event.amountMinor, currency: event.currency, productCodes: event.products.map((product) => product.itemCode) },
     });
     return { duplicate: false, granted: committed.value.granted };
   }

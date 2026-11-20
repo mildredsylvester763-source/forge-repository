@@ -3,7 +3,7 @@ import type { LogLevel } from './kernel/logger.ts';
 import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
 import type { DatabaseSsl } from './kernel/postgres.ts';
 import type { ScryptParams } from './modules/identity/password-hasher.ts';
-import { isPlanId } from './modules/plans/index.ts';
+import { isEngineCode, isPlanId } from './modules/plans/index.ts';
 import type { CountryRow, FreeEngineLimits, PassCatalogEntry, PlanId, RateLimitRule } from './modules/plans/index.ts';
 import { validateCountryRow, validateRateLimitRule } from './modules/plans/index.ts';
 
@@ -271,6 +271,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     }
     if (!Array.isArray(parsedCatalog)) throw new ConfigError('FORGE_PASS_CATALOG must be a JSON array');
     const entries: PassCatalogEntry[] = [];
+    const seenProductCodes = new Set<string>();
     for (const raw of parsedCatalog) {
       if (typeof raw !== 'object' || raw === null) throw new ConfigError('FORGE_PASS_CATALOG entries must be objects');
       const r = raw as Record<string, unknown>;
@@ -280,19 +281,35 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       const creditsIncluded = r.creditsIncluded;
       const billingPeriod = r.billingPeriod;
       const sellable = r.sellable;
-      if (typeof productCode !== 'string' || productCode.length === 0 || productCode.length > 64) {
-        throw new ConfigError('FORGE_PASS_CATALOG productCode must be 1 to 64 characters');
+      if (typeof productCode !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(productCode)) {
+        throw new ConfigError('FORGE_PASS_CATALOG productCode must be a lowercase identifier of 1 to 64 characters');
       }
+      if (seenProductCodes.has(productCode)) throw new ConfigError('FORGE_PASS_CATALOG productCode values must be unique');
+      seenProductCodes.add(productCode);
       if (type !== 'base_plan' && type !== 'engine_pass') throw new ConfigError('FORGE_PASS_CATALOG type must be base_plan or engine_pass');
       if (!Array.isArray(enginesIncluded) || enginesIncluded.some((engine) => typeof engine !== 'string')) {
         throw new ConfigError('FORGE_PASS_CATALOG enginesIncluded must be an array of engine codes');
       }
+      const engines = enginesIncluded as string[];
+      if (new Set(engines).size !== engines.length) throw new ConfigError('FORGE_PASS_CATALOG enginesIncluded must not contain duplicates');
+      if (type === 'engine_pass' && (engines.length === 0 || engines.some((engine) => !isEngineCode(engine)))) {
+        throw new ConfigError('FORGE_PASS_CATALOG engine_pass entries must name one or more known engine codes');
+      }
+      if (type === 'base_plan') {
+        const planCode = productCode.endsWith('_plan') ? productCode.slice(0, -5) : productCode;
+        if (!isPlanId(planCode) || planCode === 'free' || engines.length !== 0) {
+          throw new ConfigError('FORGE_PASS_CATALOG base_plan productCode must map to a paid plan and have no engines');
+        }
+      }
       if (typeof creditsIncluded !== 'number' || !Number.isInteger(creditsIncluded) || creditsIncluded < 0) {
         throw new ConfigError('FORGE_PASS_CATALOG creditsIncluded must be a whole number');
       }
+      if (type === 'engine_pass' && sellable === true && creditsIncluded < 1) {
+        throw new ConfigError('FORGE_PASS_CATALOG sellable engine passes must include at least one credit per engine');
+      }
       if (billingPeriod !== 'monthly' && billingPeriod !== 'yearly') throw new ConfigError('FORGE_PASS_CATALOG billingPeriod must be monthly or yearly');
       if (typeof sellable !== 'boolean') throw new ConfigError('FORGE_PASS_CATALOG sellable must be true or false');
-      entries.push({ productCode, type, enginesIncluded: enginesIncluded as string[], creditsIncluded, billingPeriod, sellable });
+      entries.push({ productCode, type, enginesIncluded: engines, creditsIncluded, billingPeriod, sellable });
     }
     passCatalog = entries;
   }
