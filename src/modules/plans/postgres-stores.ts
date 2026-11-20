@@ -1,4 +1,4 @@
-import type { SqlPool } from '../../kernel/sql.ts';
+import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { PlanId, PlanRecord } from './engine/plan-engine.ts';
 import type { PlanStore, PlanUpsert } from './plans-store.ts';
 
@@ -45,7 +45,7 @@ export class PostgresPlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { BillingStore } from './billing-store.ts';
+import type { BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
 
 interface PgItemRow {
   item_id: string;
@@ -134,9 +134,65 @@ export class PostgresBillingStore implements BillingStore {
     );
   }
 
+  async processPaymentEvent<T>(
+    event: PaymentEvent,
+    processedAt: number,
+    apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
+  ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }> {
+    return withTransaction(this.pool, async (conn) => {
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [event.userId]);
+      if (owner.rows.length === 0) throw new Error('billing user not found: ' + event.userId);
+      const claimed = await conn.query<{ event_id: string }>(
+        'INSERT INTO payment_events (event_id, user_id, amount_minor, currency, occurred_at, processed_at) ' +
+          'VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (event_id) DO NOTHING RETURNING event_id',
+        [event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt],
+      );
+      if (claimed.rows.length === 0) return { duplicate: true, value: null };
+      const itemRows = await conn.query<PgItemRow>('SELECT * FROM subscription_items WHERE user_id = $1 ORDER BY created_at, item_id', [event.userId]);
+      const ledgerRows = await conn.query<PgLedgerRow>('SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at, entry_id', [event.userId]);
+      const mutation = apply(itemRows.rows.map(pgItem), ledgerRows.rows.map(pgLedger));
+      for (const item of mutation.superseded) {
+        await conn.query('UPDATE subscription_items SET status = $1 WHERE item_id = $2 AND user_id = $3', ['cancelled', item.itemId, event.userId]);
+      }
+      for (const item of mutation.granted) {
+        await conn.query(
+          'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+          [item.itemId, item.userId, item.itemType, item.itemCode, item.startsAt, item.endsAt, item.status, item.source, processedAt],
+        );
+      }
+      for (const entry of mutation.ledgerEntries) {
+        await conn.query(
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+        );
+      }
+      return { duplicate: false, value: mutation.value };
+    });
+  }
+
   async listLedger(userId: string): Promise<readonly LedgerEntry[]> {
     const result = await this.pool.query<PgLedgerRow>('SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at, entry_id', [userId]);
     return result.rows.map(pgLedger);
+  }
+
+  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
+    return withTransaction(this.pool, async (conn) => {
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      if (owner.rows.length === 0) throw new Error('billing user not found: ' + userId);
+      const rows = await conn.query<PgLedgerRow>(
+        'SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at, entry_id FOR UPDATE',
+        [userId],
+      );
+      const current = rows.rows.map(pgLedger);
+      const mutation = apply(current);
+      for (const entry of mutation.append) {
+        await conn.query(
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+        );
+      }
+      return mutation.value;
+    });
   }
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {

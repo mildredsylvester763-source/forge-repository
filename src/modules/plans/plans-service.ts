@@ -177,33 +177,62 @@ export class PlansService {
    * and grants the credits (Hook 3) tagged with the engine they belong to.
    */
   async processPaymentEvent(event: PaymentEvent): Promise<ProcessedPaymentResult> {
-    if (await this.billing.hasPaymentEvent(event.eventId)) return { duplicate: true, granted: [] };
-    const items = await this.billing.listItems(event.userId);
-    const applied = applyPaymentEvent(items, event);
     const now = this.clock();
-    for (const item of applied.superseded) await this.billing.updateItemStatus(item.itemId, 'cancelled');
-    for (const item of applied.granted) await this.billing.appendItem(item, now);
-    await this.billing.markPaymentEvent(event, now);
-    for (const product of event.products) {
-      if (product.itemType === 'base_plan') {
-        const amount = this.monthlyCredits[product.itemCode as keyof MonthlyCredits] ?? 0;
-        if (amount > 0) {
-          await this.grantCredits(event.userId, { engine: '', source: 'plan', amount, expiresAt: null, jobId: null });
+    const committed = await this.billing.processPaymentEvent(event, now, (items, ledger) => {
+      const applied = applyPaymentEvent(items, event);
+      let nextLedger = [...ledger];
+      const ledgerEntries: LedgerEntry[] = [];
+      for (const product of event.products) {
+        let engine = '';
+        let source: 'plan' | 'pass' = 'plan';
+        let amount = 0;
+        if (product.itemType === 'base_plan') {
+          amount = this.monthlyCredits[product.itemCode as keyof MonthlyCredits] ?? 0;
+          source = 'plan';
+        } else {
+          source = 'pass';
+          const entry = this.passCatalog.find((candidate) =>
+            candidate.type === 'engine_pass' &&
+            candidate.sellable &&
+            candidate.creditsIncluded > 0 &&
+            candidate.enginesIncluded.includes(product.itemCode),
+          );
+          if (entry !== undefined && entry.enginesIncluded.length === 1) {
+            engine = product.itemCode;
+            amount = entry.creditsIncluded;
+          }
         }
-      } else {
-        const entry = this.passCatalog.find((candidate) => candidate.productCode === product.itemCode);
-        if (entry !== undefined && entry.creditsIncluded > 0) {
-          const engine = entry.enginesIncluded.length === 1 ? entry.enginesIncluded[0] ?? '' : '';
-          await this.grantCredits(event.userId, { engine, source: 'pass', amount: entry.creditsIncluded, expiresAt: null, jobId: null });
+        if (amount > 0) {
+          const grant = appendGrant(nextLedger, event.userId, {
+            engine, source, amount, expiresAt: product.endsAt, jobId: null,
+          }, now);
+          nextLedger = [...grant.entries];
+          ledgerEntries.push(grant.entry);
         }
       }
+      return {
+        superseded: applied.superseded,
+        granted: applied.granted,
+        ledgerEntries,
+        value: { granted: applied.granted, ledgerEntries },
+      };
+    });
+    if (committed.duplicate) return { duplicate: true, granted: [] };
+    for (const entry of committed.value.ledgerEntries) {
+      await this.events.append({
+        type: PlansEvents.CreditsGranted,
+        version: PLANS_EVENT_VERSION,
+        actor: { kind: 'service', id: 'plans' },
+        subject: { type: 'user_credits', id: event.userId },
+        payload: { userId: event.userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, eventId: event.eventId },
+      });
     }
     await this.events.append({
       type: PlansEvents.SubscriptionsChanged,
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'service', id: 'plans' },
       subject: { type: 'user_subscriptions', id: event.userId },
-      payload: { userId: event.userId, eventId: event.eventId, granted: [...applied.granted.map((item) => item.itemId)] },
+      payload: { userId: event.userId, eventId: event.eventId, granted: [...committed.value.granted.map((item) => item.itemId)] },
     });
     await this.events.append({
       type: PlansEvents.PaymentEventProcessed,
@@ -212,7 +241,7 @@ export class PlansService {
       subject: { type: 'payment_event', id: event.eventId },
       payload: { eventId: event.eventId, userId: event.userId, amountMinor: event.amountMinor, currency: event.currency },
     });
-    return { duplicate: false, granted: applied.granted };
+    return { duplicate: false, granted: committed.value.granted };
   }
 
   /** Hook 3 — append a credit grant. Invalid grants are refused by name, never guessed at. */
@@ -220,9 +249,10 @@ export class PlansService {
     const parsed = parseGrant(grant);
     if (!parsed.ok) throw new AppError(400, 'credit_grant_invalid', 'The credit grant is invalid.', { details: { reason: parsed.reason } });
     const now = this.clock();
-    const entries = await this.billing.listLedger(userId);
-    const appended = appendGrant(entries, userId, parsed.grant, now);
-    const stored = await this.billing.appendLedger(appended.entry);
+    const stored = await this.billing.mutateLedger(userId, (entries) => {
+      const appended = appendGrant(entries, userId, parsed.grant, now);
+      return { append: [appended.entry], value: appended.entry };
+    });
     await this.events.append({
       type: PlansEvents.CreditsGranted,
       version: PLANS_EVENT_VERSION,
@@ -235,14 +265,16 @@ export class PlansService {
 
   /** Hook 3 — spend credits atomically: an uncovered spend writes nothing and is refused by name. */
   async spendCredits(userId: string, input: SpendInput): Promise<{ spent: number; from: readonly SpendBreakdownEntry[] }> {
-    const entries = await this.billing.listLedger(userId);
-    const result = spend(entries, userId, input, this.clock());
-    if (!result.ok) {
-      throw new AppError(402, 'insufficient_credits', 'Not enough credits for this job.', {
-        details: { engine: input.engine, shortfall: result.shortfall, jobId: input.jobId },
-      });
-    }
-    for (const entry of result.entries.slice(entries.length)) await this.billing.appendLedger(entry);
+    const now = this.clock();
+    const result = await this.billing.mutateLedger(userId, (entries) => {
+      const outcome = spend(entries, userId, input, now);
+      if (!outcome.ok) {
+        throw new AppError(402, 'insufficient_credits', 'Not enough credits for this job.', {
+          details: { engine: input.engine, shortfall: outcome.shortfall, jobId: input.jobId },
+        });
+      }
+      return { append: outcome.entries.slice(entries.length), value: { spent: outcome.spent, from: outcome.from } };
+    });
     await this.events.append({
       type: PlansEvents.CreditsSpent,
       version: PLANS_EVENT_VERSION,
@@ -250,12 +282,22 @@ export class PlansService {
       subject: { type: 'user_credits', id: userId },
       payload: { userId, engine: input.engine, amount: input.amount, jobId: input.jobId },
     });
-    return { spent: result.spent, from: result.from };
+    return result;
   }
 
   /** Hook 3 — every pool the user has entries for. A balance is the sum of entries, computed, never stored. */
   async creditBalances(userId: string): Promise<{ general: number; engines: readonly { engine: string; balance: number }[] }> {
     return balanceByEngine(await this.billing.listLedger(userId), this.clock());
+  }
+
+  private async recordAdminAction(adminId: string, action: string, targetId: string, reason: string, details: Record<string, unknown> = {}): Promise<void> {
+    await this.events.append({
+      type: PlansEvents.AdminAction,
+      version: PLANS_EVENT_VERSION,
+      actor: { kind: 'user', id: adminId },
+      subject: { type: 'admin_action_target', id: targetId },
+      payload: { action, targetId, reason, ...details },
+    });
   }
 
   /** Hook 11 - nobody is an admin until the owner names them. The allowlist lives in config. */
@@ -320,7 +362,9 @@ export class PlansService {
     if (action.value.engine !== '' && !isEngineCode(action.value.engine)) {
       throw new AppError(400, 'admin-grant-engine-invalid', 'The engine tag must be a catalog engine code or empty for general credits.', {});
     }
-    return this.grantCredits(action.value.userId, { engine: action.value.engine, source: 'top_up', amount: action.value.amount, expiresAt: null, jobId: null });
+    const entry = await this.grantCredits(action.value.userId, { engine: action.value.engine, source: 'top_up', amount: action.value.amount, expiresAt: null, jobId: null });
+    await this.recordAdminAction(adminId, 'grant_credits', action.value.userId, action.value.reason, { entryId: entry.entryId, amount: entry.amount, engine: entry.engine });
+    return entry;
   }
 
   async adminCompPlan(adminId: string, body: unknown): Promise<PlanRecord> {
@@ -333,7 +377,9 @@ export class PlansService {
       reason: typeof dto.reason === 'string' ? dto.reason : '',
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
-    return this.setPlan(action.value.userId, action.value.plan as PlanId);
+    const record = await this.setPlan(action.value.userId, action.value.plan as PlanId);
+    await this.recordAdminAction(adminId, 'comp_plan', action.value.userId, action.value.reason, { plan: record.plan });
+    return record;
   }
 
   async adminPauseAccount(adminId: string, body: unknown): Promise<{ userId: string; paused: boolean; queuedForDeletion: boolean }> {
@@ -348,6 +394,7 @@ export class PlansService {
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
     if (action.value.pause) this.pausedAccounts.add(action.value.userId);
     else this.pausedAccounts.delete(action.value.userId);
+    await this.recordAdminAction(adminId, action.value.pause ? 'pause_account' : 'resume_account', action.value.userId, action.value.reason, { paused: action.value.pause });
     return { userId: action.value.userId, paused: action.value.pause, queuedForDeletion: this.deletionQueue.has(action.value.userId) };
   }
 
@@ -368,6 +415,7 @@ export class PlansService {
     const items = await this.billing.listItems(action.value.userId);
     const ledger = await this.billing.listLedger(action.value.userId);
     const balances = await this.creditBalances(action.value.userId);
+    await this.recordAdminAction(adminId, 'view_ledger', action.value.userId, action.value.reason, { ledgerEntries: ledger.length });
     return { userId: action.value.userId, items, ledger, balances };
   }
 
@@ -388,7 +436,10 @@ export class PlansService {
     if (this.promotions.has(checked.value.code)) {
       throw new AppError(409, 'promotion-duplicate:' + checked.value.code, 'This promotion code already exists.', {});
     }
+    const reason = typeof dto.reason === 'string' ? dto.reason.trim() : '';
+    if (reason === '') throw new AppError(400, 'admin-reason-required', 'A written reason is required for this admin action.', {});
     this.promotions.set(checked.value.code, checked.value);
+    await this.recordAdminAction(adminId, 'define_promotion', checked.value.code, reason, { kind: checked.value.kind, expiresAt: checked.value.expiresAt });
     return checked.value;
   }
 
@@ -407,6 +458,13 @@ export class PlansService {
     if (result.value.creditAmount > 0) {
       await this.grantCredits(userId, { engine: '', source: 'top_up', amount: result.value.creditAmount, expiresAt: null, jobId: null });
     }
+    await this.events.append({
+      type: PlansEvents.PromotionRedeemed,
+      version: PLANS_EVENT_VERSION,
+      actor: { kind: 'user', id: userId },
+      subject: { type: 'promotion', id: code },
+      payload: { code, userId, kind: spec.kind, creditAmount: result.value.creditAmount, days: result.value.days },
+    });
     return result.value;
   }
 
@@ -464,6 +522,13 @@ export class PlansService {
     if (!checked.ok) throw new AppError(400, checked.reason, 'The deletion request is invalid.', { details: { reason: checked.reason } });
     this.pausedAccounts.add(userId);
     this.deletionQueue.add(userId);
+    await this.events.append({
+      type: PlansEvents.AccountDeletionRequested,
+      version: PLANS_EVENT_VERSION,
+      actor: { kind: 'user', id: userId },
+      subject: { type: 'user_account', id: userId },
+      payload: { userId, requestedAt: this.clock(), status: 'queued', hardPurge: false },
+    });
     return { queued: true, retention: accountRetention() as unknown as Record<string, readonly string[]> };
   }
 

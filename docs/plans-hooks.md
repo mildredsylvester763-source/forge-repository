@@ -166,3 +166,12 @@ never on the deferred list and stay as their specs describe them.
 processPaymentEvent, grant/spend/balances), `gate-middleware.ts`, `routes.ts`, stores and
 migrations for memory, SQLite and PostgreSQL. Tests: `test/plans-engines.test.ts` (pure
 engines) and `test/plans.test.ts` (routes, webhook, ledger).
+
+
+## Audit correction — 20 November 2026
+
+The repository audit found that the earlier "handled once" wording overstated the implementation: the webhook previously performed a check-then-write sequence, and concurrent ledger spends could both calculate against the same balance. The billing storage contract now exposes transaction-scoped payment application and ledger mutation operations. SQLite uses `BEGIN IMMEDIATE`; PostgreSQL locks the owning user row and performs the event claim, subscription updates/inserts, and payment credit inserts in one transaction. A duplicate event ID is claimed with a unique-key insert, and a duplicate does not apply any state changes. Credit grants and spends now calculate and append under the same per-user transaction. Plan and pass credit grants expire with the purchased subscription period.
+
+Admin actions now emit append-only `plans.admin.action` events with the authenticated admin actor, target, action and required reason. Promotion redemptions and account-deletion requests also emit named events. The admin promotion-definition endpoint now requires a written reason.
+
+These changes close the storage race conditions in the SQLite and PostgreSQL adapters, but do not close every Plan Hooks requirement. Remaining gaps are tracked in `docs/part02-audit-ledger.md`: durable account pause/deletion state, durable promotion definitions/redemptions and atomic redemption limits, complete pass-product/price validation (including multi-engine credit allocation and the ALG-52/ALG-56 inputs not contained in the two governing documents), full account export/purge policy approval, device identity at the gateway, explicit payment test-mode lifecycle coverage, and an atomic audit outbox tying the hash-chained event log to billing commits. Native PostgreSQL CI must still be run against a real PostgreSQL service; the SQLite-backed adapter harness is not equivalent evidence.

@@ -47,7 +47,7 @@ export class SqlitePlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { BillingStore } from './billing-store.ts';
+import type { BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
 
 interface ItemRow {
   item_id: string;
@@ -151,8 +151,49 @@ export class SqliteBillingStore implements BillingStore {
     this.insertEvent.run(event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt);
   }
 
+  async processPaymentEvent<T>(
+    event: PaymentEvent,
+    processedAt: number,
+    apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
+  ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }> {
+    return transaction(this.db, () => {
+      const claimed = this.db.prepare(
+        'INSERT OR IGNORE INTO payment_events (event_id, user_id, amount_minor, currency, occurred_at, processed_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt);
+      if (Number(claimed.changes) === 0) return { duplicate: true, value: null };
+      const items = (this.itemsByUser.all(event.userId) as unknown as ItemRow[]).map(toItem);
+      const ledger = (this.ledgerByUser.all(event.userId) as unknown as LedgerRow[]).map(toLedger);
+      const mutation = apply(items, ledger);
+      for (const item of mutation.superseded) this.updateStatus.run('cancelled', item.itemId);
+      for (const item of mutation.granted) {
+        this.insertItem.run(item.itemId, item.userId, item.itemType, item.itemCode, item.startsAt, item.endsAt, item.status, item.source, processedAt);
+      }
+      for (const entry of mutation.ledgerEntries) {
+        this.insertLedger.run(
+          entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+        );
+      }
+      return { duplicate: false, value: mutation.value };
+    });
+  }
+
   async listLedger(userId: string): Promise<readonly LedgerEntry[]> {
     return (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
+  }
+
+  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
+    return transaction(this.db, () => {
+      const current = (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
+      const mutation = apply(current);
+      for (const entry of mutation.append) {
+        this.insertLedger.run(
+          entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+        );
+      }
+      return mutation.value;
+    });
   }
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {

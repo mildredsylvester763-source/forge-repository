@@ -227,6 +227,70 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('claims payment ids and commits subscription/credit effects atomically under concurrent retries (Hook 6)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-atomic-payment@forge.test');
+      const now = h.clock.now;
+      const event = {
+        eventId: 'evt_atomic_same',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan' as const, itemCode: 'pro', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const duplicates = await Promise.all([
+        h.app.plans.processPaymentEvent(event),
+        h.app.plans.processPaymentEvent(event),
+      ]);
+      assert.deepEqual(duplicates.map((result) => result.duplicate).sort(), [false, true]);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 7500);
+
+      const second = {
+        ...event,
+        eventId: 'evt_atomic_second',
+        products: [{ itemType: 'base_plan' as const, itemCode: 'plus', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const third = {
+        ...event,
+        eventId: 'evt_atomic_third',
+        products: [{ itemType: 'base_plan' as const, itemCode: 'team', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      await Promise.all([
+        h.app.plans.processPaymentEvent(second),
+        h.app.plans.processPaymentEvent(third),
+      ]);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      const liveBasePlans = state.items.filter((item) =>
+        item.itemType === 'base_plan' &&
+        (item.status === 'active' || item.status === 'grace') &&
+        item.startsAt <= h.clock.now &&
+        h.clock.now < item.endsAt,
+      );
+      assert.equal(liveBasePlans.length, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('serializes concurrent ledger spends so a credit grant cannot be spent twice (Hook 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-atomic-spend@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 10, expiresAt: null, jobId: null });
+      const outcomes = await Promise.allSettled([
+        h.app.plans.spendCredits(user.id, { engine: '', amount: 7, jobId: 'job_atomic_a', costUsdMicros: 100 }),
+        h.app.plans.spendCredits(user.id, { engine: '', amount: 7, jobId: 'job_atomic_b', costUsdMicros: 100 }),
+      ]);
+      assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+      assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 3);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
     const h = await startHarness();
     try {
@@ -362,6 +426,11 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
         accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
       });
       await svc.adminGrantCredits('u_admin', { userId: user.id, amount: 10, reason: 'goodwill' });
+      const adminAudit = await h.app.events.readFrom(0, 500);
+      const grantAudit = adminAudit.find((event) => event.type === 'plans.admin.action' && (event.payload as Record<string, unknown>).action === 'grant_credits');
+      assert.ok(grantAudit);
+      assert.deepEqual(grantAudit.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((grantAudit.payload as Record<string, unknown>).reason, 'goodwill');
       const entry = await svc.adminGrantCredits('u_admin', { userId: user.id, engine: 'music', amount: 5, reason: 'promo support' });
       assert.equal(entry.amount, 5);
       const ledger = await svc.adminLedger('u_admin', { userId: user.id, reason: 'audit' });
@@ -413,7 +482,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
         accessSnapshotTtlHours: 6,
         accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
       });
-      await svc.definePromotion('u_admin', { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 });
+      await svc.definePromotion('u_admin', { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'private beta launch offer' });
       await assert.rejects(
         () => svc.definePromotion('u_admin', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 }),
         (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-duplicate:LAUNCH' || String(err).includes('promotion-duplicate:LAUNCH')),
