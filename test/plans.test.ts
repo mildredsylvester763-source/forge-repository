@@ -339,6 +339,27 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('treats repeated credit spends with the same job id as idempotent (Hook 3)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-spend-retry@forge.test');
+      await h.app.plans.setPlan(user.id, 'plus');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 10, expiresAt: null, jobId: null });
+      const input = { engine: '', amount: 5, jobId: 'job-retry-unique', costUsdMicros: 123 };
+      const first = await h.app.plans.spendCredits(user.id, input);
+      const retry = await h.app.plans.spendCredits(user.id, input);
+      assert.deepEqual(retry, first);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 5);
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { ...input, amount: 6 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'credit_job_conflict',
+      );
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 5);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
     const h = await startHarness();
     try {
