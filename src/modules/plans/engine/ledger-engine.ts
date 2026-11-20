@@ -28,6 +28,8 @@ export interface LedgerEntry {
   readonly sourceEntryId: string | null;
   /** The job's real cost to Forge, whole micro-dollars. */
   readonly costUsdMicros: number | null;
+  /** Free-level engine use, used to enforce the documented monthly free cost ceiling. */
+  readonly usageLevel?: 'free' | 'paid' | null;
   readonly createdAt: number;
 }
 
@@ -117,6 +119,8 @@ export interface SpendInput {
   readonly amount: number;
   readonly jobId: string;
   readonly costUsdMicros: number;
+  /** Set only when the job is running at the free level of an unpaid engine. */
+  readonly usageLevel?: 'free' | 'paid';
 }
 
 export interface SpendBreakdownEntry {
@@ -177,6 +181,7 @@ export function spend(entries: readonly LedgerEntry[], userId: string, input: Sp
     jobId: input.jobId,
     sourceEntryId: item.entry.entryId,
     costUsdMicros: index === 0 ? input.costUsdMicros : 0,
+    ...(input.usageLevel === undefined ? {} : { usageLevel: input.usageLevel }),
     createdAt: now,
   }));
   const from: SpendBreakdownEntry[] = consumed.map((item) => ({ entryId: item.entry.entryId, source: item.entry.source, used: item.used }));

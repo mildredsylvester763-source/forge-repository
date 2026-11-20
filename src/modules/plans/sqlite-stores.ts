@@ -73,6 +73,7 @@ interface LedgerRow {
   job_id: string | null;
   source_entry_id: string | null;
   cost_usd_micros: number | null;
+  usage_level: string | null;
   created_at: number;
 }
 
@@ -97,6 +98,7 @@ const toLedger = (r: LedgerRow): LedgerEntry => ({
   jobId: r.job_id,
   sourceEntryId: r.source_entry_id,
   costUsdMicros: r.cost_usd_micros,
+  ...(r.usage_level === 'free' || r.usage_level === 'paid' ? { usageLevel: r.usage_level } : {}),
   createdAt: r.created_at,
 });
 
@@ -128,7 +130,7 @@ export class SqliteBillingStore implements BillingStore {
     );
     this.ledgerByUser = db.prepare('SELECT * FROM credit_ledger WHERE user_id = ? ORDER BY created_at, entry_id');
     this.insertLedger = db.prepare(
-      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
   }
 
@@ -177,7 +179,7 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.ledgerEntries) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
       return { duplicate: false, value: mutation.value };
@@ -239,7 +241,7 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.ledgerEntries) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
       return { found: true, value: mutation.value };
@@ -274,7 +276,7 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.append) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
       return mutation.value;
@@ -284,7 +286,7 @@ export class SqliteBillingStore implements BillingStore {
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
     this.insertLedger.run(
       entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-      entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+      entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
     );
     return entry;
   }

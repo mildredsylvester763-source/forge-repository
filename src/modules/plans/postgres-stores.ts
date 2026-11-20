@@ -70,6 +70,7 @@ interface PgLedgerRow {
   job_id: string | null;
   source_entry_id: string | null;
   cost_usd_micros: string | number | null;
+  usage_level: string | null;
   created_at: string | number;
 }
 
@@ -94,6 +95,7 @@ const pgLedger = (r: PgLedgerRow): LedgerEntry => ({
   jobId: r.job_id,
   sourceEntryId: r.source_entry_id,
   costUsdMicros: r.cost_usd_micros === null ? null : num(r.cost_usd_micros),
+  ...(r.usage_level === 'free' || r.usage_level === 'paid' ? { usageLevel: r.usage_level } : {}),
   createdAt: num(r.created_at),
 });
 
@@ -164,8 +166,8 @@ export class PostgresBillingStore implements BillingStore {
       }
       for (const entry of mutation.ledgerEntries) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
       return { duplicate: false, value: mutation.value };
@@ -230,8 +232,8 @@ export class PostgresBillingStore implements BillingStore {
       );
       for (const entry of mutation.ledgerEntries) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
       return { found: true, value: mutation.value };
@@ -275,8 +277,8 @@ export class PostgresBillingStore implements BillingStore {
       const mutation = apply(current);
       for (const entry of mutation.append) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
       return mutation.value;
@@ -285,8 +287,8 @@ export class PostgresBillingStore implements BillingStore {
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
     await this.pool.query(
-      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-      [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+      [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
     );
     return entry;
   }

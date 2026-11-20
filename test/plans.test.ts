@@ -291,6 +291,53 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('enforces the shared UTC free-credit window and monthly ceiling across engine pools (Hook 2b)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-free-window@forge.test');
+      const fiveHours = 5 * 60 * 60 * 1000;
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 25, jobId: 'free-window-music', costUsdMicros: 1_000 });
+      await h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 15, jobId: 'free-window-painting', costUsdMicros: 1_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'voice', amount: 1, jobId: 'free-window-over', costUsdMicros: 1_000 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'insufficient_credits',
+      );
+
+      h.clock.now += fiveHours;
+      await h.app.plans.spendCredits(user.id, { engine: 'voice', amount: 40, jobId: 'free-window-next', costUsdMicros: 1_000 });
+      for (let index = 0; index < 13; index += 1) {
+        h.clock.now += fiveHours;
+        await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 40, jobId: 'free-month-' + index, costUsdMicros: 1_000 });
+      }
+      h.clock.now += fiveHours;
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-month-exhausted', costUsdMicros: 1_000 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'insufficient_credits',
+      );
+
+      const current = new Date(h.clock.now);
+      const nextMonth = Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1);
+      h.clock.now = Math.ceil(nextMonth / fiveHours) * fiveHours;
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-next-month', costUsdMicros: 1_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('caps free-level unpaid-engine cost at $0.20 per free account per UTC month (Hook 2b)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-free-cost-cap@forge.test');
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-cost-cap-max', costUsdMicros: 200_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 1, jobId: 'free-cost-cap-over', costUsdMicros: 1 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'free_engine_cost_cap_reached',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
     const h = await startHarness();
     try {
@@ -540,6 +587,38 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.ok(!refused.ok);
       if (!refused.ok) assert.ok(refused.retryAfterMs > 0 && refused.retryAfterMs <= 60_000);
       assert.deepEqual(await svc.enforceUserRateLimit('u_other'), { ok: true });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('keeps a deletion-queued account blocked even if an admin attempts to resume it (Hook 16)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-delete-resume@forge.test');
+      const billing = new InMemoryBillingStore();
+      await billing.setAccountState(user.id, { paused: true, deletionQueuedAt: h.clock.now, updatedAt: h.clock.now });
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing,
+        events: h.app.events,
+        clock: () => h.clock.now,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      const resumed = await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'deletion request remains active', pause: false });
+      assert.equal(resumed.paused, false);
+      assert.equal(resumed.queuedForDeletion, true);
+      await assert.rejects(
+        () => svc.canUse(user.id, 'CO-001'),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'account_paused',
+      );
     } finally {
       await h.close();
     }

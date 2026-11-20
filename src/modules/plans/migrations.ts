@@ -109,4 +109,9 @@ export const plansMigrations: readonly Migration[] = [
       CREATE INDEX promotion_redemptions_user_idx ON promotion_redemptions (user_id, code);
     `,
   },
+  {
+    version: 8,
+    name: 'ledger_usage_level',
+    sql: `ALTER TABLE credit_ledger ADD COLUMN usage_level TEXT CHECK (usage_level IN ('free', 'paid'));`,
+  },
 ];

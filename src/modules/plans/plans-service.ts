@@ -6,7 +6,7 @@ import { FEATURE_GATES } from './engine/feature-gates.ts';
 import { gateForRoute } from './engine/route-gates.ts';
 import { canUse as decideUse, type AccessConfig, type AccessDecision } from './engine/access-engine.ts';
 import { activeBasePlan, activePasses, applyPaymentEvent, type PaymentEvent, type SubscriptionItem } from './engine/subscription-engine.ts';
-import { appendGrant, balanceByEngine, parseGrant, spend, type GrantInput, type LedgerEntry, type SpendBreakdownEntry, type SpendInput } from './engine/ledger-engine.ts';
+import { appendGrant, balanceByEngine, creditBalance, parseGrant, spend, type GrantInput, type LedgerEntry, type SpendBreakdownEntry, type SpendInput } from './engine/ledger-engine.ts';
 import { lookupCountry as runLookupCountry, type CountryRow } from './engine/country-registry-engine.ts';
 import { assembleAccessSnapshot, verifyAccessSnapshot as runVerifySnapshot, type AccessSnapshot } from './engine/access-snapshot-engine.ts';
 import { isAdmin, validateAdminAction } from './engine/admin-console-engine.ts';
@@ -18,6 +18,8 @@ import { signPaymentPayload } from './payment-provider.ts';
 import type { BillingStore } from './billing-store.ts';
 import type { PlanStore } from './plans-store.ts';
 import { PLANS_EVENT_VERSION, PlansEvents } from './events.ts';
+
+const FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS = 200_000;
 
 /**
  * Hook 4 — the pass catalog: the short list of sellable products (base plans and engine
@@ -138,7 +140,9 @@ export class PlansService {
   /** The one access check (Hook 2). Unknown features are refused by name, never by accident. */
   async canUse(userId: string, feature: string): Promise<AccessDecision> {
     const accountState = await this.billing.getAccountState(userId);
-    if (accountState.paused) throw new AppError(403, 'account_paused', 'This account is paused. Contact support.');
+    if (accountState.paused || accountState.deletionQueuedAt !== null) {
+      throw new AppError(403, 'account_paused', 'This account is paused or has a pending deletion request. Contact support.');
+    }
     const gate = FEATURE_GATES[feature];
     if (gate === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
     const record = await this.getPlan(userId);
@@ -255,11 +259,77 @@ export class PlansService {
     return stored;
   }
 
-  /** Hook 3 — spend credits atomically: an uncovered spend writes nothing and is refused by name. */
+  /** Hook 3 / 2b — spend credits atomically and enforce the free UTC windows in the same ledger transaction. */
   async spendCredits(userId: string, input: SpendInput): Promise<{ spent: number; from: readonly SpendBreakdownEntry[] }> {
+    if (typeof input !== 'object' || input === null ||
+      (input.engine !== '' && !isEngineCode(input.engine)) ||
+      !Number.isInteger(input.amount) || input.amount < 1 || input.amount > 1_000_000_000 ||
+      typeof input.jobId !== 'string' || input.jobId.length === 0 || input.jobId.length > 128 ||
+      !Number.isInteger(input.costUsdMicros) || input.costUsdMicros < 0 || input.costUsdMicros > 1_000_000_000_000) {
+      throw new AppError(400, 'credit_spend_invalid', 'The credit spend request is invalid.', {});
+    }
+
     const now = this.clock();
+    const state = await this.getEntitlementState(userId);
+    const paidEngine = input.engine !== '' &&
+      (state.passes.includes(input.engine) || this.access.engineBundlePlans.includes(state.plan));
+    const usesFreeWindow = input.engine === '' ? state.plan === 'free' : !paidEngine;
+    const freeLevelEngine = input.engine !== '' && !paidEngine && state.plan === 'free';
+    const monthDate = new Date(now);
+    const monthStart = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1);
+    const monthEnd = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1);
+    const windowMs = this.access.freeEngineLimits.windowHours * 3_600_000;
+    const windowStart = Math.floor(now / windowMs) * windowMs;
+    const windowEnd = windowStart + windowMs;
+
     const result = await this.billing.mutateLedger(userId, (entries) => {
-      const outcome = spend(entries, userId, input, now);
+      if (freeLevelEngine) {
+        const freeCostUsed = entries.reduce((sum, entry) =>
+          sum + (entry.amount < 0 && entry.usageLevel === 'free' && entry.createdAt >= monthStart && entry.createdAt < monthEnd
+            ? entry.costUsdMicros ?? 0
+            : 0), 0);
+        if (freeCostUsed + input.costUsdMicros > FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS) {
+          throw new AppError(402, 'free_engine_cost_cap_reached', 'This account has reached the monthly free-engine cost limit.', {
+            details: {
+              capUsdMicros: FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS,
+              usedUsdMicros: freeCostUsed,
+              requestedUsdMicros: input.costUsdMicros,
+            },
+          });
+        }
+      }
+
+      let working = [...entries];
+      if (usesFreeWindow) {
+        // The single 40-credit/5-hour allowance and 600-credit monthly ceiling are shared
+        // across the account. Grants retain the target engine tag, so pools never cross.
+        const issuedInWindow = entries.reduce((sum, entry) =>
+          sum + (entry.source === 'free_window' && entry.amount > 0 && entry.createdAt >= windowStart && entry.createdAt < windowEnd ? entry.amount : 0), 0);
+        const issuedThisMonth = entries.reduce((sum, entry) =>
+          sum + (entry.source === 'free_window' && entry.amount > 0 && entry.createdAt >= monthStart && entry.createdAt < monthEnd ? entry.amount : 0), 0);
+        const available = input.engine === ''
+          ? creditBalance(entries, now, '')
+          : creditBalance(entries, now, input.engine) + creditBalance(entries, now, '');
+        const needed = Math.max(0, input.amount - available);
+        const windowRemaining = Math.max(0, this.access.freeEngineLimits.windowCredits - issuedInWindow);
+        const monthRemaining = Math.max(0, this.access.freeEngineLimits.monthlyCeiling - issuedThisMonth);
+        const grantAmount = Math.min(needed, windowRemaining, monthRemaining);
+        if (grantAmount > 0) {
+          const grant = appendGrant(working, userId, {
+            engine: input.engine,
+            source: 'free_window',
+            amount: grantAmount,
+            expiresAt: windowEnd,
+            jobId: null,
+          }, now);
+          working = [...grant.entries];
+        }
+      }
+
+      const outcome = spend(working, userId, {
+        ...input,
+        ...(freeLevelEngine ? { usageLevel: 'free' as const } : {}),
+      }, now);
       if (!outcome.ok) {
         throw new AppError(402, 'insufficient_credits', 'Not enough credits for this job.', {
           details: { engine: input.engine, shortfall: outcome.shortfall, jobId: input.jobId },
