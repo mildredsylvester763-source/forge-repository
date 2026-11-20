@@ -278,6 +278,7 @@ describe('plans (PLAN GATE LAW)', () => {
     const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const user = await freeUser(h, 'plans-atomic-spend@forge.test');
+      await h.app.plans.setPlan(user.id, 'plus');
       await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 10, expiresAt: null, jobId: null });
       const outcomes = await Promise.allSettled([
         h.app.plans.spendCredits(user.id, { engine: '', amount: 7, jobId: 'job_atomic_a', costUsdMicros: 100 }),
