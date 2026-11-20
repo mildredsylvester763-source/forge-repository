@@ -68,8 +68,10 @@ export interface Entitlement {
   readonly gate: GateId;
   readonly plan: PlanId;
   readonly reason: 'unlocked' | 'plan_too_low' | 'internal';
-  /** Engine rows only: which limit level applies. Engine rows are never locked. */
+  /** Engine rows only: overall paid level is granted only when every named engine is paid. */
   readonly engineLimits?: 'free_level' | 'paid_level';
+  /** Engine rows only: per-engine limits, so one pass never unlocks another engine. */
+  readonly engineLevels?: Readonly<Record<string, 'free' | 'paid'>>;
 }
 
 /** Gate prices surfaced to clients (GET /v1/plans/me). Values come from config; this shape is the contract. */
@@ -88,16 +90,27 @@ export function isPlanId(value: unknown): value is PlanId {
 
 /**
  * Pure cumulative-plan check. Internal rows are never gated. Engine rows are NEVER locked:
- * an owned pass among the row's engines means paid_level, otherwise free_level — access is
- * always yes, only the limits change.
+ * each engine is paid only when the matching pass is owned; a multi-engine row is fully
+ * paid only when every named engine is paid. Access is always yes, only limits change.
  */
 export function checkEntitlement(record: Pick<PlanRecord, 'plan' | 'enginePasses'>, feature: string, gate: GateId): Entitlement {
   const plan = record.plan;
   if (gate === 'internal') return { allowed: true, feature, gate, plan, reason: 'internal' };
   if (gate === 'engine') {
     const engines = ENGINE_BY_FEATURE[feature] ?? [];
-    const owned = engines.some((engine) => record.enginePasses.includes(engine));
-    return { allowed: true, feature, gate, plan, reason: 'unlocked', engineLimits: owned ? 'paid_level' : 'free_level' };
+    const engineLevels = Object.fromEntries(
+      engines.map((engine) => [engine, record.enginePasses.includes(engine) ? 'paid' : 'free']),
+    ) as Record<string, 'free' | 'paid'>;
+    const allPaid = engines.length > 0 && engines.every((engine) => engineLevels[engine] === 'paid');
+    return {
+      allowed: true,
+      feature,
+      gate,
+      plan,
+      reason: 'unlocked',
+      engineLimits: allPaid ? 'paid_level' : 'free_level',
+      engineLevels,
+    };
   }
   const allowed = GATE_RANK[gate] <= PLAN_RANK[plan];
   return { allowed, feature, gate, plan, reason: allowed ? 'unlocked' : 'plan_too_low' };

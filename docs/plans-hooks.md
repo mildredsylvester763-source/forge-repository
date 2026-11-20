@@ -199,3 +199,8 @@ The catalog still must remain non-sellable/empty until the owner supplies the mi
 The PDF names a single `credits_included` value for a product that may contain multiple engines, while Hook 3 requires every ledger entry to carry exactly one engine tag. The source does not define how a two-engine product's total is split. The implementation therefore adds optional `creditsByEngine` allocation metadata: single-engine products may use the full `creditsIncluded` amount for that engine; a sellable multi-engine product must explicitly allocate the total across every included engine, and the allocations must sum to `creditsIncluded`. This prevents silently duplicating a shared total across engine pools.
 
 Production configuration now refuses `sellable: true` until regional minor-unit prices, per-window caps and the ALG-43/52/56 guard are actually implemented and supplied. Test configuration can still exercise signed webhook flows without real money.
+
+
+### Audit correction — 20 November 2026 (per-engine access level)
+
+A feature row may name several engines. A single pass must not mark the whole row paid: the access decision now returns `engineLevels` for each named engine, and the aggregate feature level is paid only when every engine in that row is paid (or the account is on a configured all-round plan). This closes the previous `some()` check that let one pass raise the level of other engines named by the same feature.

@@ -49,7 +49,9 @@ export interface AccessDecision {
   readonly passes: readonly string[];
   /** The feature's engine tags; null for general features. */
   readonly engine: readonly string[] | null;
-  /** paid when an engine is owned, free when the free-level fallback applied; null otherwise. */
+  /** Paid/free result per engine. A pass for one engine never upgrades another engine. */
+  readonly engineLevels: Readonly<Record<string, AccessLevel>> | null;
+  /** Overall feature level: paid only when every engine named by the feature is paid. */
   readonly level: AccessLevel | null;
   readonly reason: 'unlocked' | 'plan_too_low' | 'engine_paid' | 'engine_free_level' | 'internal' | 'feature_off' | 'gates_disabled';
   /** The free-level numbers, present only when the free-engine fallback applied. */
@@ -73,6 +75,7 @@ export function canUse(input: AccessInput): AccessDecision {
     plan,
     passes,
     engine: null as readonly string[] | null,
+    engineLevels: null as Readonly<Record<string, AccessLevel>> | null,
     level: null as AccessLevel | null,
     limits: null as FreeEngineLimits | null,
   };
@@ -81,11 +84,20 @@ export function canUse(input: AccessInput): AccessDecision {
   if (gate === 'internal') return { ...shape, allowed: true, reason: 'internal' };
   if (gate === 'engine') {
     const engines = ENGINE_BY_FEATURE[input.feature] ?? [];
-    const owned =
-      engines.length > 0 &&
-      (engines.some((engine) => passes.includes(engine)) || input.config.engineBundlePlans.includes(plan));
-    if (owned) return { ...shape, engine: engines, allowed: true, level: 'paid', reason: 'engine_paid' };
-    return { ...shape, engine: engines, allowed: true, level: 'free', reason: 'engine_free_level', limits: input.config.freeEngineLimits };
+    const bundle = input.config.engineBundlePlans.includes(plan);
+    const engineLevels = Object.fromEntries(
+      engines.map((engine) => [engine, bundle || passes.includes(engine) ? 'paid' : 'free']),
+    ) as Record<string, AccessLevel>;
+    const allPaid = engines.length > 0 && engines.every((engine) => engineLevels[engine] === 'paid');
+    return {
+      ...shape,
+      engine: engines,
+      engineLevels,
+      allowed: true,
+      level: allPaid ? 'paid' : 'free',
+      reason: allPaid ? 'engine_paid' : 'engine_free_level',
+      limits: allPaid ? null : input.config.freeEngineLimits,
+    };
   }
   // Unreachable through the service (unknown features are refused by name); kept fail-closed.
   if (gate === undefined) return { ...shape, allowed: false, reason: 'plan_too_low' };

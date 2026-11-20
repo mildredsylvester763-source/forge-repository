@@ -176,7 +176,13 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(paid.status, 200);
       const paidBody = (await paid.json()) as { decision: Record<string, unknown> };
       assert.equal(paidBody.decision.allowed, true);
-      assert.equal(paidBody.decision.level, 'paid');
+      assert.equal(paidBody.decision.level, 'free');
+      assert.deepEqual(paidBody.decision.engineLevels, { manhwa: 'free', '3d': 'free', music: 'paid' });
+      const allPasses = await registerAndSetPlan(h, 'plans-engine-all-passes@forge.test', 'pro', ['music', 'manhwa', '3d']);
+      const fullyPaid = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: allPasses.cookie });
+      const fullyPaidBody = (await fullyPaid.json()) as { decision: Record<string, unknown> };
+      assert.equal(fullyPaidBody.decision.level, 'paid');
+      assert.deepEqual(fullyPaidBody.decision.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
     } finally {
       await h.close();
     }

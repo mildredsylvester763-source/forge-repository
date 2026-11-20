@@ -149,10 +149,14 @@ describe('plans engine (PLAN GATE LAW)', () => {
     const wrongPass = checkEntitlement({ plan: 'enterprise', enginePasses: ['voice'] }, 'TQ-027', 'engine');
     assert.equal(wrongPass.allowed, true);
     assert.equal(wrongPass.engineLimits, 'free_level');
-    const owned = checkEntitlement({ plan: 'pro', enginePasses: ['music'] }, 'TQ-027', 'engine');
-    assert.equal(owned.allowed, true);
-    assert.equal(owned.reason, 'unlocked');
-    assert.equal(owned.engineLimits, 'paid_level');
+    const partial = checkEntitlement({ plan: 'pro', enginePasses: ['music'] }, 'TQ-027', 'engine');
+    assert.equal(partial.allowed, true);
+    assert.equal(partial.reason, 'unlocked');
+    assert.equal(partial.engineLimits, 'free_level');
+    assert.deepEqual(partial.engineLevels, { manhwa: 'free', '3d': 'free', music: 'paid' });
+    const allOwned = checkEntitlement({ plan: 'pro', enginePasses: ['music', 'manhwa', '3d'] }, 'TQ-027', 'engine');
+    assert.equal(allOwned.engineLimits, 'paid_level');
+    assert.deepEqual(allOwned.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
   });
 
   it('pins plan ids and the free default', () => {
@@ -486,19 +490,27 @@ describe('plans hooks: access engine', () => {
     assert.deepEqual(decision.limits, limits);
   });
 
-  it('runs a paid engine when the user owns one of the row engine passes', () => {
-    const decision = canUse(input('TQ-027', { legacyPasses: ['music'] }));
-    assert.equal(decision.allowed, true);
-    assert.equal(decision.level, 'paid');
-    assert.equal(decision.reason, 'engine_paid');
+  it('keeps each engine at its own level when a feature spans multiple engines', () => {
+    const partial = canUse(input('TQ-027', { legacyPasses: ['music'] }));
+    assert.equal(partial.allowed, true);
+    assert.equal(partial.level, 'free');
+    assert.equal(partial.reason, 'engine_free_level');
+    assert.deepEqual(partial.engineLevels, { manhwa: 'free', '3d': 'free', music: 'paid' });
+    assert.deepEqual(partial.limits, limits);
     const wrong = canUse(input('TQ-027', { legacyPasses: ['voice'] }));
-    assert.equal(wrong.level, 'free');
+    assert.deepEqual(wrong.engineLevels, { manhwa: 'free', '3d': 'free', music: 'free' });
+    const allPaid = canUse(input('TQ-027', { legacyPasses: ['music', 'manhwa', '3d'] }));
+    assert.equal(allPaid.level, 'paid');
+    assert.equal(allPaid.reason, 'engine_paid');
+    assert.deepEqual(allPaid.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
+    assert.equal(allPaid.limits, null);
   });
 
   it('treats bundle plans as owning every engine', () => {
     const decision = canUse(input('TQ-027', { legacyPlan: 'studio', config: config({ engineBundlePlans: ['studio'] }) }));
     assert.equal(decision.level, 'paid');
     assert.equal(decision.reason, 'engine_paid');
+    assert.deepEqual(decision.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
   });
 
   it('switches a feature off without a release (Hook 5)', () => {
