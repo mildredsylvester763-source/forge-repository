@@ -279,6 +279,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       const type = r.type;
       const enginesIncluded = r.enginesIncluded;
       const creditsIncluded = r.creditsIncluded;
+      const creditsByEngineRaw = r.creditsByEngine;
       const billingPeriod = r.billingPeriod;
       const sellable = r.sellable;
       if (typeof productCode !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(productCode)) {
@@ -309,7 +310,38 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       }
       if (billingPeriod !== 'monthly' && billingPeriod !== 'yearly') throw new ConfigError('FORGE_PASS_CATALOG billingPeriod must be monthly or yearly');
       if (typeof sellable !== 'boolean') throw new ConfigError('FORGE_PASS_CATALOG sellable must be true or false');
-      entries.push({ productCode, type, enginesIncluded: engines, creditsIncluded, billingPeriod, sellable });
+      let creditsByEngine: Readonly<Record<string, number>> | undefined;
+      if (creditsByEngineRaw !== undefined) {
+        if (typeof creditsByEngineRaw !== 'object' || creditsByEngineRaw === null || Array.isArray(creditsByEngineRaw)) {
+          throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must be an object keyed by engine code');
+        }
+        const allocation: Record<string, number> = {};
+        for (const [engine, amount] of Object.entries(creditsByEngineRaw)) {
+          if (!engines.includes(engine) || typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0) {
+            throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must contain non-negative whole credits for included engines only');
+          }
+          allocation[engine] = amount;
+        }
+        if (
+          type !== 'engine_pass' ||
+          Object.keys(allocation).length !== engines.length ||
+          Object.values(allocation).reduce((total, amount) => total + amount, 0) !== creditsIncluded
+        ) {
+          throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must cover every included engine and sum to creditsIncluded');
+        }
+        creditsByEngine = allocation;
+      }
+      if (type === 'engine_pass' && sellable && engines.length > 1 && creditsByEngine === undefined) {
+        throw new ConfigError('FORGE_PASS_CATALOG sellable multi-engine passes require an explicit creditsByEngine allocation');
+      }
+      if (production && sellable) {
+        throw new ConfigError('FORGE_PASS_CATALOG cannot enable sellable products until regional minor-unit prices, per-window caps and the ALG-43/52/56 margin guard are implemented and configured');
+      }
+      entries.push({
+        productCode, type, enginesIncluded: engines, creditsIncluded,
+        ...(creditsByEngine === undefined ? {} : { creditsByEngine }),
+        billingPeriod, sellable,
+      });
     }
     passCatalog = entries;
   }

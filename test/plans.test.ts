@@ -11,7 +11,7 @@ const PAYMENT_CATALOG = JSON.stringify([
   { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
   { productCode: 'team_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
   { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
-  { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, creditsByEngine: { music: 60, painting: 40 }, billingPeriod: 'monthly', sellable: true },
 ]);
 
 interface TestUser {
@@ -302,8 +302,8 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.deepEqual(state.passes, ['music', 'painting']);
       const balances = await h.app.plans.creditBalances(user.id);
       assert.deepEqual(balances.engines, [
-        { engine: 'music', balance: 100 },
-        { engine: 'painting', balance: 100 },
+        { engine: 'music', balance: 60 },
+        { engine: 'painting', balance: 40 },
       ]);
     } finally {
       await h.close();

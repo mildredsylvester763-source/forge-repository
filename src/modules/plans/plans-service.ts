@@ -37,6 +37,8 @@ export interface PassCatalogEntry {
   readonly type: 'base_plan' | 'engine_pass';
   readonly enginesIncluded: readonly string[];
   readonly creditsIncluded: number;
+  /** Required for multi-engine passes; the sum must equal creditsIncluded. */
+  readonly creditsByEngine?: Readonly<Record<string, number>>;
   readonly billingPeriod: 'monthly' | 'yearly';
   readonly sellable: boolean;
 }
@@ -216,11 +218,31 @@ export class PlansService {
             details: { productCode: catalog.productCode },
           });
         }
+        if (engines.length > 1 && catalog.creditsByEngine === undefined) {
+          throw new AppError(400, 'payment_product_invalid', 'A multi-engine pass must define an explicit credit allocation for every engine.', {
+            details: { productCode: catalog.productCode },
+          });
+        }
+        if (catalog.creditsByEngine !== undefined) {
+          const allocationKeys = Object.keys(catalog.creditsByEngine);
+          const allocationTotal = Object.values(catalog.creditsByEngine).reduce((total, amount) => total + amount, 0);
+          if (
+            allocationKeys.length !== engines.length ||
+            engines.some((engine) => !Object.hasOwn(catalog.creditsByEngine ?? {}, engine)) ||
+            Object.values(catalog.creditsByEngine).some((amount) => !Number.isInteger(amount) || amount < 0) ||
+            allocationTotal !== catalog.creditsIncluded
+          ) {
+            throw new AppError(400, 'payment_product_invalid', 'The multi-engine pass credit allocation must cover each engine and sum to creditsIncluded.', {
+              details: { productCode: catalog.productCode },
+            });
+          }
+        }
         for (const engine of engines) {
           normalizedProducts.push({ ...product, itemCode: engine });
-          if (catalog.creditsIncluded > 0) {
+          const amount = catalog.creditsByEngine?.[engine] ?? (engines.length === 1 ? catalog.creditsIncluded : 0);
+          if (amount > 0) {
             const grant = appendGrant(nextLedger, event.userId, {
-              engine, source: 'pass', amount: catalog.creditsIncluded, expiresAt: product.endsAt, jobId: null,
+              engine, source: 'pass', amount, expiresAt: product.endsAt, jobId: null,
             }, now);
             nextLedger = [...grant.entries];
             ledgerEntries.push(grant.entry);

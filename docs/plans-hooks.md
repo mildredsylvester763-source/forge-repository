@@ -192,3 +192,10 @@ These changes are covered by regression tests. They do not resolve the remaining
 Payment events now carry configured product codes (for example `plus_plan`, `music_pass`, or `music_painting_pass`) rather than relying on engine codes being sent as product identifiers. The service requires a matching sellable catalog entry, resolves base-plan products to their plan code, and expands multi-engine passes into one subscription item and one engine-tagged credit grant per included engine. In this implementation, `creditsIncluded` is interpreted per included engine so the ledger never creates a cross-engine credit pool.
 
 The catalog still must remain non-sellable/empty until the owner supplies the missing regional minor-unit price book, per-window cap values, and the ALG-43/52/56 guard inputs. Those values are not specified in the two governing PDFs and were not invented here.
+
+
+### Audit correction — 20 November 2026 (multi-engine credit allocation and production guard)
+
+The PDF names a single `credits_included` value for a product that may contain multiple engines, while Hook 3 requires every ledger entry to carry exactly one engine tag. The source does not define how a two-engine product's total is split. The implementation therefore adds optional `creditsByEngine` allocation metadata: single-engine products may use the full `creditsIncluded` amount for that engine; a sellable multi-engine product must explicitly allocate the total across every included engine, and the allocations must sum to `creditsIncluded`. This prevents silently duplicating a shared total across engine pools.
+
+Production configuration now refuses `sellable: true` until regional minor-unit prices, per-window caps and the ALG-43/52/56 guard are actually implemented and supplied. Test configuration can still exercise signed webhook flows without real money.

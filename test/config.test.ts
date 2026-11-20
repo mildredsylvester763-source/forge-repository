@@ -105,6 +105,19 @@ describe('configuration safety', () => {
       { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
       { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['painting'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
     ]) }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError, 'multi-engine allocation is required');
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, creditsByEngine: { music: 70, painting: 40 }, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError, 'allocation sum must match');
+    const productionNonSellable = loadConfig(prod({ FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: false },
+    ]) }));
+    assert.equal(productionNonSellable.plans.passCatalog[0]?.sellable, false);
+    assert.throws(() => loadConfig(prod({ FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+    ]) })), ConfigError, 'production sellable products require price and margin guard');
   });
 
   it('picks the highest pepper version for new hashes', () => {
