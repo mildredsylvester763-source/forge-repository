@@ -92,10 +92,6 @@ export class PlansService {
   private readonly rateLimitStore: SharedRateLimiter | null;
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
-  /** Hook 11: paused accounts (admin action). In-memory session state, streams precedent. */
-  private readonly pausedAccounts = new Set<string>();
-  /** Hook 16: deletion queue (export and delete my data). The hard purge is owner-gated. */
-  private readonly deletionQueue = new Set<string>();
   /** Hook 12: promotion definitions and redemptions. In-memory session state, streams precedent. */
   private readonly promotions = new Map<string, PromotionSpec>();
   private readonly redemptions = new Map<string, PromotionRedemption[]>();
@@ -144,9 +140,8 @@ export class PlansService {
 
   /** The one access check (Hook 2). Unknown features are refused by name, never by accident. */
   async canUse(userId: string, feature: string): Promise<AccessDecision> {
-    if (this.pausedAccounts.has(userId)) {
-      throw new AppError(403, 'account_paused', 'This account is paused. Contact support.');
-    }
+    const accountState = await this.billing.getAccountState(userId);
+    if (accountState.paused) throw new AppError(403, 'account_paused', 'This account is paused. Contact support.');
     const gate = FEATURE_GATES[feature];
     if (gate === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
     const record = await this.getPlan(userId);
@@ -392,10 +387,14 @@ export class PlansService {
       pause: typeof dto.pause === 'boolean' ? dto.pause : true,
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
-    if (action.value.pause) this.pausedAccounts.add(action.value.userId);
-    else this.pausedAccounts.delete(action.value.userId);
+    const current = await this.billing.getAccountState(action.value.userId);
+    const saved = await this.billing.setAccountState(action.value.userId, {
+      paused: action.value.pause,
+      deletionQueuedAt: current.deletionQueuedAt,
+      updatedAt: this.clock(),
+    });
     await this.recordAdminAction(adminId, action.value.pause ? 'pause_account' : 'resume_account', action.value.userId, action.value.reason, { paused: action.value.pause });
-    return { userId: action.value.userId, paused: action.value.pause, queuedForDeletion: this.deletionQueue.has(action.value.userId) };
+    return { userId: action.value.userId, paused: saved.paused, queuedForDeletion: saved.deletionQueuedAt !== null };
   }
 
   async adminLedger(adminId: string, body: unknown): Promise<{
@@ -520,14 +519,15 @@ export class PlansService {
     const dto = (body ?? {}) as Record<string, unknown>;
     const checked = validateDeletionRequest({ userId, confirm: dto.confirm === true });
     if (!checked.ok) throw new AppError(400, checked.reason, 'The deletion request is invalid.', { details: { reason: checked.reason } });
-    this.pausedAccounts.add(userId);
-    this.deletionQueue.add(userId);
+    const requestedAt = this.clock();
+    const current = await this.billing.getAccountState(userId);
+    await this.billing.setAccountState(userId, { paused: true, deletionQueuedAt: current.deletionQueuedAt ?? requestedAt, updatedAt: requestedAt });
     await this.events.append({
       type: PlansEvents.AccountDeletionRequested,
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'user', id: userId },
       subject: { type: 'user_account', id: userId },
-      payload: { userId, requestedAt: this.clock(), status: 'queued', hardPurge: false },
+      payload: { userId, requestedAt, status: 'queued', hardPurge: false },
     });
     return { queued: true, retention: accountRetention() as unknown as Record<string, readonly string[]> };
   }

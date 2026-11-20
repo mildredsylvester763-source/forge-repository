@@ -45,7 +45,7 @@ export class PostgresPlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
+import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
 
 interface PgItemRow {
   item_id: string;
@@ -168,6 +168,26 @@ export class PostgresBillingStore implements BillingStore {
       }
       return { duplicate: false, value: mutation.value };
     });
+  }
+
+  async getAccountState(userId: string): Promise<AccountControlState> {
+    const result = await this.pool.query<{ paused: boolean; deletion_queued_at: string | number | null; updated_at: string | number }>(
+      'SELECT paused, deletion_queued_at, updated_at FROM account_controls WHERE user_id = $1',
+      [userId],
+    );
+    const row = result.rows[0];
+    return row
+      ? { paused: row.paused, deletionQueuedAt: row.deletion_queued_at === null ? null : num(row.deletion_queued_at), updatedAt: num(row.updated_at) }
+      : { paused: false, deletionQueuedAt: null, updatedAt: 0 };
+  }
+
+  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
+    await this.pool.query(
+      'INSERT INTO account_controls (user_id, paused, deletion_queued_at, updated_at) VALUES ($1, $2, $3, $4) ' +
+        'ON CONFLICT (user_id) DO UPDATE SET paused = EXCLUDED.paused, deletion_queued_at = EXCLUDED.deletion_queued_at, updated_at = EXCLUDED.updated_at',
+      [userId, state.paused, state.deletionQueuedAt, state.updatedAt],
+    );
+    return state;
   }
 
   async listLedger(userId: string): Promise<readonly LedgerEntry[]> {

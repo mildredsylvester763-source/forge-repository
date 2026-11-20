@@ -66,4 +66,16 @@ export const plansMigrations: readonly Migration[] = [
       CREATE INDEX credit_ledger_user_idx ON credit_ledger (user_id);
     `,
   },
+  {
+    version: 5,
+    name: 'account_controls',
+    sql: `
+      CREATE TABLE account_controls (
+        user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+        deletion_queued_at INTEGER,
+        updated_at INTEGER NOT NULL
+      ) STRICT;
+    `,
+  },
 ];

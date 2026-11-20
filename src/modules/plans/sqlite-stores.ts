@@ -47,7 +47,7 @@ export class SqlitePlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
+import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
 
 interface ItemRow {
   item_id: string;
@@ -101,6 +101,7 @@ const toLedger = (r: LedgerRow): LedgerEntry => ({
 /** SQLite storage for the billing hooks: subscription items, processed payment events, the append-only credit ledger. */
 export class SqliteBillingStore implements BillingStore {
   private readonly db: Database;
+  private readonly accountStateByUser;
   private readonly insertItem;
   private readonly itemsByUser;
   private readonly updateStatus;
@@ -112,6 +113,7 @@ export class SqliteBillingStore implements BillingStore {
 
   constructor(db: Database) {
     this.db = db;
+    this.accountStateByUser = db.prepare('SELECT paused, deletion_queued_at, updated_at FROM account_controls WHERE user_id = ?');
     this.insertItem = db.prepare(
       'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
@@ -178,6 +180,23 @@ export class SqliteBillingStore implements BillingStore {
       }
       return { duplicate: false, value: mutation.value };
     });
+  }
+
+  async getAccountState(userId: string): Promise<AccountControlState> {
+    const row = this.accountStateByUser.get(userId) as unknown as { paused: number; deletion_queued_at: number | null; updated_at: number } | undefined;
+    return row
+      ? { paused: row.paused === 1, deletionQueuedAt: row.deletion_queued_at, updatedAt: row.updated_at }
+      : { paused: false, deletionQueuedAt: null, updatedAt: 0 };
+  }
+
+  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
+    transaction(this.db, () => {
+      this.db.prepare(
+        'INSERT INTO account_controls (user_id, paused, deletion_queued_at, updated_at) VALUES (?, ?, ?, ?) ' +
+          'ON CONFLICT(user_id) DO UPDATE SET paused = excluded.paused, deletion_queued_at = excluded.deletion_queued_at, updated_at = excluded.updated_at',
+      ).run(userId, state.paused ? 1 : 0, state.deletionQueuedAt, state.updatedAt);
+    });
+    return state;
   }
 
   async listLedger(userId: string): Promise<readonly LedgerEntry[]> {

@@ -66,4 +66,16 @@ export const pgPlansMigrations: readonly Migration[] = [
       CREATE INDEX credit_ledger_user_idx ON credit_ledger (user_id);
     `,
   },
+  {
+    version: 5,
+    name: 'account_controls',
+    sql: `
+      CREATE TABLE account_controls (
+        user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        paused BOOLEAN NOT NULL DEFAULT FALSE,
+        deletion_queued_at BIGINT,
+        updated_at BIGINT NOT NULL
+      );
+    `,
+  },
 ];

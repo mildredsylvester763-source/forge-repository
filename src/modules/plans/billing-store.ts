@@ -19,6 +19,13 @@ export interface LedgerMutation<T> {
   readonly value: T;
 }
 
+export interface AccountControlState {
+  readonly paused: boolean;
+  readonly deletionQueuedAt: number | null;
+  readonly updatedAt: number;
+}
+
+
 export interface BillingStore {
   listItems(userId: string): Promise<readonly SubscriptionItem[]>;
   appendItem(item: SubscriptionItem, createdAt: number): Promise<SubscriptionItem>;
@@ -30,7 +37,9 @@ export interface BillingStore {
     processedAt: number,
     apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
   ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }>;
-  listLedger(userId: string): Promise<readonly LedgerEntry[]>;
+  getAccountState(userId: string): Promise<AccountControlState>;
+  setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState>;
+    listLedger(userId: string): Promise<readonly LedgerEntry[]>;
   appendLedger(entry: LedgerEntry): Promise<LedgerEntry>;
   mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T>;
 }
@@ -40,6 +49,7 @@ export class InMemoryBillingStore implements BillingStore {
   private readonly items = new Map<string, SubscriptionItem>();
   private readonly events = new Map<string, number>();
   private readonly ledger = new Map<string, LedgerEntry[]>();
+  private readonly accountControls = new Map<string, AccountControlState>();
 
   async listItems(userId: string): Promise<readonly SubscriptionItem[]> {
     return [...this.items.values()].filter((item) => item.userId === userId);
@@ -88,6 +98,16 @@ export class InMemoryBillingStore implements BillingStore {
     this.ledger.set(event.userId, [...currentLedger, ...mutation.ledgerEntries]);
     this.events.set(event.eventId, processedAt);
     return { duplicate: false, value: mutation.value };
+  }
+
+  async getAccountState(userId: string): Promise<AccountControlState> {
+    return this.accountControls.get(userId) ?? { paused: false, deletionQueuedAt: null, updatedAt: 0 };
+  }
+
+  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
+    const saved = { ...state };
+    this.accountControls.set(userId, saved);
+    return saved;
   }
 
   async listLedger(userId: string): Promise<readonly LedgerEntry[]> {
