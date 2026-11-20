@@ -283,6 +283,25 @@ export class PlansService {
     const windowEnd = windowStart + windowMs;
 
     const result = await this.billing.mutateLedger(userId, (entries) => {
+      const priorSpend = entries.filter((entry) => entry.amount < 0 && entry.jobId === input.jobId);
+      if (priorSpend.length > 0) {
+        const priorAmount = priorSpend.reduce((sum, entry) => sum - entry.amount, 0);
+        const priorCost = priorSpend.reduce((sum, entry) => sum + (entry.costUsdMicros ?? 0), 0);
+        if (priorAmount !== input.amount || priorCost !== input.costUsdMicros) {
+          throw new AppError(409, 'credit_job_conflict', 'This job id was already charged with a different amount or cost.', {
+            details: { jobId: input.jobId, priorAmount, requestedAmount: input.amount, priorCostUsdMicros: priorCost, requestedCostUsdMicros: input.costUsdMicros },
+          });
+        }
+        const allocations = new Map<string, { entryId: string; source: LedgerEntry['source']; used: number }>();
+        for (const entry of priorSpend) {
+          if (entry.sourceEntryId === null) continue;
+          const current = allocations.get(entry.sourceEntryId);
+          if (current) current.used += -entry.amount;
+          else allocations.set(entry.sourceEntryId, { entryId: entry.sourceEntryId, source: entry.source, used: -entry.amount });
+        }
+        return { append: [], value: { spent: priorAmount, from: [...allocations.values()], replayed: true } };
+      }
+
       if (freeLevelEngine) {
         const freeCostUsed = entries.reduce((sum, entry) =>
           sum + (entry.amount < 0 && entry.usageLevel === 'free' && entry.createdAt >= monthStart && entry.createdAt < monthEnd
@@ -335,16 +354,16 @@ export class PlansService {
           details: { engine: input.engine, shortfall: outcome.shortfall, jobId: input.jobId },
         });
       }
-      return { append: outcome.entries.slice(entries.length), value: { spent: outcome.spent, from: outcome.from } };
+      return { append: outcome.entries.slice(entries.length), value: { spent: outcome.spent, from: outcome.from, replayed: false } };
     });
-    await this.events.append({
+    if (!result.replayed) await this.events.append({
       type: PlansEvents.CreditsSpent,
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'service', id: 'plans' },
       subject: { type: 'user_credits', id: userId },
       payload: { userId, engine: input.engine, amount: input.amount, jobId: input.jobId },
     });
-    return result;
+    return { spent: result.spent, from: result.from };
   }
 
   /** Hook 3 — every pool the user has entries for. A balance is the sum of entries, computed, never stored. */
