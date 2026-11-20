@@ -78,4 +78,35 @@ export const plansMigrations: readonly Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 6,
+    name: 'promotions',
+    sql: `
+      CREATE TABLE promotions (
+        code TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('coupon', 'trial', 'referral')),
+        credit_amount INTEGER NOT NULL CHECK (credit_amount >= 0),
+        days INTEGER NOT NULL CHECK (days >= 0),
+        max_redemptions INTEGER NOT NULL CHECK (max_redemptions >= 1),
+        per_user_limit INTEGER NOT NULL CHECK (per_user_limit IN (0, 1)),
+        expires_at INTEGER NOT NULL,
+        created_by TEXT NOT NULL REFERENCES users (id),
+        created_at INTEGER NOT NULL
+      ) STRICT;
+    `,
+  },
+  {
+    version: 7,
+    name: 'promotion_redemptions',
+    sql: `
+      CREATE TABLE promotion_redemptions (
+        redemption_id TEXT PRIMARY KEY,
+        code TEXT NOT NULL REFERENCES promotions (code) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        redeemed_at INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX promotion_redemptions_code_idx ON promotion_redemptions (code, redeemed_at);
+      CREATE INDEX promotion_redemptions_user_idx ON promotion_redemptions (user_id, code);
+    `,
+  },
 ];

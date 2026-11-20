@@ -47,7 +47,9 @@ export class SqlitePlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
+import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication, PromotionRedemptionApplication } from './billing-store.ts';
+import type { PromotionRedemption, PromotionSpec } from './engine/promotion-engine.ts';
+import { randomUUID } from 'node:crypto';
 
 interface ItemRow {
   item_id: string;
@@ -179,6 +181,68 @@ export class SqliteBillingStore implements BillingStore {
         );
       }
       return { duplicate: false, value: mutation.value };
+    });
+  }
+
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
+    const result = this.db.prepare(
+      'INSERT OR IGNORE INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit ? 1 : 0, spec.expiresAt, createdBy, createdAt);
+    return Number(result.changes) > 0;
+  }
+
+  async getPromotion(code: string): Promise<PromotionSpec | null> {
+    const row = this.db.prepare(
+      'SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = ?',
+    ).get(code) as unknown as {
+      code: string; kind: string; credit_amount: number; days: number;
+      max_redemptions: number; per_user_limit: number; expires_at: number;
+    } | undefined;
+    return row ? {
+      code: row.code, kind: row.kind as PromotionSpec['kind'], creditAmount: row.credit_amount,
+      days: row.days, maxRedemptions: row.max_redemptions, perUserLimit: row.per_user_limit === 1, expiresAt: row.expires_at,
+    } : null;
+  }
+
+  async countPromotionRedemptions(code: string): Promise<number> {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM promotion_redemptions WHERE code = ?').get(code) as unknown as { count: number };
+    return row.count;
+  }
+
+  async redeemPromotion<T>(
+    code: string,
+    userId: string,
+    now: number,
+    apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
+  ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }> {
+    return transaction(this.db, () => {
+      const row = this.db.prepare(
+        'SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = ?',
+      ).get(code) as unknown as {
+        code: string; kind: string; credit_amount: number; days: number;
+        max_redemptions: number; per_user_limit: number; expires_at: number;
+      } | undefined;
+      if (!row) return { found: false };
+      const spec: PromotionSpec = {
+        code: row.code, kind: row.kind as PromotionSpec['kind'], creditAmount: row.credit_amount,
+        days: row.days, maxRedemptions: row.max_redemptions, perUserLimit: row.per_user_limit === 1, expiresAt: row.expires_at,
+      };
+      const redRows = this.db.prepare(
+        'SELECT user_id, redeemed_at FROM promotion_redemptions WHERE code = ? ORDER BY redeemed_at, redemption_id',
+      ).all(code) as unknown as Array<{ user_id: string; redeemed_at: number }>;
+      const redemptions: PromotionRedemption[] = redRows.map((r) => ({ code, userId: r.user_id, at: r.redeemed_at }));
+      const ledger = (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
+      const mutation = apply(spec, redemptions, ledger);
+      this.db.prepare(
+        'INSERT INTO promotion_redemptions (redemption_id, code, user_id, redeemed_at) VALUES (?, ?, ?, ?)',
+      ).run(randomUUID(), code, userId, mutation.redemption.at || now);
+      for (const entry of mutation.ledgerEntries) {
+        this.insertLedger.run(
+          entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
+          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt,
+        );
+      }
+      return { found: true, value: mutation.value };
     });
   }
 

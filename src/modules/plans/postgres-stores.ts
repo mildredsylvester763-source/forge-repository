@@ -45,7 +45,9 @@ export class PostgresPlanStore implements PlanStore {
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
-import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication } from './billing-store.ts';
+import type { AccountControlState, BillingStore, LedgerMutation, PaymentApplication, PromotionRedemptionApplication } from './billing-store.ts';
+import type { PromotionRedemption, PromotionSpec } from './engine/promotion-engine.ts';
+import { randomUUID } from 'node:crypto';
 
 interface PgItemRow {
   item_id: string;
@@ -167,6 +169,72 @@ export class PostgresBillingStore implements BillingStore {
         );
       }
       return { duplicate: false, value: mutation.value };
+    });
+  }
+
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
+    const result = await this.pool.query<{ code: string }>(
+      'INSERT INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) ' +
+        'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (code) DO NOTHING RETURNING code',
+      [spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit, spec.expiresAt, createdBy, createdAt],
+    );
+    return result.rows.length > 0;
+  }
+
+  async getPromotion(code: string): Promise<PromotionSpec | null> {
+    const result = await this.pool.query<{
+      code: string; kind: string; credit_amount: string | number; days: number;
+      max_redemptions: number; per_user_limit: boolean; expires_at: string | number;
+    }>('SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = $1', [code]);
+    const row = result.rows[0];
+    return row ? {
+      code: row.code, kind: row.kind as PromotionSpec['kind'], creditAmount: num(row.credit_amount),
+      days: row.days, maxRedemptions: row.max_redemptions, perUserLimit: row.per_user_limit, expiresAt: num(row.expires_at),
+    } : null;
+  }
+
+  async countPromotionRedemptions(code: string): Promise<number> {
+    const result = await this.pool.query<{ count: string | number }>('SELECT COUNT(*) AS count FROM promotion_redemptions WHERE code = $1', [code]);
+    return num(result.rows[0]?.count ?? 0);
+  }
+
+  async redeemPromotion<T>(
+    code: string,
+    userId: string,
+    now: number,
+    apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
+  ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }> {
+    return withTransaction(this.pool, async (conn) => {
+      const promoRows = await conn.query<{
+        code: string; kind: string; credit_amount: string | number; days: number;
+        max_redemptions: number; per_user_limit: boolean; expires_at: string | number;
+      }>('SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = $1 FOR UPDATE', [code]);
+      const row = promoRows.rows[0];
+      if (!row) return { found: false };
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      if (owner.rows.length === 0) throw new Error('promotion user not found: ' + userId);
+      const spec: PromotionSpec = {
+        code: row.code, kind: row.kind as PromotionSpec['kind'], creditAmount: num(row.credit_amount),
+        days: row.days, maxRedemptions: row.max_redemptions, perUserLimit: row.per_user_limit, expiresAt: num(row.expires_at),
+      };
+      const redRows = await conn.query<{ user_id: string; redeemed_at: string | number }>(
+        'SELECT user_id, redeemed_at FROM promotion_redemptions WHERE code = $1 ORDER BY redeemed_at, redemption_id',
+        [code],
+      );
+      const redemptions: PromotionRedemption[] = redRows.rows.map((r) => ({ code, userId: r.user_id, at: num(r.redeemed_at) }));
+      const ledgerRows = await conn.query<PgLedgerRow>('SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at, entry_id', [userId]);
+      const mutation = apply(spec, redemptions, ledgerRows.rows.map(pgLedger));
+      await conn.query(
+        'INSERT INTO promotion_redemptions (redemption_id, code, user_id, redeemed_at) VALUES ($1, $2, $3, $4)',
+        [randomUUID(), code, userId, mutation.redemption.at || now],
+      );
+      for (const entry of mutation.ledgerEntries) {
+        await conn.query(
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt],
+        );
+      }
+      return { found: true, value: mutation.value };
     });
   }
 

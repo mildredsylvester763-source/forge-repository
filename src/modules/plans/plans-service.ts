@@ -10,7 +10,7 @@ import { appendGrant, balanceByEngine, parseGrant, spend, type GrantInput, type 
 import { lookupCountry as runLookupCountry, type CountryRow } from './engine/country-registry-engine.ts';
 import { assembleAccessSnapshot, verifyAccessSnapshot as runVerifySnapshot, type AccessSnapshot } from './engine/access-snapshot-engine.ts';
 import { isAdmin, validateAdminAction } from './engine/admin-console-engine.ts';
-import { validatePromotion as runValidatePromotion, redeemPromotion as runRedeemPromotion, type PromotionRedemption, type PromotionSpec } from './engine/promotion-engine.ts';
+import { validatePromotion as runValidatePromotion, redeemPromotion as runRedeemPromotion, type PromotionSpec } from './engine/promotion-engine.ts';
 import { consumeRateLimit, type RateLimitRule, type RateLimitState } from './engine/rate-limit-engine.ts';
 import type { SharedRateLimiter } from '../../kernel/rate-limit-store.ts';
 import { accountRetention, buildAccountExport, validateDeletionRequest } from './engine/account-data-engine.ts';
@@ -92,9 +92,6 @@ export class PlansService {
   private readonly rateLimitStore: SharedRateLimiter | null;
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
-  /** Hook 12: promotion definitions and redemptions. In-memory session state, streams precedent. */
-  private readonly promotions = new Map<string, PromotionSpec>();
-  private readonly redemptions = new Map<string, PromotionRedemption[]>();
   /** Hook 14: the fixed-window counter buckets the gateway drains. */
   private readonly rateBuckets = new Map<string, RateLimitState>();
 
@@ -432,12 +429,10 @@ export class PlansService {
       expiresAt: typeof dto.expiresAt === 'number' ? dto.expiresAt : Number.NaN,
     }, this.clock());
     if (!checked.ok) throw new AppError(400, checked.reason, 'The promotion is invalid.', { details: { reason: checked.reason } });
-    if (this.promotions.has(checked.value.code)) {
-      throw new AppError(409, 'promotion-duplicate:' + checked.value.code, 'This promotion code already exists.', {});
-    }
     const reason = typeof dto.reason === 'string' ? dto.reason.trim() : '';
     if (reason === '') throw new AppError(400, 'admin-reason-required', 'A written reason is required for this admin action.', {});
-    this.promotions.set(checked.value.code, checked.value);
+    const inserted = await this.billing.definePromotion(checked.value, adminId, this.clock());
+    if (!inserted) throw new AppError(409, 'promotion-duplicate:' + checked.value.code, 'This promotion code already exists.', {});
     await this.recordAdminAction(adminId, 'define_promotion', checked.value.code, reason, { kind: checked.value.kind, expiresAt: checked.value.expiresAt });
     return checked.value;
   }
@@ -445,34 +440,50 @@ export class PlansService {
   async redeemPromotion(userId: string, body: unknown): Promise<{ code: string; kind: string; creditAmount: number; days: number; redemptionCount: number }> {
     const dto = (body ?? {}) as Record<string, unknown>;
     const code = typeof dto.code === 'string' ? dto.code.trim().toUpperCase() : '';
-    const spec = this.promotions.get(code);
-    if (spec === undefined) throw new AppError(404, 'promotion-not-found:' + code, 'Unknown promotion code.', {});
-    const redemptions = this.redemptions.get(code) ?? [];
-    const result = runRedeemPromotion(spec, redemptions, userId, this.clock());
-    if (!result.ok) throw new AppError(400, result.reason, 'The redemption is refused.', { details: { reason: result.reason } });
-    if (result.value.days > 0) {
-      throw new AppError(400, 'promotion-days-unsupported', 'Time-based promotions arrive with checkout renewals (Hook 15); credits redeem today.', { details: { code } });
-    }
-    this.redemptions.set(code, [...redemptions, { code, userId, at: this.clock() }]);
-    if (result.value.creditAmount > 0) {
-      await this.grantCredits(userId, { engine: '', source: 'top_up', amount: result.value.creditAmount, expiresAt: null, jobId: null });
+    const now = this.clock();
+    const committed = await this.billing.redeemPromotion(code, userId, now, (spec, redemptions, ledger) => {
+      const result = runRedeemPromotion(spec, redemptions, userId, now);
+      if (!result.ok) throw new AppError(400, result.reason, 'The redemption is refused.', { details: { reason: result.reason } });
+      if (result.value.days > 0) {
+        throw new AppError(400, 'promotion-days-unsupported', 'Time-based promotions require a defined plan target and subscription lifecycle policy.', { details: { code } });
+      }
+      const ledgerEntries: LedgerEntry[] = [];
+      if (result.value.creditAmount > 0) {
+        const grant = appendGrant(ledger, userId, { engine: '', source: 'top_up', amount: result.value.creditAmount, expiresAt: null, jobId: null }, now);
+        ledgerEntries.push(grant.entry);
+      }
+      return {
+        redemption: { code, userId, at: now },
+        ledgerEntries,
+        value: { outcome: result.value, ledgerEntries },
+      };
+    });
+    if (!committed.found) throw new AppError(404, 'promotion-not-found:' + code, 'Unknown promotion code.', {});
+    for (const entry of committed.value.ledgerEntries) {
+      await this.events.append({
+        type: PlansEvents.CreditsGranted,
+        version: PLANS_EVENT_VERSION,
+        actor: { kind: 'service', id: 'plans' },
+        subject: { type: 'user_credits', id: userId },
+        payload: { userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, promotionCode: code },
+      });
     }
     await this.events.append({
       type: PlansEvents.PromotionRedeemed,
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'user', id: userId },
       subject: { type: 'promotion', id: code },
-      payload: { code, userId, kind: spec.kind, creditAmount: result.value.creditAmount, days: result.value.days },
+      payload: { code, userId, kind: committed.value.outcome.kind, creditAmount: committed.value.outcome.creditAmount, days: committed.value.outcome.days },
     });
-    return result.value;
+    return committed.value.outcome;
   }
 
   async promotionStatus(body: unknown): Promise<{ promotion: PromotionSpec; redemptions: number }> {
     const dto = (body ?? {}) as Record<string, unknown>;
     const code = typeof dto.code === 'string' ? dto.code.trim().toUpperCase() : '';
-    const spec = this.promotions.get(code);
-    if (spec === undefined) throw new AppError(404, 'promotion-not-found:' + code, 'Unknown promotion code.', {});
-    return { promotion: spec, redemptions: (this.redemptions.get(code) ?? []).length };
+    const spec = await this.billing.getPromotion(code);
+    if (spec === null) throw new AppError(404, 'promotion-not-found:' + code, 'Unknown promotion code.', {});
+    return { promotion: spec, redemptions: await this.billing.countPromotionRedemptions(code) };
   }
 
   /** Hook 14 - the gateway rate limit, per user and per device, before any AI call. */

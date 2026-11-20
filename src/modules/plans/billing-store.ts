@@ -6,6 +6,7 @@
  */
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
+import type { PromotionRedemption, PromotionSpec } from './engine/promotion-engine.ts';
 
 export interface PaymentApplication<T> {
   readonly superseded: readonly SubscriptionItem[];
@@ -16,6 +17,12 @@ export interface PaymentApplication<T> {
 
 export interface LedgerMutation<T> {
   readonly append: readonly LedgerEntry[];
+  readonly value: T;
+}
+
+export interface PromotionRedemptionApplication<T> {
+  readonly redemption: PromotionRedemption;
+  readonly ledgerEntries: readonly LedgerEntry[];
   readonly value: T;
 }
 
@@ -37,6 +44,15 @@ export interface BillingStore {
     processedAt: number,
     apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
   ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }>;
+  definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean>;
+  getPromotion(code: string): Promise<PromotionSpec | null>;
+  countPromotionRedemptions(code: string): Promise<number>;
+  redeemPromotion<T>(
+    code: string,
+    userId: string,
+    now: number,
+    apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
+  ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }>;
   getAccountState(userId: string): Promise<AccountControlState>;
   setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState>;
     listLedger(userId: string): Promise<readonly LedgerEntry[]>;
@@ -50,6 +66,8 @@ export class InMemoryBillingStore implements BillingStore {
   private readonly events = new Map<string, number>();
   private readonly ledger = new Map<string, LedgerEntry[]>();
   private readonly accountControls = new Map<string, AccountControlState>();
+  private readonly promotions = new Map<string, PromotionSpec>();
+  private readonly redemptions = new Map<string, PromotionRedemption[]>();
 
   async listItems(userId: string): Promise<readonly SubscriptionItem[]> {
     return [...this.items.values()].filter((item) => item.userId === userId);
@@ -98,6 +116,44 @@ export class InMemoryBillingStore implements BillingStore {
     this.ledger.set(event.userId, [...currentLedger, ...mutation.ledgerEntries]);
     this.events.set(event.eventId, processedAt);
     return { duplicate: false, value: mutation.value };
+  }
+
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
+    void createdBy;
+    void createdAt;
+    if (this.promotions.has(spec.code)) return false;
+    this.promotions.set(spec.code, { ...spec });
+    return true;
+  }
+
+  async getPromotion(code: string): Promise<PromotionSpec | null> {
+    return this.promotions.get(code) ?? null;
+  }
+
+  async countPromotionRedemptions(code: string): Promise<number> {
+    return (this.redemptions.get(code) ?? []).length;
+  }
+
+  async redeemPromotion<T>(
+    code: string,
+    userId: string,
+    now: number,
+    apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
+  ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }> {
+    const spec = this.promotions.get(code);
+    if (spec === undefined) return { found: false };
+    const currentRedemptions = this.redemptions.get(code) ?? [];
+    const currentLedger = this.ledger.get(userId) ?? [];
+    const mutation = apply(spec, currentRedemptions, currentLedger);
+    const nextLedger = [...currentLedger];
+    for (const entry of mutation.ledgerEntries) {
+      if (nextLedger.some((row) => row.entryId === entry.entryId)) throw new Error('ledger entry already exists: ' + entry.entryId);
+      nextLedger.push(entry);
+    }
+    this.ledger.set(userId, nextLedger);
+    this.redemptions.set(code, [...currentRedemptions, mutation.redemption]);
+    void now;
+    return { found: true, value: mutation.value };
   }
 
   async getAccountState(userId: string): Promise<AccountControlState> {

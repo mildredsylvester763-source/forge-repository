@@ -483,6 +483,14 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
         accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
       });
       await svc.definePromotion('u_admin', { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'private beta launch offer' });
+      await svc.definePromotion('u_admin', { code: 'ONESHOT', kind: 'referral', creditAmount: 5, days: 0, maxRedemptions: 1, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'single-use referral test' });
+      const oneShot = await Promise.allSettled([
+        svc.redeemPromotion('u_first', { code: 'ONESHOT' }),
+        svc.redeemPromotion('u_second', { code: 'ONESHOT' }),
+      ]);
+      assert.equal(oneShot.filter((item) => item.status === 'fulfilled').length, 1);
+      assert.equal(oneShot.filter((item) => item.status === 'rejected').length, 1);
+      assert.equal((await svc.promotionStatus({ code: 'ONESHOT' })).redemptions, 1);
       await assert.rejects(
         () => svc.definePromotion('u_admin', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 }),
         (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-duplicate:LAUNCH' || String(err).includes('promotion-duplicate:LAUNCH')),
