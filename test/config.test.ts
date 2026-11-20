@@ -90,7 +90,7 @@ describe('configuration safety', () => {
 
   it('validates pass product codes and their plan/engine mappings', () => {
     const catalog = JSON.stringify([
-      { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 500, billingPeriod: 'monthly', sellable: true },
+      { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 500, creditsByEngine: { music: 300, painting: 200 }, billingPeriod: 'monthly', sellable: true },
       { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
     ]);
     const configured = loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: catalog });
