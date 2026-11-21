@@ -25,11 +25,12 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         passwordHash: 'test-hash',
         now,
       });
-      const billing = new PostgresBillingStore(t.pool);
+      const events = new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger });
+      const billing = new PostgresBillingStore(t.pool, events);
       const service = new PlansService({
         store: new PostgresPlanStore(t.pool),
         billing,
-        events: new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger }),
+        events,
         clock: () => now,
         access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
         monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
@@ -74,11 +75,12 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         passwordHash: 'test-hash',
         now,
       });
-      const billing = new PostgresBillingStore(t.pool);
+      const events = new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger });
+      const billing = new PostgresBillingStore(t.pool, events);
       const service = new PlansService({
         store: new PostgresPlanStore(t.pool),
         billing,
-        events: new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger }),
+        events,
         clock: () => now,
         access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
         monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
