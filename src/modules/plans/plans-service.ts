@@ -573,12 +573,13 @@ export class PlansService {
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
     const current = await this.billing.getAccountState(action.value.userId);
+    const auditEvent = this.adminActionDraft(adminId, action.value.pause ? 'pause_account' : 'resume_account', action.value.userId, action.value.reason, { paused: action.value.pause });
     const saved = await this.billing.setAccountState(action.value.userId, {
       paused: action.value.pause,
       deletionQueuedAt: current.deletionQueuedAt,
       updatedAt: this.clock(),
-    });
-    await this.recordAdminAction(adminId, action.value.pause ? 'pause_account' : 'resume_account', action.value.userId, action.value.reason, { paused: action.value.pause });
+    }, auditEvent);
+    await this.appendAuditFallback([auditEvent]);
     return { userId: action.value.userId, paused: saved.paused, queuedForDeletion: saved.deletionQueuedAt !== null };
   }
 
@@ -619,9 +620,10 @@ export class PlansService {
     if (!checked.ok) throw new AppError(400, checked.reason, 'The promotion is invalid.', { details: { reason: checked.reason } });
     const reason = typeof dto.reason === 'string' ? dto.reason.trim() : '';
     if (reason === '') throw new AppError(400, 'admin-reason-required', 'A written reason is required for this admin action.', {});
-    const inserted = await this.billing.definePromotion(checked.value, adminId, this.clock());
+    const auditEvent = this.adminActionDraft(adminId, 'define_promotion', checked.value.code, reason, { kind: checked.value.kind, expiresAt: checked.value.expiresAt });
+    const inserted = await this.billing.definePromotion(checked.value, adminId, this.clock(), auditEvent);
     if (!inserted) throw new AppError(409, 'promotion-duplicate:' + checked.value.code, 'This promotion code already exists.', {});
-    await this.recordAdminAction(adminId, 'define_promotion', checked.value.code, reason, { kind: checked.value.kind, expiresAt: checked.value.expiresAt });
+    await this.appendAuditFallback([auditEvent]);
     return checked.value;
   }
 
@@ -629,6 +631,7 @@ export class PlansService {
     const dto = (body ?? {}) as Record<string, unknown>;
     const code = typeof dto.code === 'string' ? dto.code.trim().toUpperCase() : '';
     const now = this.clock();
+    let auditEvents: EventDraft[] = [];
     const committed = await this.billing.redeemPromotion(code, userId, now, (spec, redemptions, ledger) => {
       const result = runRedeemPromotion(spec, redemptions, userId, now);
       if (!result.ok) throw new AppError(400, result.reason, 'The redemption is refused.', { details: { reason: result.reason } });
@@ -640,29 +643,31 @@ export class PlansService {
         const grant = appendGrant(ledger, userId, { engine: '', source: 'top_up', amount: result.value.creditAmount, expiresAt: null, jobId: null }, now);
         ledgerEntries.push(grant.entry);
       }
+      auditEvents = [
+        ...ledgerEntries.map((entry): EventDraft => ({
+          type: PlansEvents.CreditsGranted,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service', id: 'plans' },
+          subject: { type: 'user_credits', id: userId },
+          payload: { userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, promotionCode: code },
+        })),
+        {
+          type: PlansEvents.PromotionRedeemed,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'user', id: userId },
+          subject: { type: 'promotion', id: code },
+          payload: { code, userId, kind: result.value.kind, creditAmount: result.value.creditAmount, days: result.value.days },
+        },
+      ];
       return {
         redemption: { code, userId, at: now },
         ledgerEntries,
+        auditEvents,
         value: { outcome: result.value, ledgerEntries },
       };
     });
     if (!committed.found) throw new AppError(404, 'promotion-not-found:' + code, 'Unknown promotion code.', {});
-    for (const entry of committed.value.ledgerEntries) {
-      await this.events.append({
-        type: PlansEvents.CreditsGranted,
-        version: PLANS_EVENT_VERSION,
-        actor: { kind: 'service', id: 'plans' },
-        subject: { type: 'user_credits', id: userId },
-        payload: { userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, promotionCode: code },
-      });
-    }
-    await this.events.append({
-      type: PlansEvents.PromotionRedeemed,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'user', id: userId },
-      subject: { type: 'promotion', id: code },
-      payload: { code, userId, kind: committed.value.outcome.kind, creditAmount: committed.value.outcome.creditAmount, days: committed.value.outcome.days },
-    });
+    await this.appendAuditFallback(auditEvents);
     return committed.value.outcome;
   }
 
@@ -720,14 +725,15 @@ export class PlansService {
     if (!checked.ok) throw new AppError(400, checked.reason, 'The deletion request is invalid.', { details: { reason: checked.reason } });
     const requestedAt = this.clock();
     const current = await this.billing.getAccountState(userId);
-    await this.billing.setAccountState(userId, { paused: true, deletionQueuedAt: current.deletionQueuedAt ?? requestedAt, updatedAt: requestedAt });
-    await this.events.append({
+    const auditEvent: EventDraft = {
       type: PlansEvents.AccountDeletionRequested,
       version: PLANS_EVENT_VERSION,
       actor: { kind: 'user', id: userId },
       subject: { type: 'user_account', id: userId },
       payload: { userId, requestedAt, status: 'queued', hardPurge: false },
-    });
+    };
+    await this.billing.setAccountState(userId, { paused: true, deletionQueuedAt: current.deletionQueuedAt ?? requestedAt, updatedAt: requestedAt }, auditEvent);
+    await this.appendAuditFallback([auditEvent]);
     return { queued: true, retention: accountRetention() as unknown as Record<string, readonly string[]> };
   }
 
