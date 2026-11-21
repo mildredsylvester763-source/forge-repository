@@ -24,9 +24,8 @@ export class SqlitePlanStore implements PlanStore {
   private readonly upsertStmt;
   private readonly byUser;
 
-  constructor(db: Database, events: SqliteEventStore) {
+  constructor(db: Database) {
     this.db = db;
-    this.events = events;
     this.upsertStmt = db.prepare(
       'INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ' +
         'ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, engine_passes = excluded.engine_passes, updated_at = excluded.updated_at',
@@ -120,8 +119,9 @@ export class SqliteBillingStore implements BillingStore {
   private readonly ledgerByUser;
   private readonly insertLedger;
 
-  constructor(db: Database) {
+  constructor(db: Database, events: SqliteEventStore) {
     this.db = db;
+    this.events = events;
     this.accountStateByUser = db.prepare('SELECT paused, deletion_queued_at, updated_at FROM account_controls WHERE user_id = ?');
     this.insertItem = db.prepare(
       'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
