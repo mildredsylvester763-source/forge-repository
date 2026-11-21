@@ -269,7 +269,7 @@ describe('plans (PLAN GATE LAW)', () => {
   it('expires paid base plans and engine passes without resurrecting legacy plan fields (Hook 1)', async () => {
     const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
-      const user = await registerAndSetPlan(h, 'plans-subscription-expiry@forge.test', 'pro', ['music']);
+      const user = await freeUser(h, 'plans-subscription-expiry@forge.test');
       const now = h.clock.now, endsAt = now + 86_400_000;
       const event = { eventId: 'evt_subscription_expiry', userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
         products: [

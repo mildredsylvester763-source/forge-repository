@@ -23,8 +23,9 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
       const legacy = await users.create({ email: 'pg-legacy-plan@forge.test', displayName: 'Legacy Plan', passwordHash: 'test-hash', now });
       const existing = await users.create({ email: 'pg-existing-plan@forge.test', displayName: 'Existing Plan', passwordHash: 'test-hash', now });
       await t.pool.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5)', [legacy.id, 'pro', JSON.stringify(['music', 'painting', 'invalid']), now, now + 10]);
-      await t.pool.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5)', [existing.id, 'pro', JSON.stringify(['music']), now, now + 20]);
+      await t.pool.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5)', [existing.id, 'pro', JSON.stringify(['music', 'voice']), now, now + 20]);
       await t.pool.query('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)', ['existing_plus', existing.id, 'base_plan', 'plus', now, now + 30_000, 'active', 'payment', now]);
+      await t.pool.query('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)', ['existing_voice', existing.id, 'engine_pass', 'voice', now, now + 30_000, 'active', 'payment', now]);
       assert.deepEqual(await migratePostgres(t.pool, 'plans', pgPlansMigrations), [11]);
       const migrated = await t.pool.query<{ item_type: string; item_code: string; source: string; starts_at: string | number }>(
         'SELECT item_type, item_code, source, starts_at FROM subscription_items WHERE user_id = $1 ORDER BY item_type, item_code', [legacy.id],
@@ -37,7 +38,11 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
       const preserved = await t.pool.query<{ item_type: string; item_code: string; source: string }>(
         'SELECT item_type, item_code, source FROM subscription_items WHERE user_id = $1', [existing.id],
       );
-      assert.deepEqual(preserved.rows.map((row) => [row.item_type, row.item_code, row.source]), [['base_plan', 'plus', 'payment']]);
+      assert.deepEqual(preserved.rows.map((row) => [row.item_type, row.item_code, row.source]), [
+        ['base_plan', 'plus', 'payment'],
+        ['engine_pass', 'music', 'legacy_migration'],
+        ['engine_pass', 'voice', 'payment'],
+      ]);
     } finally {
       await t.pool.end();
       await t.cleanup();
