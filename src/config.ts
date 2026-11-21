@@ -277,6 +277,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       const r = raw as Record<string, unknown>;
       const productCode = r.productCode;
       const type = r.type;
+      const planCodeRaw = r.planCode;
       const enginesIncluded = r.enginesIncluded;
       const creditsIncluded = r.creditsIncluded;
       const creditsByEngineRaw = r.creditsByEngine;
@@ -297,10 +298,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
         throw new ConfigError('FORGE_PASS_CATALOG engine_pass entries must name one or more known engine codes');
       }
       if (type === 'base_plan') {
-        const planCode = productCode.endsWith('_plan') ? productCode.slice(0, -5) : productCode;
-        if (!isPlanId(planCode) || planCode === 'free' || engines.length !== 0) {
-          throw new ConfigError('FORGE_PASS_CATALOG base_plan productCode must map to a paid plan and have no engines');
+        if (!isPlanId(planCodeRaw) || planCodeRaw === 'free' || engines.length !== 0) {
+          throw new ConfigError('FORGE_PASS_CATALOG base_plan entries require an explicit paid planCode and no engines');
         }
+      } else if (planCodeRaw !== undefined && planCodeRaw !== null) {
+        throw new ConfigError('FORGE_PASS_CATALOG engine_pass entries must not set planCode');
       }
       if (typeof creditsIncluded !== 'number' || !Number.isInteger(creditsIncluded) || creditsIncluded < 0) {
         throw new ConfigError('FORGE_PASS_CATALOG creditsIncluded must be a whole number');
@@ -338,7 +340,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
         throw new ConfigError('FORGE_PASS_CATALOG cannot enable sellable products until regional minor-unit prices, per-window caps and the ALG-43/52/56 margin guard are implemented and configured');
       }
       entries.push({
-        productCode, type, enginesIncluded: engines, creditsIncluded,
+        productCode, type, planCode: type === 'base_plan' ? planCodeRaw as PlanId : null,
+        enginesIncluded: engines, creditsIncluded,
         ...(creditsByEngine === undefined ? {} : { creditsByEngine }),
         billingPeriod, sellable,
       });
