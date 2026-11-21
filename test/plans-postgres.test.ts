@@ -36,7 +36,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         ['engine_pass', 'painting', 'legacy_migration', now + 10],
       ]);
       const preserved = await t.pool.query<{ item_type: string; item_code: string; source: string }>(
-        'SELECT item_type, item_code, source FROM subscription_items WHERE user_id = $1', [existing.id],
+        'SELECT item_type, item_code, source FROM subscription_items WHERE user_id = $1 ORDER BY item_type, item_code', [existing.id],
       );
       assert.deepEqual(preserved.rows.map((row) => [row.item_type, row.item_code, row.source]), [
         ['base_plan', 'plus', 'payment'],
