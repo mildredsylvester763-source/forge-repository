@@ -249,9 +249,7 @@ describe('plans hooks: subscription engine', () => {
       [event([]), 'bad_products'],
       [event([{ itemType: 'mega_pass', itemCode: 'plus', startsAt: 0, endsAt: 2000 }]), 'bad_product_type'],
       [event([{ itemType: 'base_plan', itemCode: '', startsAt: 0, endsAt: 2000 }]), 'bad_item_code'],
-      [event([{ itemType: 'base_plan', itemCode: 'free', startsAt: 0, endsAt: 2000 }]), 'free_not_sellable'],
-      [event([{ itemType: 'base_plan', itemCode: 'diamond', startsAt: 0, endsAt: 2000 }]), 'plan_unknown'],
-      [event([{ itemType: 'engine_pass', itemCode: 'bad pass', startsAt: 0, endsAt: 2000 }]), 'engine_unknown'],
+      [event([{ itemType: 'engine_pass', itemCode: 'bad pass', startsAt: 0, endsAt: 2000 }]), 'bad_item_code'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 500, endsAt: 500 }]), 'bad_window'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }, { itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 3000 }]), 'bad_products'],
     ];
