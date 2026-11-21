@@ -62,6 +62,8 @@ export interface ForgeConfig {
   safety: {
     /** TS-793: owner-configured wrongful-block rate threshold; null keeps automatic tasking disabled until decided. */
     maxWrongfulBlockRate: number | null;
+    /** TS-796: owner-configured maximum description reading grade; null means unconfigured. */
+    maxDescriptionReadingGrade: number | null;
   };
   storage: {
     /** PostgreSQL connection string. This is the production database. */
@@ -109,6 +111,14 @@ function optionalUnitRate(env: NodeJS.ProcessEnv, name: string): number | null {
   if (raw === undefined || raw === '') return null;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0 || value > 1) throw new ConfigError(`${name} must be a number between 0 and 1`);
+  return value;
+}
+
+function optionalNonNegativeNumber(env: NodeJS.ProcessEnv, name: string): number | null {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new ConfigError(`${name} must be a non-negative number`);
   return value;
 }
 
@@ -368,6 +378,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
 
   const currentPepperVersion = Math.max(...peppers.keys());
   const maxWrongfulBlockRate = optionalUnitRate(env, 'FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE');
+  const maxDescriptionReadingGrade = optionalNonNegativeNumber(env, 'FORGE_SAFETY_MAX_DESCRIPTION_READING_GRADE');
 
   return {
     env: mode,
@@ -420,7 +431,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       accessSnapshotTtlHours,
       accessSecret,
     },
-    safety: { maxWrongfulBlockRate },
+    safety: { maxWrongfulBlockRate, maxDescriptionReadingGrade },
     storage: {
       databaseUrl,
       databaseSsl: sslSetting,

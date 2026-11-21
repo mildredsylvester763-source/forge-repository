@@ -21,3 +21,4 @@ export * from './engine/false-positive-engine.ts';
 export * from './safety-false-positive-service.ts';
 export * from './engine/safety-postmortem-engine.ts';
 export * from './safety-postmortem-service.ts';
+export * from './safety-readability-service.ts';

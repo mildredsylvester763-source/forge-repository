@@ -97,4 +97,11 @@ describe('configuration safety', () => {
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: '1.01' }), ConfigError);
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE: 'unknown' }), ConfigError);
   });
+  it('keeps the TS-796 reading-grade limit unconfigured until supplied through central config', () => {
+    assert.equal(loadConfig({ FORGE_ENV: 'test' }).safety.maxDescriptionReadingGrade, null);
+    assert.equal(loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_DESCRIPTION_READING_GRADE: '6.5' }).safety.maxDescriptionReadingGrade, 6.5);
+    assert.equal(loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_DESCRIPTION_READING_GRADE: '0' }).safety.maxDescriptionReadingGrade, 0);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_DESCRIPTION_READING_GRADE: '-1' }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_SAFETY_MAX_DESCRIPTION_READING_GRADE: 'unknown' }), ConfigError);
+  });
 });
