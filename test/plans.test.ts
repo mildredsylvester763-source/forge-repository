@@ -87,7 +87,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const allowed = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
       assert.equal(allowed.status, 200);
       assert.deepEqual((await allowed.json()) as unknown, {
-        decision: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', passes: [], engine: null, level: null, reason: 'unlocked', limits: null },
+        decision: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', passes: [], engine: null, engineLevels: null, level: null, reason: 'unlocked', limits: null },
       });
       const unknown = await h.post('/v1/plans/check', { featureId: 'XX-999' }, { cookie: user.cookie });
       assert.equal(unknown.status, 404);
