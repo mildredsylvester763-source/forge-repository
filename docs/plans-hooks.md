@@ -122,19 +122,22 @@ Routes: `POST /v1/admin/credits/grant`, `/v1/admin/plans/comp`,
 `engine/promotion-engine.ts`: one table (code, kind coupon/trial/referral, creditAmount,
 days, maxRedemptions, perUserLimit, expiresAt) with a limit and an expiry, named refusals
 for every field; redeem refuses expired, repeated (per-user) and exhausted codes by name.
-Definitions and redemptions are in-memory session state (streams precedent) — persistence
-lands with the owner's go-ahead. A redemption grants credits through the existing append-only
-ledger (top_up source; the ledger engine is pinned law, so a dedicated promotion source is
-an additive change for the owner to approve). Routes: `POST /v1/promotions/define` (admin),
-`/v1/promotions/redeem`, `/v1/promotions/status`.
+Definitions and redemptions are persisted in SQLite/PostgreSQL. Redemption limits are
+checked and the redemption plus credit-ledger grant commit in one storage transaction; PostgreSQL
+locks the promotion row and SQLite uses a write transaction. Credit benefits use the existing
+append-only ledger (`top_up` source). Time-based benefits are still refused as
+`promotion-days-unsupported` until the subscription lifecycle policy is defined. The promotion
+audit event is currently appended after the billing transaction, so the audit outbox remains open.
+Routes: `POST /v1/promotions/define` (admin), `/v1/promotions/redeem`, `/v1/promotions/status`.
 
 **Hook 14 — rate limits at the gateway.** Pure engine `engine/rate-limit-engine.ts`:
 fixed-window counters with named refusals and an honest retryAfterMs. `FORGE_RATE_LIMITS`
 JSON (e.g. `{"user":{"limit":60,"windowMs":60000}}`) — DISABLED until the owner sets it.
 When enabled, every gated route enforces the per-user limit after sign-in, before canUse
-and before any AI call, answering 429 rate_limited with scope and retryAfterMs. The
-per-device rule is parsed and enforced by the service the moment device ids reach the
-gateway. Route wiring: `gate-middleware.ts`.
+and before any AI call, answering 429 rate_limited with scope and retryAfterMs. A per-device
+rule is parsed and the service has a device-bucket method, but the gateway currently has no
+trusted device identifier and the middleware does not call it; device-level enforcement is
+not yet operational. Route wiring: `gate-middleware.ts`.
 
 **Hook 16 — export and delete my data.** Pure engine `engine/account-data-engine.ts`:
 buildAccountExport (plan, passes, subscription items, credit ledger, in one bundle) and
@@ -145,18 +148,30 @@ signed-in user their bundle; `POST /v1/account/delete` (confirm: true) pauses th
 queues the deletion and returns the retention policy. The hard purge needs billing-store
 deletes and the owner's confirmed retention list, so nothing is destroyed yet.
 
-## What is NOT built (after batch B)
+## What is NOT complete
 
-All sixteen hooks now exist. Honest remaining gaps: the Postgres billing adapter has no
-coverage in main CI (same as every other PostgreSQL adapter in this repository); it is
-exercised only by the SQL stand-in path of the focused workflows. Prices, the pass catalog,
-the all-round bundle plans, the country rows, the admin allowlist and the gateway rate
-limits all stay EMPTY until the owner sets them — nothing was invented. Time-based
-promotions (days) are validated by the engine but the service answers
-promotion-days-unsupported until checkout renewals (Hook 15) land. No device id reaches the
-gateway yet, so the per-device limit is enforced but never hit. Account deletion pauses and
-queues; the hard purge is owner-gated. Hook 10 (audit log) and Hook 15 (test mode) were
-never on the deferred list and stay as their specs describe them.
+The hooks have implementation foundations, but they are not all complete. The current verified
+status and evidence are maintained in `docs/part02-audit-ledger.md`. Important remaining work:
+
+- Legacy `user_plans` fallback/direct writes remain, including admin comp; migrate them to the
+  subscription-item model and retire the legacy entitlement source.
+- Billing mutations and hash-chained audit events are not yet one transaction. A crash between
+  the billing commit and event append can leave an audit gap; add a transactional audit outbox.
+- The pass catalog still lacks per-window caps, regional minor-unit price rows and the
+  ALG-43/52/56 inputs/formulas. Production correctly refuses `sellable: true` until those
+  are implemented and supplied.
+- Country rows, verified tax rules, payment methods, admin allowlist and rate-limit values
+  remain owner-configured and default empty/disabled.
+- Per-device rate limiting is not wired because no trusted device identity reaches the gateway.
+- Promotion day-benefits, renewal/failure/refund test-mode lifecycle, complete account export
+  and jurisdiction-approved hard deletion remain unfinished.
+- Access snapshots are signed and server-verified, but the client-side offline cache/refresh
+  lifecycle is outside this backend.
+- The PostgreSQL Plan Hooks persistence suite now runs in CI against the PostgreSQL service;
+  the latest verified workflow is recorded in the audit ledger.
+
+Do not start Part 02 feature implementation until the remaining Plan Hooks prerequisites are
+closed or explicitly blocked by owner-supplied inputs/approvals.
 
 ## Where the code lives
 
