@@ -376,13 +376,8 @@ export class PlansService {
     }
 
     const now = this.clock();
-    const state = await this.getEntitlementState(userId);
-    const paidEngine = input.engine !== '' &&
-      (state.passes.includes(input.engine) || this.access.engineBundlePlans.includes(state.plan));
-    const usesFreeWindow = input.engine === '' ? state.plan === 'free' : !paidEngine;
-    // Hook 2b: every engine without its own pass or an all-round plan stays at Free limits,
-    // even when the user has paid for a general base plan.
-    const freeLevelEngine = input.engine !== '' && !paidEngine;
+    // Entitlements are read inside the same per-user transaction as the spend. This
+    // prevents a concurrent pass/plan change from making this charge use stale limits.
     const monthDate = new Date(now);
     const monthStart = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1);
     const monthEnd = Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1);
@@ -391,7 +386,15 @@ export class PlansService {
     const windowEnd = windowStart + windowMs;
 
     let auditEvents: EventDraft[] = [];
-    const result = await this.billing.mutateLedger(userId, (entries) => {
+    const result = await this.billing.mutateLedger(userId, (entries, items) => {
+      const plan = activeBasePlan(items, now)?.itemCode ?? DEFAULT_PLAN;
+      const passes = activePasses(items, now);
+      const paidEngine = input.engine !== '' &&
+        (passes.includes(input.engine) || this.access.engineBundlePlans.includes(plan));
+      const usesFreeWindow = input.engine === '' ? plan === 'free' : !paidEngine;
+      // Hook 2b: every engine without its own pass or an all-round plan stays at Free limits,
+      // even when the user has paid for a general base plan.
+      const freeLevelEngine = input.engine !== '' && !paidEngine;
       const priorSpend = entries.filter((entry) => entry.amount < 0 && entry.jobId === input.jobId);
       if (priorSpend.length > 0) {
         const priorAmount = priorSpend.reduce((sum, entry) => sum - entry.amount, 0);
