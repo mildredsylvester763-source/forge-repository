@@ -91,15 +91,19 @@ describe('configuration safety', () => {
   it('validates pass product codes and their plan/engine mappings', () => {
     const catalog = JSON.stringify([
       { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 500, creditsByEngine: { music: 300, painting: 200 }, billingPeriod: 'monthly', sellable: true },
-      { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
+      { productCode: 'annual_plus_2026', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
     ]);
     const configured = loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: catalog });
     assert.equal(configured.plans.passCatalog.length, 2);
+    assert.equal(configured.plans.passCatalog[1]?.planCode, 'plus');
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError, 'base plan products require an explicit planCode');
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
       { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['sonar'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
     ]) }), ConfigError);
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
-      { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
+      { productCode: 'plus_plan', type: 'base_plan', planCode: 'plus', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
     ]) }), ConfigError);
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
       { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
