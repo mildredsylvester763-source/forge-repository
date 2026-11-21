@@ -1,3 +1,5 @@
+import type { EventDraft, EventEnvelope } from '../../kernel/events.ts';
+import { SqliteEventStore } from '../../kernel/sqlite-events.ts';
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { PlanId, PlanRecord } from './engine/plan-engine.ts';
 import type { PlanStore, PlanUpsert } from './plans-store.ts';
@@ -22,8 +24,9 @@ export class SqlitePlanStore implements PlanStore {
   private readonly upsertStmt;
   private readonly byUser;
 
-  constructor(db: Database) {
+  constructor(db: Database, events: SqliteEventStore) {
     this.db = db;
+    this.events = events;
     this.upsertStmt = db.prepare(
       'INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ' +
         'ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, engine_passes = excluded.engine_passes, updated_at = excluded.updated_at',
@@ -104,7 +107,9 @@ const toLedger = (r: LedgerRow): LedgerEntry => ({
 
 /** SQLite storage for the billing hooks: subscription items, processed payment events, the append-only credit ledger. */
 export class SqliteBillingStore implements BillingStore {
+  readonly supportsTransactionalAudit = true;
   private readonly db: Database;
+  private readonly events: SqliteEventStore;
   private readonly accountStateByUser;
   private readonly insertItem;
   private readonly itemsByUser;
@@ -132,6 +137,14 @@ export class SqliteBillingStore implements BillingStore {
     this.insertLedger = db.prepare(
       'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
+  }
+
+  private appendAuditSync(drafts: readonly EventDraft[]): EventEnvelope[] {
+    return drafts.map((draft) => this.events.appendSync(draft));
+  }
+
+  private notifyAudit(events: readonly EventEnvelope[]): void {
+    for (const event of events) this.events.notify(event);
   }
 
   async listItems(userId: string): Promise<readonly SubscriptionItem[]> {
@@ -164,11 +177,11 @@ export class SqliteBillingStore implements BillingStore {
     processedAt: number,
     apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
   ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }> {
-    return transaction(this.db, () => {
+    const committed = transaction(this.db, () => {
       const claimed = this.db.prepare(
         'INSERT OR IGNORE INTO payment_events (event_id, user_id, amount_minor, currency, occurred_at, processed_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt);
-      if (Number(claimed.changes) === 0) return { duplicate: true, value: null };
+      if (Number(claimed.changes) === 0) return { result: { duplicate: true as const, value: null }, events: [] as EventEnvelope[] };
       const items = (this.itemsByUser.all(event.userId) as unknown as ItemRow[]).map(toItem);
       const ledger = (this.ledgerByUser.all(event.userId) as unknown as LedgerRow[]).map(toLedger);
       const mutation = apply(items, ledger);
@@ -182,15 +195,23 @@ export class SqliteBillingStore implements BillingStore {
           entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
-      return { duplicate: false, value: mutation.value };
+      const events = this.appendAuditSync(mutation.auditEvents ?? []);
+      return { result: { duplicate: false as const, value: mutation.value }, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.result;
   }
 
-  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
-    const result = this.db.prepare(
-      'INSERT OR IGNORE INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit ? 1 : 0, spec.expiresAt, createdBy, createdAt);
-    return Number(result.changes) > 0;
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number, auditEvent?: EventDraft): Promise<boolean> {
+    const committed = transaction(this.db, () => {
+      const result = this.db.prepare(
+        'INSERT OR IGNORE INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).run(spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit ? 1 : 0, spec.expiresAt, createdBy, createdAt);
+      const events = Number(result.changes) > 0 && auditEvent ? this.appendAuditSync([auditEvent]) : [];
+      return { inserted: Number(result.changes) > 0, events };
+    });
+    this.notifyAudit(committed.events);
+    return committed.inserted;
   }
 
   async getPromotion(code: string): Promise<PromotionSpec | null> {
@@ -217,14 +238,14 @@ export class SqliteBillingStore implements BillingStore {
     now: number,
     apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
   ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }> {
-    return transaction(this.db, () => {
+    const committed = transaction(this.db, () => {
       const row = this.db.prepare(
         'SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = ?',
       ).get(code) as unknown as {
         code: string; kind: string; credit_amount: number; days: number;
         max_redemptions: number; per_user_limit: number; expires_at: number;
       } | undefined;
-      if (!row) return { found: false };
+      if (!row) return { result: { found: false as const }, events: [] as EventEnvelope[] };
       const spec: PromotionSpec = {
         code: row.code, kind: row.kind as PromotionSpec['kind'], creditAmount: row.credit_amount,
         days: row.days, maxRedemptions: row.max_redemptions, perUserLimit: row.per_user_limit === 1, expiresAt: row.expires_at,
@@ -244,8 +265,11 @@ export class SqliteBillingStore implements BillingStore {
           entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
-      return { found: true, value: mutation.value };
+      const events = this.appendAuditSync(mutation.auditEvents ?? []);
+      return { result: { found: true as const, value: mutation.value }, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.result;
   }
 
   async getAccountState(userId: string): Promise<AccountControlState> {
@@ -255,13 +279,15 @@ export class SqliteBillingStore implements BillingStore {
       : { paused: false, deletionQueuedAt: null, updatedAt: 0 };
   }
 
-  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
-    transaction(this.db, () => {
+  async setAccountState(userId: string, state: AccountControlState, auditEvent?: EventDraft): Promise<AccountControlState> {
+    const committed = transaction(this.db, () => {
       this.db.prepare(
         'INSERT INTO account_controls (user_id, paused, deletion_queued_at, updated_at) VALUES (?, ?, ?, ?) ' +
           'ON CONFLICT(user_id) DO UPDATE SET paused = excluded.paused, deletion_queued_at = excluded.deletion_queued_at, updated_at = excluded.updated_at',
       ).run(userId, state.paused ? 1 : 0, state.deletionQueuedAt, state.updatedAt);
+      return { events: auditEvent ? this.appendAuditSync([auditEvent]) : [] };
     });
+    this.notifyAudit(committed.events);
     return state;
   }
 
@@ -270,7 +296,7 @@ export class SqliteBillingStore implements BillingStore {
   }
 
   async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
-    return transaction(this.db, () => {
+    const committed = transaction(this.db, () => {
       const current = (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
       const mutation = apply(current);
       for (const entry of mutation.append) {
@@ -279,8 +305,11 @@ export class SqliteBillingStore implements BillingStore {
           entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
-      return mutation.value;
+      const events = this.appendAuditSync(mutation.auditEvents ?? []);
+      return { value: mutation.value, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.value;
   }
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
