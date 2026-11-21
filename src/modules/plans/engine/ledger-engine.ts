@@ -121,6 +121,8 @@ export interface SpendInput {
   readonly costUsdMicros: number;
   /** Set only when the job is running at the free level of an unpaid engine. */
   readonly usageLevel?: 'free' | 'paid';
+  /** Free-level unpaid engines cannot consume general paid-plan or top-up credits. */
+  readonly allowGeneralCredits?: boolean;
 }
 
 export interface SpendBreakdownEntry {
@@ -158,7 +160,11 @@ export function spend(entries: readonly LedgerEntry[], userId: string, input: Sp
         if (aExpiry !== bExpiry) return aExpiry - bExpiry;
         return a.entryId < b.entryId ? -1 : 1;
       });
-  const groups: Array<readonly LedgerEntry[]> = input.engine === '' ? [pool('')] : [pool(input.engine), pool('')];
+  const groups: Array<readonly LedgerEntry[]> = input.engine === ''
+    ? [pool('')]
+    : input.allowGeneralCredits === false
+      ? [pool(input.engine)]
+      : [pool(input.engine), pool('')];
   let remaining = input.amount;
   const consumed: Array<{ entry: LedgerEntry; used: number }> = [];
   for (const group of groups) {
