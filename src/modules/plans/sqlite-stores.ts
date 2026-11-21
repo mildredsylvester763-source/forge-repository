@@ -339,10 +339,11 @@ export class SqliteBillingStore implements BillingStore {
     return (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
   }
 
-  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
+  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[], items: readonly SubscriptionItem[]) => LedgerMutation<T>): Promise<T> {
     const committed = transaction(this.db, () => {
       const current = (this.ledgerByUser.all(userId) as unknown as LedgerRow[]).map(toLedger);
-      const mutation = apply(current);
+      const items = (this.itemsByUser.all(userId) as unknown as ItemRow[]).map(toItem);
+      const mutation = apply(current, items);
       for (const entry of mutation.append) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
