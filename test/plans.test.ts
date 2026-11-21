@@ -398,6 +398,26 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('does not let a paid base-plan credit pool raise an unpaid engine above Free limits (Hook 2b)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await registerAndSetPlan(h, 'plans-paid-base-credit-isolation@forge.test', 'plus');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'plan', amount: 50, expiresAt: null, jobId: null });
+
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 40, jobId: 'paid-base-free-window', costUsdMicros: 0 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'paid-base-free-window-over', costUsdMicros: 0 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'insufficient_credits',
+      );
+
+      const balances = await h.app.plans.creditBalances(user.id);
+      assert.equal(balances.general, 50);
+      assert.deepEqual(balances.engines, [{ engine: 'music', balance: 0 }]);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('treats repeated credit spends with the same job id as idempotent (Hook 3)', async () => {
     const h = await startHarness();
     try {
