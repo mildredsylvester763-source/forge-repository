@@ -4,6 +4,7 @@
  * under one storage transaction so webhook retries and concurrent spends cannot duplicate
  * grants, create two live base plans, or overspend a pool.
  */
+import type { EventDraft } from '../../kernel/events.ts';
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
 import type { PromotionRedemption, PromotionSpec } from './engine/promotion-engine.ts';
@@ -12,17 +13,20 @@ export interface PaymentApplication<T> {
   readonly superseded: readonly SubscriptionItem[];
   readonly granted: readonly SubscriptionItem[];
   readonly ledgerEntries: readonly LedgerEntry[];
+  readonly auditEvents?: readonly EventDraft[];
   readonly value: T;
 }
 
 export interface LedgerMutation<T> {
   readonly append: readonly LedgerEntry[];
+  readonly auditEvents?: readonly EventDraft[];
   readonly value: T;
 }
 
 export interface PromotionRedemptionApplication<T> {
   readonly redemption: PromotionRedemption;
   readonly ledgerEntries: readonly LedgerEntry[];
+  readonly auditEvents?: readonly EventDraft[];
   readonly value: T;
 }
 
@@ -34,6 +38,8 @@ export interface AccountControlState {
 
 
 export interface BillingStore {
+  /** True only when each durable billing mutation also appends its audit events in the same DB transaction. */
+  readonly supportsTransactionalAudit: boolean;
   listItems(userId: string): Promise<readonly SubscriptionItem[]>;
   appendItem(item: SubscriptionItem, createdAt: number): Promise<SubscriptionItem>;
   updateItemStatus(itemId: string, status: SubscriptionStatus): Promise<SubscriptionItem | null>;
@@ -44,7 +50,7 @@ export interface BillingStore {
     processedAt: number,
     apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
   ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }>;
-  definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean>;
+  definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number, auditEvent?: EventDraft): Promise<boolean>;
   getPromotion(code: string): Promise<PromotionSpec | null>;
   countPromotionRedemptions(code: string): Promise<number>;
   redeemPromotion<T>(
@@ -54,7 +60,7 @@ export interface BillingStore {
     apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
   ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }>;
   getAccountState(userId: string): Promise<AccountControlState>;
-  setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState>;
+  setAccountState(userId: string, state: AccountControlState, auditEvent?: EventDraft): Promise<AccountControlState>;
     listLedger(userId: string): Promise<readonly LedgerEntry[]>;
   appendLedger(entry: LedgerEntry): Promise<LedgerEntry>;
   mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T>;
@@ -62,6 +68,7 @@ export interface BillingStore {
 
 /** Development and test store. A mutation contains no await between check and commit. */
 export class InMemoryBillingStore implements BillingStore {
+  readonly supportsTransactionalAudit = false;
   private readonly items = new Map<string, SubscriptionItem>();
   private readonly events = new Map<string, number>();
   private readonly ledger = new Map<string, LedgerEntry[]>();
@@ -118,7 +125,8 @@ export class InMemoryBillingStore implements BillingStore {
     return { duplicate: false, value: mutation.value };
   }
 
-  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number, auditEvent?: EventDraft): Promise<boolean> {
+    void auditEvent;
     void createdBy;
     void createdAt;
     if (this.promotions.has(spec.code)) return false;
@@ -160,7 +168,8 @@ export class InMemoryBillingStore implements BillingStore {
     return this.accountControls.get(userId) ?? { paused: false, deletionQueuedAt: null, updatedAt: 0 };
   }
 
-  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
+  async setAccountState(userId: string, state: AccountControlState, auditEvent?: EventDraft): Promise<AccountControlState> {
+    void auditEvent;
     const saved = { ...state };
     this.accountControls.set(userId, saved);
     return saved;
