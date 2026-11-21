@@ -23,3 +23,4 @@ export * from './engine/safety-postmortem-engine.ts';
 export * from './safety-postmortem-service.ts';
 export * from './safety-readability-service.ts';
 export * from './safety-research-updates-service.ts';
+export * from './safety-classifier-governance-service.ts';
