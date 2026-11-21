@@ -8,11 +8,14 @@ import type { EventDraft } from '../../kernel/events.ts';
 import type { LedgerEntry } from './engine/ledger-engine.ts';
 import type { PaymentEvent, SubscriptionItem, SubscriptionStatus } from './engine/subscription-engine.ts';
 import type { PromotionRedemption, PromotionSpec } from './engine/promotion-engine.ts';
+import type { PlanId } from './engine/plan-engine.ts';
 
 export interface PaymentApplication<T> {
   readonly superseded: readonly SubscriptionItem[];
   readonly granted: readonly SubscriptionItem[];
   readonly ledgerEntries: readonly LedgerEntry[];
+  /** Keep user_plans.plan as the base-plan mirror inside the payment transaction. */
+  readonly basePlan?: PlanId;
   readonly auditEvents?: readonly EventDraft[];
   readonly value: T;
 }

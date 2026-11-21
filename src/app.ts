@@ -234,7 +234,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const searchIntegrity = new PostgresSearchIntegrityStore(pool);
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
-    const userPlans = new PostgresPlanStore(pool);
+    const userPlans = new PostgresPlanStore(pool, events);
     const billing = new PostgresBillingStore(pool, events);
     const offlineSync = new PostgresOfflineSyncStore(pool);
     const rateLimitStore = new PostgresRateLimitStore(pool);
@@ -271,7 +271,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const searchIntegrity = new SqliteSearchIntegrityStore(db);
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
-    const userPlans = new SqlitePlanStore(db);
+    const userPlans = new SqlitePlanStore(db, events);
     const billing = new SqliteBillingStore(db, events);
     const offlineSync = new SqliteOfflineSyncStore(db);
     const rateLimitStore = new SqliteRateLimitStore(db);

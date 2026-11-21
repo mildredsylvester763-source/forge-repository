@@ -142,21 +142,20 @@ export class PlansService {
     return record ?? { userId, plan: DEFAULT_PLAN, enginePasses: [], updatedAt: 0 };
   }
 
-  /** The legacy writer, kept for the migration window: tests and admin overrides set the plan of record directly. */
-  async setPlan(userId: string, plan: PlanId, enginePasses: readonly string[] = []): Promise<PlanRecord> {
+  /** Internal bootstrap/test writer. Public admin changes use the audited comp path below. */
+  async setPlan(userId: string, plan: PlanId, enginePasses: readonly string[] = [], audit: { actor?: EventDraft['actor']; reason?: string; additionalEvents?: readonly EventDraft[] } = {}): Promise<PlanRecord> {
     if (!isPlanId(plan)) throw new AppError(400, 'plan_invalid', 'Unknown plan id.');
     const passes = [...new Set(enginePasses)].sort();
-    for (const pass of passes) {
-      if (!isEngineCode(pass)) throw new AppError(400, 'plan_invalid', 'An engine pass must be one of the catalog engine codes.');
-    }
-    const record = await this.store.upsert({ userId, plan, enginePasses: passes, now: this.clock() });
-    await this.events.append({
-      type: PlansEvents.PlanChanged,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'service', id: 'plans' },
-      subject: { type: 'user_plan', id: userId },
-      payload: { userId, plan, enginePasses: passes },
-    });
+    for (const pass of passes) if (!isEngineCode(pass)) throw new AppError(400, 'plan_invalid', 'An engine pass must be one of the catalog engine codes.');
+    const input = { userId, plan, enginePasses: passes, now: this.clock() };
+    const drafts: EventDraft[] = [{
+      type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION,
+      actor: audit.actor ?? { kind: 'service', id: 'plans' }, subject: { type: 'user_plan', id: userId },
+      payload: { userId, plan, enginePasses: passes, ...(audit.reason === undefined ? {} : { reason: audit.reason }) },
+    }, ...(audit.additionalEvents ?? [])];
+    if (this.store.supportsTransactionalAudit === true && this.store.upsertWithAudit) return this.store.upsertWithAudit(input, drafts);
+    const record = await this.store.upsert(input);
+    for (const draft of drafts) await this.events.append(draft);
     return record;
   }
 
@@ -185,8 +184,11 @@ export class PlansService {
     const now = this.clock();
     const items = await this.billing.listItems(userId);
     const record = await this.getPlan(userId);
-    const plan = (activeBasePlan(items, now)?.itemCode ?? record.plan) as PlanId;
-    const passes = [...new Set([...activePasses(items, now), ...record.enginePasses])].sort();
+    const hasBasePlanHistory = items.some((item) => item.itemType === 'base_plan');
+    const plan = (activeBasePlan(items, now)?.itemCode ?? (hasBasePlanHistory ? DEFAULT_PLAN : record.plan)) as PlanId;
+    const passHistory = new Set(items.filter((item) => item.itemType === 'engine_pass').map((item) => item.itemCode));
+    const legacyPasses = record.enginePasses.filter((pass) => !passHistory.has(pass));
+    const passes = [...new Set([...activePasses(items, now), ...legacyPasses])].sort();
     return { plan, passes, items };
   }
 
@@ -269,6 +271,7 @@ export class PlansService {
       }
       const normalizedEvent: PaymentEvent = { ...event, products: normalizedProducts };
       const applied = applyPaymentEvent(items, normalizedEvent);
+      const basePlan = normalizedProducts.find((product) => product.itemType === 'base_plan')?.itemCode as PlanId | undefined;
       auditEvents = [
         ...ledgerEntries.map((entry): EventDraft => ({
           type: PlansEvents.CreditsGranted,
@@ -277,6 +280,11 @@ export class PlansService {
           subject: { type: 'user_credits', id: event.userId },
           payload: { userId: event.userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, eventId: event.eventId },
         })),
+        ...(basePlan === undefined ? [] : [{
+          type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service' as const, id: 'plans' }, subject: { type: 'user_plan', id: event.userId },
+          payload: { userId: event.userId, plan: basePlan, eventId: event.eventId, source: 'payment' },
+        }]),
         {
           type: PlansEvents.SubscriptionsChanged,
           version: PLANS_EVENT_VERSION,
@@ -296,11 +304,16 @@ export class PlansService {
         superseded: applied.superseded,
         granted: applied.granted,
         ledgerEntries,
+        basePlan,
         auditEvents,
-        value: { granted: applied.granted, ledgerEntries },
+        value: { granted: applied.granted, ledgerEntries, basePlan },
       };
     });
     if (committed.duplicate) return { duplicate: true, granted: [] };
+    if (committed.value.basePlan !== undefined && !this.billing.supportsTransactionalAudit) {
+      const previous = await this.store.findByUser(event.userId);
+      await this.store.upsert({ userId: event.userId, plan: committed.value.basePlan, enginePasses: previous?.enginePasses ?? [], now });
+    }
     await this.appendAuditFallback(auditEvents);
     return { duplicate: false, granted: committed.value.granted };
   }
@@ -360,9 +373,10 @@ export class PlansService {
       if (priorSpend.length > 0) {
         const priorAmount = priorSpend.reduce((sum, entry) => sum - entry.amount, 0);
         const priorCost = priorSpend.reduce((sum, entry) => sum + (entry.costUsdMicros ?? 0), 0);
-        if (priorAmount !== input.amount || priorCost !== input.costUsdMicros) {
+        const priorEngine = priorSpend[0]?.jobEngine ?? null;
+        if (priorSpend.some((entry) => entry.jobEngine !== input.engine) || priorAmount !== input.amount || priorCost !== input.costUsdMicros) {
           throw new AppError(409, 'credit_job_conflict', 'This job id was already charged with a different amount or cost.', {
-            details: { jobId: input.jobId, priorAmount, requestedAmount: input.amount, priorCostUsdMicros: priorCost, requestedCostUsdMicros: input.costUsdMicros },
+            details: { jobId: input.jobId, priorEngine, requestedEngine: input.engine, priorAmount, requestedAmount: input.amount, priorCostUsdMicros: priorCost, requestedCostUsdMicros: input.costUsdMicros },
           });
         }
         const allocations = new Map<string, { entryId: string; source: LedgerEntry['source']; used: number }>();
@@ -557,9 +571,18 @@ export class PlansService {
       reason: typeof dto.reason === 'string' ? dto.reason : '',
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
-    const record = await this.setPlan(action.value.userId, action.value.plan as PlanId);
-    await this.recordAdminAction(adminId, 'comp_plan', action.value.userId, action.value.reason, { plan: record.plan });
-    return record;
+    const current = await this.getPlan(action.value.userId);
+    const plan = action.value.plan as PlanId;
+    const now = this.clock();
+    const input = { userId: action.value.userId, plan, enginePasses: current.enginePasses, now };
+    const drafts: EventDraft[] = [
+      { type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION, actor: { kind: 'user', id: adminId },
+        subject: { type: 'user_plan', id: action.value.userId },
+        payload: { userId: action.value.userId, plan, enginePasses: current.enginePasses, reason: action.value.reason, action: 'comp_plan' } },
+      this.adminActionDraft(adminId, 'comp_plan', action.value.userId, action.value.reason, { plan }),
+    ];
+    if (this.store.supportsTransactionalAudit === true && this.store.compPlanWithAudit) return this.store.compPlanWithAudit(input, 'admin_comp:' + adminId, drafts);
+    return this.setPlan(action.value.userId, plan, current.enginePasses, { actor: { kind: 'user', id: adminId }, reason: action.value.reason, additionalEvents: [drafts[1]!] });
   }
 
   async adminPauseAccount(adminId: string, body: unknown): Promise<{ userId: string; paused: boolean; queuedForDeletion: boolean }> {

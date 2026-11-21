@@ -9,7 +9,7 @@
  * free quality), and the decision says which level applied so the app can show what a
  * pass would add. Credits from one pass never unlock another unpaid engine.
  */
-import { checkEntitlement, ENGINE_BY_FEATURE, type GateId, type PlanId } from './plan-engine.ts';
+import { checkEntitlement, DEFAULT_PLAN, ENGINE_BY_FEATURE, type GateId, type PlanId } from './plan-engine.ts';
 import { FEATURE_GATES } from './feature-gates.ts';
 import { activeBasePlan, activePasses, type SubscriptionItem } from './subscription-engine.ts';
 
@@ -67,8 +67,11 @@ export interface AccessDecision {
 export function canUse(input: AccessInput): AccessDecision {
   const gate = FEATURE_GATES[input.feature];
   const base = activeBasePlan(input.items, input.now);
-  const plan = (base?.itemCode ?? input.legacyPlan) as PlanId;
-  const passes = [...new Set([...activePasses(input.items, input.now), ...input.legacyPasses])].sort();
+  const hasBasePlanHistory = input.items.some((item) => item.itemType === 'base_plan');
+  const plan = (base?.itemCode ?? (hasBasePlanHistory ? DEFAULT_PLAN : input.legacyPlan)) as PlanId;
+  const passHistory = new Set(input.items.filter((item) => item.itemType === 'engine_pass').map((item) => item.itemCode));
+  const legacyPasses = input.legacyPasses.filter((pass) => !passHistory.has(pass));
+  const passes = [...new Set([...activePasses(input.items, input.now), ...legacyPasses])].sort();
   const shape = {
     feature: input.feature,
     gate,

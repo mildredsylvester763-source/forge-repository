@@ -114,4 +114,13 @@ export const pgPlansMigrations: readonly Migration[] = [
     name: 'ledger_usage_level',
     sql: `ALTER TABLE credit_ledger ADD COLUMN usage_level TEXT CHECK (usage_level IN ('free', 'paid'));`,
   },
+  { version: 9, name: 'ledger_job_engine', sql: `ALTER TABLE credit_ledger ADD COLUMN job_engine TEXT;` },
+  { version: 10, name: 'one_live_base_plan_per_user', sql: `
+    UPDATE subscription_items AS target SET status = 'cancelled' FROM (
+      SELECT item_id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY starts_at DESC, created_at DESC, item_id DESC) AS rn
+      FROM subscription_items WHERE item_type = 'base_plan' AND status IN ('active', 'grace')
+    ) ranked WHERE target.item_id = ranked.item_id AND ranked.rn > 1;
+    CREATE UNIQUE INDEX subscription_items_one_live_base_plan_uidx ON subscription_items (user_id)
+      WHERE item_type = 'base_plan' AND status IN ('active', 'grace');
+  ` },
 ];

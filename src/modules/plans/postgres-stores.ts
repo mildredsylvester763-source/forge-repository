@@ -22,10 +22,14 @@ const toRecord = (r: PlanRow): PlanRecord => ({
 });
 
 export class PostgresPlanStore implements PlanStore {
+  readonly supportsTransactionalAudit: boolean;
   private readonly pool: SqlPool;
+  private readonly events: PostgresEventStore | null;
 
-  constructor(pool: SqlPool) {
+  constructor(pool: SqlPool, events?: PostgresEventStore) {
     this.pool = pool;
+    this.events = events ?? null;
+    this.supportsTransactionalAudit = this.events !== null;
   }
 
   async findByUser(userId: string): Promise<PlanRecord | null> {
@@ -43,6 +47,36 @@ export class PostgresPlanStore implements PlanStore {
     const record = await this.findByUser(input.userId);
     if (!record) throw new Error('user plan upsert failed');
     return record;
+  }
+  async upsertWithAudit(input: PlanUpsert, drafts: readonly EventDraft[]): Promise<PlanRecord> {
+    const events = this.events;
+    if (!events) throw new Error('transactional plan audit requires a PostgreSQL event store');
+    const committed = await withTransaction(this.pool, async (conn) => {
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [input.userId]);
+      if (owner.rows.length === 0) throw new Error('billing user not found: ' + input.userId);
+      await conn.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5) ON CONFLICT (user_id) DO UPDATE SET plan = EXCLUDED.plan, engine_passes = EXCLUDED.engine_passes, updated_at = EXCLUDED.updated_at', [input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now]);
+      const appended: EventEnvelope[] = [];
+      for (const draft of drafts) appended.push(await events.appendIn(conn, draft));
+      return { record: { userId: input.userId, plan: input.plan, enginePasses: [...input.enginePasses], updatedAt: input.now }, events: appended };
+    });
+    for (const event of committed.events) events.notify(event);
+    return committed.record;
+  }
+  async compPlanWithAudit(input: PlanUpsert, source: string, drafts: readonly EventDraft[]): Promise<PlanRecord> {
+    const events = this.events;
+    if (!events) throw new Error('transactional plan audit requires a PostgreSQL event store');
+    const committed = await withTransaction(this.pool, async (conn) => {
+      const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [input.userId]);
+      if (owner.rows.length === 0) throw new Error('billing user not found: ' + input.userId);
+      await conn.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5) ON CONFLICT (user_id) DO UPDATE SET plan = EXCLUDED.plan, engine_passes = EXCLUDED.engine_passes, updated_at = EXCLUDED.updated_at', [input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now]);
+      await conn.query("UPDATE subscription_items SET status = 'cancelled' WHERE user_id = $1 AND item_type = 'base_plan' AND status IN ('active', 'grace')", [input.userId]);
+      if (input.plan !== 'free') await conn.query('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)', ['comp_' + randomUUID(), input.userId, 'base_plan', input.plan, input.now, Number.MAX_SAFE_INTEGER, 'active', source, input.now]);
+      const appended: EventEnvelope[] = [];
+      for (const draft of drafts) appended.push(await events.appendIn(conn, draft));
+      return { record: { userId: input.userId, plan: input.plan, enginePasses: [...input.enginePasses], updatedAt: input.now }, events: appended };
+    });
+    for (const event of committed.events) events.notify(event);
+    return committed.record;
   }
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
@@ -70,6 +104,7 @@ interface PgLedgerRow {
   amount: string | number;
   expires_at: string | number | null;
   job_id: string | null;
+  job_engine: string | null;
   source_entry_id: string | null;
   cost_usd_micros: string | number | null;
   usage_level: string | null;
@@ -95,6 +130,7 @@ const pgLedger = (r: PgLedgerRow): LedgerEntry => ({
   amount: num(r.amount),
   expiresAt: r.expires_at === null ? null : num(r.expires_at),
   jobId: r.job_id,
+  jobEngine: r.job_engine,
   sourceEntryId: r.source_entry_id,
   costUsdMicros: r.cost_usd_micros === null ? null : num(r.cost_usd_micros),
   ...(r.usage_level === 'free' || r.usage_level === 'paid' ? { usageLevel: r.usage_level } : {}),
@@ -181,10 +217,11 @@ export class PostgresBillingStore implements BillingStore {
       }
       for (const entry of mutation.ledgerEntries) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
+      if (mutation.basePlan !== undefined) await conn.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $4) ON CONFLICT (user_id) DO UPDATE SET plan = EXCLUDED.plan, updated_at = EXCLUDED.updated_at', [event.userId, mutation.basePlan, JSON.stringify([]), processedAt]);
       const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
       return { result: { duplicate: false as const, value: mutation.value }, events };
     });
@@ -255,8 +292,8 @@ export class PostgresBillingStore implements BillingStore {
       );
       for (const entry of mutation.ledgerEntries) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
       const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
@@ -308,8 +345,8 @@ export class PostgresBillingStore implements BillingStore {
       const mutation = apply(current);
       for (const entry of mutation.append) {
         await conn.query(
-          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
-          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
+          'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+          [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
       const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
@@ -321,8 +358,8 @@ export class PostgresBillingStore implements BillingStore {
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
     await this.pool.query(
-      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
-      [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
+      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
+      [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
     );
     return entry;
   }

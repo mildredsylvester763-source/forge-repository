@@ -266,6 +266,26 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('expires paid base plans and engine passes without resurrecting legacy plan fields (Hook 1)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await registerAndSetPlan(h, 'plans-subscription-expiry@forge.test', 'pro', ['music']);
+      const now = h.clock.now, endsAt = now + 86_400_000;
+      const event = { eventId: 'evt_subscription_expiry', userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
+        products: [
+          { itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt },
+          { itemType: 'engine_pass' as const, itemCode: 'music_pass', startsAt: now, endsAt },
+        ],
+      };
+      await h.app.plans.processPaymentEvent(event);
+      const live = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(live.plan, 'plus'); assert.deepEqual(live.passes, ['music']);
+      h.clock.now = endsAt;
+      const expired = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(expired.plan, 'free'); assert.deepEqual(expired.passes, []);
+    } finally { await h.close(); }
+  });
+
   it('rolls back payment, subscription and credits when the transactional audit append fails (Hook 10)', async () => {
     const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
@@ -475,7 +495,7 @@ describe('plans (PLAN GATE LAW)', () => {
   });
 
   it('treats repeated credit spends with the same job id as idempotent (Hook 3)', async () => {
-    const h = await startHarness();
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const user = await freeUser(h, 'plans-spend-retry@forge.test');
       await h.app.plans.setPlan(user.id, 'plus');
@@ -490,9 +510,20 @@ describe('plans (PLAN GATE LAW)', () => {
         (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'credit_job_conflict',
       );
       assert.equal((await h.app.plans.creditBalances(user.id)).general, 5);
-    } finally {
-      await h.close();
-    }
+    } finally { await h.close(); }
+  });
+
+  it('rejects reusing one job id for a different engine even when amount and cost match (Hook 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-spend-cross-engine@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 20, expiresAt: null, jobId: null });
+      const first = { engine: 'music', amount: 5, jobId: 'job-cross-engine-unique', costUsdMicros: 17 };
+      await h.app.plans.spendCredits(user.id, first);
+      await assert.rejects(() => h.app.plans.spendCredits(user.id, { ...first, engine: 'painting' }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'credit_job_conflict');
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 15);
+    } finally { await h.close(); }
   });
 
   it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
@@ -667,6 +698,35 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
     } finally {
       await h.close();
     }
+  });
+
+  it('commits an admin comp, its subscription override and both audit events atomically (Hooks 1, 10, 11)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_ADMIN_USERS: 'u_admin' });
+    try {
+      const user = await freeUser(h, 'plans-admin-comp-atomic@forge.test');
+      const before = await h.app.events.head();
+      const eventStore = h.app.events as unknown as { appendSync: (...args: unknown[]) => unknown };
+      const original = eventStore.appendSync.bind(eventStore); let calls = 0;
+      eventStore.appendSync = (...args: unknown[]) => { calls += 1; if (calls === 2) throw new Error('audit-write-failed'); return original(...args); };
+      try { await assert.rejects(() => h.app.plans.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'support compensation' }), /audit-write-failed/); }
+      finally { eventStore.appendSync = original; }
+      assert.deepEqual(await h.app.events.head(), before);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'free');
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).items.length, 0);
+      const record = await h.app.plans.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'support compensation' });
+      assert.equal(record.plan, 'pro');
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'pro');
+      assert.equal(state.items.filter((item) => item.itemType === 'base_plan' && item.status === 'active').length, 1);
+      assert.equal(state.items.find((item) => item.itemType === 'base_plan')?.source, 'admin_comp:u_admin');
+      const after = await h.app.events.readFrom(before.seq + 1, 10);
+      const planChange = after.find((event) => event.type === 'plans.plan.changed');
+      const adminAction = after.find((event) => event.type === 'plans.admin.action');
+      assert.deepEqual(planChange?.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((planChange?.payload as Record<string, unknown>).reason, 'support compensation');
+      assert.deepEqual(adminAction?.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((adminAction?.payload as Record<string, unknown>).reason, 'support compensation');
+    } finally { await h.close(); }
   });
 
   it('defines, redeems and refuses promotions (Hook 12)', async () => {

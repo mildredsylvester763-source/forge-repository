@@ -24,6 +24,8 @@ export interface LedgerEntry {
   readonly amount: number;
   readonly expiresAt: number | null;
   readonly jobId: string | null;
+  /** Engine that initiated a job charge; distinct from the source credit pool in engine. */
+  readonly jobEngine?: string | null;
   /** For spend entries: the grant entry this spend drew from. Null on grants. */
   readonly sourceEntryId: string | null;
   /** The job's real cost to Forge, whole micro-dollars. */
@@ -179,6 +181,7 @@ export function spend(entries: readonly LedgerEntry[], userId: string, input: Sp
     amount: -item.used,
     expiresAt: item.entry.expiresAt,
     jobId: input.jobId,
+    jobEngine: input.engine,
     sourceEntryId: item.entry.entryId,
     costUsdMicros: index === 0 ? input.costUsdMicros : 0,
     ...(input.usageLevel === undefined ? {} : { usageLevel: input.usageLevel }),

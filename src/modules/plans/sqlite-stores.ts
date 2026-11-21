@@ -20,12 +20,16 @@ const toRecord = (r: PlanRow): PlanRecord => ({
 });
 
 export class SqlitePlanStore implements PlanStore {
+  readonly supportsTransactionalAudit: boolean;
   private readonly db: Database;
+  private readonly events: SqliteEventStore | null;
   private readonly upsertStmt;
   private readonly byUser;
 
-  constructor(db: Database) {
+  constructor(db: Database, events?: SqliteEventStore) {
     this.db = db;
+    this.events = events ?? null;
+    this.supportsTransactionalAudit = this.events !== null;
     this.upsertStmt = db.prepare(
       'INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ' +
         'ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, engine_passes = excluded.engine_passes, updated_at = excluded.updated_at',
@@ -45,6 +49,37 @@ export class SqlitePlanStore implements PlanStore {
       if (!row) throw new Error('user plan upsert failed');
       return toRecord(row);
     });
+  }
+  async upsertWithAudit(input: PlanUpsert, drafts: readonly EventDraft[]): Promise<PlanRecord> {
+    const events = this.events;
+    if (!events) throw new Error('transactional plan audit requires a SQLite event store');
+    const committed = transaction(this.db, () => {
+      this.upsertStmt.run(input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now);
+      const row = this.byUser.get(input.userId) as unknown as PlanRow | undefined;
+      if (!row) throw new Error('user plan upsert failed');
+      const appended = drafts.map((draft) => events.appendSync(draft));
+      return { record: toRecord(row), events: appended };
+    });
+    for (const event of committed.events) events.notify(event);
+    return committed.record;
+  }
+  async compPlanWithAudit(input: PlanUpsert, source: string, drafts: readonly EventDraft[]): Promise<PlanRecord> {
+    const events = this.events;
+    if (!events) throw new Error('transactional plan audit requires a SQLite event store');
+    const committed = transaction(this.db, () => {
+      this.upsertStmt.run(input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now);
+      this.db.prepare("UPDATE subscription_items SET status = 'cancelled' WHERE user_id = ? AND item_type = 'base_plan' AND status IN ('active', 'grace')").run(input.userId);
+      if (input.plan !== 'free') {
+        this.db.prepare('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run('comp_' + randomUUID(), input.userId, 'base_plan', input.plan, input.now, Number.MAX_SAFE_INTEGER, 'active', source, input.now);
+      }
+      const row = this.byUser.get(input.userId) as unknown as PlanRow | undefined;
+      if (!row) throw new Error('user plan upsert failed');
+      const appended = drafts.map((draft) => events.appendSync(draft));
+      return { record: toRecord(row), events: appended };
+    });
+    for (const event of committed.events) events.notify(event);
+    return committed.record;
   }
 }
 import type { LedgerEntry } from './engine/ledger-engine.ts';
@@ -73,6 +108,7 @@ interface LedgerRow {
   amount: number;
   expires_at: number | null;
   job_id: string | null;
+  job_engine: string | null;
   source_entry_id: string | null;
   cost_usd_micros: number | null;
   usage_level: string | null;
@@ -98,6 +134,7 @@ const toLedger = (r: LedgerRow): LedgerEntry => ({
   amount: r.amount,
   expiresAt: r.expires_at,
   jobId: r.job_id,
+  jobEngine: r.job_engine,
   sourceEntryId: r.source_entry_id,
   costUsdMicros: r.cost_usd_micros,
   ...(r.usage_level === 'free' || r.usage_level === 'paid' ? { usageLevel: r.usage_level } : {}),
@@ -135,7 +172,7 @@ export class SqliteBillingStore implements BillingStore {
     );
     this.ledgerByUser = db.prepare('SELECT * FROM credit_ledger WHERE user_id = ? ORDER BY created_at, entry_id');
     this.insertLedger = db.prepare(
-      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
   }
 
@@ -192,9 +229,10 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.ledgerEntries) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
+          entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
+      if (mutation.basePlan !== undefined) this.db.prepare('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, updated_at = excluded.updated_at').run(event.userId, mutation.basePlan, '[]', processedAt, processedAt);
       const events = this.appendAuditSync(mutation.auditEvents ?? []);
       return { result: { duplicate: false as const, value: mutation.value }, events };
     });
@@ -262,7 +300,7 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.ledgerEntries) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
+          entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
       const events = this.appendAuditSync(mutation.auditEvents ?? []);
@@ -302,7 +340,7 @@ export class SqliteBillingStore implements BillingStore {
       for (const entry of mutation.append) {
         this.insertLedger.run(
           entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-          entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
+          entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
         );
       }
       const events = this.appendAuditSync(mutation.auditEvents ?? []);
@@ -315,7 +353,7 @@ export class SqliteBillingStore implements BillingStore {
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
     this.insertLedger.run(
       entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt,
-      entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
+      entry.jobId, entry.jobEngine ?? null, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null,
     );
     return entry;
   }
