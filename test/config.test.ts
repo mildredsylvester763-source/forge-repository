@@ -100,6 +100,9 @@ describe('configuration safety', () => {
       { productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'monthly', sellable: true },
     ]) }), ConfigError, 'base plan products require an explicit planCode');
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
+      { productCode: 'free_product', type: 'base_plan', planCode: 'free', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+    ]) }), ConfigError, 'Free is not a sellable base-plan product');
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
       { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['sonar'], creditsIncluded: 10, billingPeriod: 'monthly', sellable: true },
     ]) }), ConfigError);
     assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_PASS_CATALOG: JSON.stringify([
