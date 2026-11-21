@@ -375,7 +375,7 @@ export class PlansService {
           sum + (entry.source === 'free_window' && entry.amount > 0 && entry.createdAt >= monthStart && entry.createdAt < monthEnd ? entry.amount : 0), 0);
         const available = input.engine === ''
           ? creditBalance(entries, now, '')
-          : creditBalance(entries, now, input.engine) + creditBalance(entries, now, '');
+          : creditBalance(entries, now, input.engine) + (freeLevelEngine ? 0 : creditBalance(entries, now, ''));
         const needed = Math.max(0, input.amount - available);
         const windowRemaining = Math.max(0, this.access.freeEngineLimits.windowCredits - issuedInWindow);
         const monthRemaining = Math.max(0, this.access.freeEngineLimits.monthlyCeiling - issuedThisMonth);
@@ -394,7 +394,7 @@ export class PlansService {
 
       const outcome = spend(working, userId, {
         ...input,
-        ...(freeLevelEngine ? { usageLevel: 'free' as const } : {}),
+        ...(freeLevelEngine ? { usageLevel: 'free' as const, allowGeneralCredits: false } : {}),
       }, now);
       if (!outcome.ok) {
         throw new AppError(402, 'insufficient_credits', 'Not enough credits for this job.', {
