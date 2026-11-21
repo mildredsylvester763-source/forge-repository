@@ -10,6 +10,7 @@ const PAYMENT_CATALOG = JSON.stringify([
   { productCode: 'pro_plan', type: 'base_plan', planCode: 'pro', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
   { productCode: 'plus_plan', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
   { productCode: 'team_plan', type: 'base_plan', planCode: 'team', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'annual_plus_2026', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'yearly', sellable: true },
   { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
   { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, creditsByEngine: { music: 60, painting: 40 }, billingPeriod: 'monthly', sellable: true },
 ]);
@@ -237,6 +238,29 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.equal(replayBody.duplicate, true);
       const afterReplay = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
       assert.equal(afterReplay.balances.general, 7500);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('resolves arbitrary base-plan product codes through explicit catalog mapping (Hook 4)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-custom-product-code@forge.test');
+      const now = h.clock.now;
+      const payload = {
+        eventId: 'evt_custom_base_product',
+        userId: user.id,
+        amountMinor: 999,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan', itemCode: 'annual_plus_2026', startsAt: now, endsAt: now + 365 * 86_400_000 }],
+      };
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const response = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      assert.equal(response.status, 200);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'plus');
     } finally {
       await h.close();
     }
