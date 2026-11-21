@@ -1,4 +1,6 @@
-import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
+import type { EventDraft, EventEnvelope } from '../../kernel/events.ts';
+import { PostgresEventStore } from '../../kernel/postgres-events.ts';
+import { withTransaction, type SqlConn, type SqlPool } from '../../kernel/sql.ts';
 import type { PlanId, PlanRecord } from './engine/plan-engine.ts';
 import type { PlanStore, PlanUpsert } from './plans-store.ts';
 
@@ -101,10 +103,23 @@ const pgLedger = (r: PgLedgerRow): LedgerEntry => ({
 
 /** PostgreSQL storage for the billing hooks: subscription items, processed payment events, the append-only credit ledger. */
 export class PostgresBillingStore implements BillingStore {
+  readonly supportsTransactionalAudit = true;
   private readonly pool: SqlPool;
+  private readonly events: PostgresEventStore;
 
-  constructor(pool: SqlPool) {
+  constructor(pool: SqlPool, events: PostgresEventStore) {
     this.pool = pool;
+    this.events = events;
+  }
+
+  private async appendAuditIn(conn: SqlConn, drafts: readonly EventDraft[]): Promise<EventEnvelope[]> {
+    const appended: EventEnvelope[] = [];
+    for (const draft of drafts) appended.push(await this.events.appendIn(conn, draft));
+    return appended;
+  }
+
+  private notifyAudit(events: readonly EventEnvelope[]): void {
+    for (const event of events) this.events.notify(event);
   }
 
   async listItems(userId: string): Promise<readonly SubscriptionItem[]> {
@@ -143,7 +158,7 @@ export class PostgresBillingStore implements BillingStore {
     processedAt: number,
     apply: (items: readonly SubscriptionItem[], ledger: readonly LedgerEntry[]) => PaymentApplication<T>,
   ): Promise<{ readonly duplicate: true; readonly value: null } | { readonly duplicate: false; readonly value: T }> {
-    return withTransaction(this.pool, async (conn) => {
+    const committed = await withTransaction(this.pool, async (conn) => {
       const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [event.userId]);
       if (owner.rows.length === 0) throw new Error('billing user not found: ' + event.userId);
       const claimed = await conn.query<{ event_id: string }>(
@@ -151,7 +166,7 @@ export class PostgresBillingStore implements BillingStore {
           'VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (event_id) DO NOTHING RETURNING event_id',
         [event.eventId, event.userId, event.amountMinor, event.currency, event.occurredAt, processedAt],
       );
-      if (claimed.rows.length === 0) return { duplicate: true, value: null };
+      if (claimed.rows.length === 0) return { result: { duplicate: true as const, value: null }, events: [] as EventEnvelope[] };
       const itemRows = await conn.query<PgItemRow>('SELECT * FROM subscription_items WHERE user_id = $1 ORDER BY created_at, item_id', [event.userId]);
       const ledgerRows = await conn.query<PgLedgerRow>('SELECT * FROM credit_ledger WHERE user_id = $1 ORDER BY created_at, entry_id', [event.userId]);
       const mutation = apply(itemRows.rows.map(pgItem), ledgerRows.rows.map(pgLedger));
@@ -170,17 +185,25 @@ export class PostgresBillingStore implements BillingStore {
           [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
-      return { duplicate: false, value: mutation.value };
+      const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
+      return { result: { duplicate: false as const, value: mutation.value }, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.result;
   }
 
-  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number): Promise<boolean> {
-    const result = await this.pool.query<{ code: string }>(
-      'INSERT INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) ' +
-        'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (code) DO NOTHING RETURNING code',
-      [spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit, spec.expiresAt, createdBy, createdAt],
-    );
-    return result.rows.length > 0;
+  async definePromotion(spec: PromotionSpec, createdBy: string, createdAt: number, auditEvent?: EventDraft): Promise<boolean> {
+    const committed = await withTransaction(this.pool, async (conn) => {
+      const result = await conn.query<{ code: string }>(
+        'INSERT INTO promotions (code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at, created_by, created_at) ' +
+          'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (code) DO NOTHING RETURNING code',
+        [spec.code, spec.kind, spec.creditAmount, spec.days, spec.maxRedemptions, spec.perUserLimit, spec.expiresAt, createdBy, createdAt],
+      );
+      const events = result.rows.length > 0 && auditEvent ? await this.appendAuditIn(conn, [auditEvent]) : [];
+      return { inserted: result.rows.length > 0, events };
+    });
+    this.notifyAudit(committed.events);
+    return committed.inserted;
   }
 
   async getPromotion(code: string): Promise<PromotionSpec | null> {
@@ -206,13 +229,13 @@ export class PostgresBillingStore implements BillingStore {
     now: number,
     apply: (spec: PromotionSpec, redemptions: readonly PromotionRedemption[], ledger: readonly LedgerEntry[]) => PromotionRedemptionApplication<T>,
   ): Promise<{ readonly found: false } | { readonly found: true; readonly value: T }> {
-    return withTransaction(this.pool, async (conn) => {
+    const committed = await withTransaction(this.pool, async (conn) => {
       const promoRows = await conn.query<{
         code: string; kind: string; credit_amount: string | number; days: number;
         max_redemptions: number; per_user_limit: boolean; expires_at: string | number;
       }>('SELECT code, kind, credit_amount, days, max_redemptions, per_user_limit, expires_at FROM promotions WHERE code = $1 FOR UPDATE', [code]);
       const row = promoRows.rows[0];
-      if (!row) return { found: false };
+      if (!row) return { result: { found: false as const }, events: [] as EventEnvelope[] };
       const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
       if (owner.rows.length === 0) throw new Error('promotion user not found: ' + userId);
       const spec: PromotionSpec = {
@@ -236,8 +259,11 @@ export class PostgresBillingStore implements BillingStore {
           [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
-      return { found: true, value: mutation.value };
+      const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
+      return { result: { found: true as const, value: mutation.value }, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.result;
   }
 
   async getAccountState(userId: string): Promise<AccountControlState> {
@@ -251,12 +277,17 @@ export class PostgresBillingStore implements BillingStore {
       : { paused: false, deletionQueuedAt: null, updatedAt: 0 };
   }
 
-  async setAccountState(userId: string, state: AccountControlState): Promise<AccountControlState> {
-    await this.pool.query(
-      'INSERT INTO account_controls (user_id, paused, deletion_queued_at, updated_at) VALUES ($1, $2, $3, $4) ' +
-        'ON CONFLICT (user_id) DO UPDATE SET paused = EXCLUDED.paused, deletion_queued_at = EXCLUDED.deletion_queued_at, updated_at = EXCLUDED.updated_at',
-      [userId, state.paused, state.deletionQueuedAt, state.updatedAt],
-    );
+  async setAccountState(userId: string, state: AccountControlState, auditEvent?: EventDraft): Promise<AccountControlState> {
+    const committed = await withTransaction(this.pool, async (conn) => {
+      await conn.query(
+        'INSERT INTO account_controls (user_id, paused, deletion_queued_at, updated_at) VALUES ($1, $2, $3, $4) ' +
+          'ON CONFLICT (user_id) DO UPDATE SET paused = EXCLUDED.paused, deletion_queued_at = EXCLUDED.deletion_queued_at, updated_at = EXCLUDED.updated_at',
+        [userId, state.paused, state.deletionQueuedAt, state.updatedAt],
+      );
+      const events = auditEvent ? await this.appendAuditIn(conn, [auditEvent]) : [];
+      return { events };
+    });
+    this.notifyAudit(committed.events);
     return state;
   }
 
@@ -266,7 +297,7 @@ export class PostgresBillingStore implements BillingStore {
   }
 
   async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
-    return withTransaction(this.pool, async (conn) => {
+    const committed = await withTransaction(this.pool, async (conn) => {
       const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
       if (owner.rows.length === 0) throw new Error('billing user not found: ' + userId);
       const rows = await conn.query<PgLedgerRow>(
@@ -281,8 +312,11 @@ export class PostgresBillingStore implements BillingStore {
           [entry.entryId, entry.userId, entry.engine, entry.source, entry.amount, entry.expiresAt, entry.jobId, entry.sourceEntryId, entry.costUsdMicros, entry.createdAt, entry.usageLevel ?? null],
         );
       }
-      return mutation.value;
+      const events = await this.appendAuditIn(conn, mutation.auditEvents ?? []);
+      return { value: mutation.value, events };
     });
+    this.notifyAudit(committed.events);
+    return committed.value;
   }
 
   async appendLedger(entry: LedgerEntry): Promise<LedgerEntry> {
