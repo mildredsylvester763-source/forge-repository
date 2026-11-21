@@ -1,7 +1,7 @@
 import { AppError } from '../../kernel/errors.ts';
 import { timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../../kernel/clock.ts';
-import type { EventStore } from '../../kernel/events.ts';
+import type { EventDraft, EventStore } from '../../kernel/events.ts';
 import { DEFAULT_PLAN, isEngineCode, isPlanId, type GateId, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
 import { FEATURE_GATES } from './engine/feature-gates.ts';
 import { gateForRoute } from './engine/route-gates.ts';
@@ -121,6 +121,21 @@ export class PlansService {
     this.accessSecret = deps.accessSecret;
   }
 
+  private async appendAuditFallback(drafts: readonly EventDraft[]): Promise<void> {
+    if (this.billing.supportsTransactionalAudit) return;
+    for (const draft of drafts) await this.events.append(draft);
+  }
+
+  private adminActionDraft(adminId: string, action: string, targetId: string, reason: string, details: Record<string, unknown> = {}): EventDraft {
+    return {
+      type: PlansEvents.AdminAction,
+      version: PLANS_EVENT_VERSION,
+      actor: { kind: 'user', id: adminId },
+      subject: { type: 'admin_action_target', id: targetId },
+      payload: { action, targetId, reason, ...details },
+    };
+  }
+
   /** The legacy plan of record. Every account is at least Free; no row is needed for it. */
   async getPlan(userId: string): Promise<PlanRecord> {
     const record = await this.store.findByUser(userId);
@@ -182,6 +197,7 @@ export class PlansService {
    */
   async processPaymentEvent(event: PaymentEvent): Promise<ProcessedPaymentResult> {
     const now = this.clock();
+    let auditEvents: EventDraft[] = [];
     const committed = await this.billing.processPaymentEvent(event, now, (items, ledger) => {
       let nextLedger = [...ledger];
       const ledgerEntries: LedgerEntry[] = [];
@@ -253,37 +269,39 @@ export class PlansService {
       }
       const normalizedEvent: PaymentEvent = { ...event, products: normalizedProducts };
       const applied = applyPaymentEvent(items, normalizedEvent);
+      auditEvents = [
+        ...ledgerEntries.map((entry): EventDraft => ({
+          type: PlansEvents.CreditsGranted,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service', id: 'plans' },
+          subject: { type: 'user_credits', id: event.userId },
+          payload: { userId: event.userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, eventId: event.eventId },
+        })),
+        {
+          type: PlansEvents.SubscriptionsChanged,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service', id: 'plans' },
+          subject: { type: 'user_subscriptions', id: event.userId },
+          payload: { userId: event.userId, eventId: event.eventId, granted: [...applied.granted.map((item) => item.itemId)] },
+        },
+        {
+          type: PlansEvents.PaymentEventProcessed,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service', id: 'plans' },
+          subject: { type: 'payment_event', id: event.eventId },
+          payload: { eventId: event.eventId, userId: event.userId, amountMinor: event.amountMinor, currency: event.currency, productCodes: event.products.map((product) => product.itemCode) },
+        },
+      ];
       return {
         superseded: applied.superseded,
         granted: applied.granted,
         ledgerEntries,
+        auditEvents,
         value: { granted: applied.granted, ledgerEntries },
       };
     });
     if (committed.duplicate) return { duplicate: true, granted: [] };
-    for (const entry of committed.value.ledgerEntries) {
-      await this.events.append({
-        type: PlansEvents.CreditsGranted,
-        version: PLANS_EVENT_VERSION,
-        actor: { kind: 'service', id: 'plans' },
-        subject: { type: 'user_credits', id: event.userId },
-        payload: { userId: event.userId, engine: entry.engine, source: entry.source, amount: entry.amount, entryId: entry.entryId, eventId: event.eventId },
-      });
-    }
-    await this.events.append({
-      type: PlansEvents.SubscriptionsChanged,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'service', id: 'plans' },
-      subject: { type: 'user_subscriptions', id: event.userId },
-      payload: { userId: event.userId, eventId: event.eventId, granted: [...committed.value.granted.map((item) => item.itemId)] },
-    });
-    await this.events.append({
-      type: PlansEvents.PaymentEventProcessed,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'service', id: 'plans' },
-      subject: { type: 'payment_event', id: event.eventId },
-      payload: { eventId: event.eventId, userId: event.userId, amountMinor: event.amountMinor, currency: event.currency, productCodes: event.products.map((product) => product.itemCode) },
-    });
+    await this.appendAuditFallback(auditEvents);
     return { duplicate: false, granted: committed.value.granted };
   }
 
