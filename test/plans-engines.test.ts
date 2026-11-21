@@ -70,8 +70,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
   it('pins the catalog gates plus the Enterprise workspace-admin feature', () => {
     const counts: Record<string, number> = {};
     for (const gate of Object.values(FEATURE_GATES)) counts[gate] = (counts[gate] ?? 0) + 1;
-    assert.equal(Object.keys(FEATURE_GATES).length, 223);
-    assert.deepEqual(counts, { free: 91, internal: 68, pro: 26, enterprise: 17, team: 10, plus: 10, engine: 1 });
+    assert.equal(Object.keys(FEATURE_GATES).length, 224);
+    assert.deepEqual(counts, { free: 92, internal: 68, pro: 26, enterprise: 17, team: 10, plus: 10, engine: 1 });
   });
 
   it('pins spot-checked gates from the With-Plans catalog', () => {
@@ -86,6 +86,7 @@ describe('plans engine (PLAN GATE LAW)', () => {
     ['TS-797', 'internal'],
     ['TS-798', 'internal'],
     ['TS-799', 'internal'],
+    ['TS-800', 'free'],
     ['safety.text', 'free'],
     ['TS-791', 'internal'],
     ['CO-004', 'enterprise'],

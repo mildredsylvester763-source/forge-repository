@@ -25,3 +25,4 @@ export * from './safety-readability-service.ts';
 export * from './safety-research-updates-service.ts';
 export * from './safety-classifier-governance-service.ts';
 export * from './safety-independent-review-service.ts';
+export * from './safety-public-manifest-service.ts';
