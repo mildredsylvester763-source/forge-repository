@@ -343,7 +343,7 @@ export class PostgresBillingStore implements BillingStore {
     return result.rows.map(pgLedger);
   }
 
-  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
+  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[], items: readonly SubscriptionItem[]) => LedgerMutation<T>): Promise<T> {
     const committed = await withTransaction(this.pool, async (conn) => {
       const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
       if (owner.rows.length === 0) throw new Error('billing user not found: ' + userId);
@@ -352,7 +352,9 @@ export class PostgresBillingStore implements BillingStore {
         [userId],
       );
       const current = rows.rows.map(pgLedger);
-      const mutation = apply(current);
+      const itemRows = await conn.query<PgItemRow>('SELECT * FROM subscription_items WHERE user_id = $1 ORDER BY created_at, item_id FOR UPDATE', [userId]);
+      const items = itemRows.rows.map(pgItem);
+      const mutation = apply(current, items);
       for (const entry of mutation.append) {
         await conn.query(
           'INSERT INTO credit_ledger (entry_id, user_id, engine, source, amount, expires_at, job_id, job_engine, source_entry_id, cost_usd_micros, created_at, usage_level) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)',
