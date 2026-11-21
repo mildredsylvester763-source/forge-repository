@@ -601,11 +601,11 @@ export class PlansService {
     const drafts: EventDraft[] = [
       { type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION, actor: { kind: 'user', id: adminId },
         subject: { type: 'user_plan', id: action.value.userId },
-        payload: { userId: action.value.userId, plan, enginePasses: current.enginePasses, reason: action.value.reason, action: 'comp_plan' } },
+        payload: { userId: action.value.userId, plan, enginePasses: [...current.passes], reason: action.value.reason, action: 'comp_plan' } },
       this.adminActionDraft(adminId, 'comp_plan', action.value.userId, action.value.reason, { plan }),
     ];
     if (this.store.supportsTransactionalAudit === true && this.store.compPlanWithAudit) return this.store.compPlanWithAudit(input, 'admin_comp:' + adminId, drafts);
-    return this.setPlan(action.value.userId, plan, current.enginePasses, { actor: { kind: 'user', id: adminId }, reason: action.value.reason, additionalEvents: [drafts[1]!] });
+    return this.setPlan(action.value.userId, plan, [...current.passes], { actor: { kind: 'user', id: adminId }, reason: action.value.reason, additionalEvents: [drafts[1]!] });
   }
 
   async adminPauseAccount(adminId: string, body: unknown): Promise<{ userId: string; paused: boolean; queuedForDeletion: boolean }> {
