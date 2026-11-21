@@ -4,8 +4,8 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit` (based on `manus/part36-safety`)  
-**Latest verified checkpoint:** `147c14b972c2e79924d45b459373f979c9fac822`  
-**Verification:** GitHub Actions run [44882707251](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/44882707251) — typecheck passed; full test command completed with 965 tests, 964 passed, 0 failed, 1 skipped. The PostgreSQL Plan Hooks persistence suite ran against the CI PostgreSQL service and passed.  
+**Latest verified checkpoint:** `09467782c1c1798a85e3111b67dde31173271c54`  
+**Verification:** GitHub Actions run [44887995902](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/44887995902) — typecheck and full test job passed. Earlier full-suite evidence at [44882707251](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/44882707251) recorded 965 tests, 964 passed, 0 failed, 1 skipped, including the PostgreSQL Plan Hooks persistence suite.  
 **Audit date:** 2026-11-21
 
 ## Plan Hooks — prerequisite gate
@@ -59,3 +59,21 @@ No Part 02 feature implementation batch may begin until the above prerequisite h
 - The first four IDs in document order, once Plan Hooks are complete, are **DP-001, DP-002, DP-003, DP-004**.
 - Batch size remains exactly four feature IDs, except the final smaller remainder. Each batch must be tested, ledger-updated, committed and pushed before the next batch starts.
 - `main` has not been changed. Divergent branches have not been blindly merged; the working branch remains isolated on `forge-part02-audit`.
+
+
+### Subsequent verified foundation commits (2026-11-21)
+
+The branch advanced after the earlier 147c14 checkpoint. The following commits are now part of the verified history:
+
+- `d99b85f` — durable promotion and account-control mutations with audit-event hooks.
+- `0a0533d`, `6159cec`, `1c5a7f4` — PostgreSQL/SQLite payment transaction and audit rollback coverage.
+- `50d0392) — inject the audit store into the SQLite billing adapter.
+- `71b2e4e` — enforce durable subscription and credit invariants.
+- `d6f791a` — migrate legacy entitlements into subscription items.
+- `08bb914` — enforce per-device gateway rate limits.
+- `31cc908`, `f4ad294` — move admin comp semantics onto subscription items and derive pass audit from subscription state.
+- `a2538b1`, `0946778` — cover legacy pass migration semantics and deterministic PostgreSQL entitlement ordering.
+
+The latest CI job at commit `0946778` passed typecheck and the full test command. These commits improve the foundation, but they do **not** close every Plan Hook. In particular, the transactional audit boundary, job-charge identity/idempotency, product price-book algorithms and caps, payment lifecycle test mode, complete account export/deletion policy, and promotion time-benefit semantics still need explicit closure or owner-blocked status.
+
+**Part 02 implementation remains unstarted.** The first four IDs after the Plan Hooks prerequisite is closed remain DP-001 through DP-004.
