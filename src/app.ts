@@ -405,7 +405,11 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...plansRoutes(plans, identity, config.cookie, config.plans, new HmacPaymentProvider(config.plans.paymentWebhookSecret)),
   };
 
-  const routes = applyRouteGates(ungated, plans, identity, config.cookie);
+  const routes = applyRouteGates(ungated, plans, identity, {
+    ...config.cookie,
+    deviceName: config.env === 'production' ? '__Host-forge_device' : 'forge_device',
+    deviceSecret: config.plans.accessSecret,
+  });
 
   const handler = createHttpHandler({
     routes,

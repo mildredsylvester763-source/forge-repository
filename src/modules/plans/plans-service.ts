@@ -733,6 +733,10 @@ export class PlansService {
     return this.drainBucket('user:' + userId, rule);
   }
 
+  deviceRateLimitEnabled(): boolean {
+    return this.rateLimits.device !== null;
+  }
+
   async enforceDeviceRateLimit(deviceId: string): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
     const rule = this.rateLimits.device;
     if (rule === null) return { ok: true };

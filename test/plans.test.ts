@@ -870,3 +870,28 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
     }
   });
 });
+
+describe('Plan Hooks per-device gateway rate limit', () => {
+  it('uses a signed HttpOnly server-issued device cookie before gated handler work', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({ device: { limit: 1, windowMs: 60_000 } }),
+    });
+    try {
+      const user = await registerAndSetPlan(h, 'device-rate-limit@forge.test', 'plus');
+      const first = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      const issued = first.headers.getSetCookie().find((value) => value.startsWith('forge_device='));
+      assert.ok(issued, 'first gated request must receive a server-signed device cookie');
+      assert.match(issued, /HttpOnly/);
+      assert.match(issued, /SameSite=Strict/);
+      const deviceCookie = issued.split(';')[0] ?? '';
+      const second = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie + '; ' + deviceCookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'device');
+      const otherDevice = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      assert.notEqual(otherDevice.status, 429, 'a different device identity has its own device bucket');
+    } finally {
+      await h.close();
+    }
+  });
+});
