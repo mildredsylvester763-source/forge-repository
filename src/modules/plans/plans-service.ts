@@ -387,7 +387,7 @@ export class PlansService {
 
     let auditEvents: EventDraft[] = [];
     const result = await this.billing.mutateLedger(userId, (entries, items) => {
-      const plan = activeBasePlan(items, now)?.itemCode ?? DEFAULT_PLAN;
+      const plan = (activeBasePlan(items, now)?.itemCode ?? DEFAULT_PLAN) as PlanId;
       const passes = activePasses(items, now);
       const paidEngine = input.engine !== '' &&
         (passes.includes(input.engine) || this.access.engineBundlePlans.includes(plan));
