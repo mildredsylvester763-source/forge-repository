@@ -35,6 +35,8 @@ const FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS = 200_000;
 export interface PassCatalogEntry {
   readonly productCode: string;
   readonly type: 'base_plan' | 'engine_pass';
+  /** Explicit target plan for base-plan products; null for engine passes. */
+  readonly planCode: PlanId | null;
   readonly enginesIncluded: readonly string[];
   readonly creditsIncluded: number;
   /** Required for multi-engine passes; the sum must equal creditsIncluded. */
@@ -194,9 +196,9 @@ export class PlansService {
           });
         }
         if (product.itemType === 'base_plan') {
-          const planCode = catalog.productCode.endsWith('_plan') ? catalog.productCode.slice(0, -5) : catalog.productCode;
-          if (!isPlanId(planCode) || planCode === 'free' || catalog.enginesIncluded.length !== 0) {
-            throw new AppError(400, 'payment_product_invalid', 'The configured base-plan product is invalid.', {
+          const planCode = catalog.planCode;
+          if (planCode === null || !isPlanId(planCode) || planCode === 'free' || catalog.enginesIncluded.length !== 0) {
+            throw new AppError(400, 'payment_product_invalid', 'The configured base-plan product must map to one paid plan and include no engines.', {
               details: { productCode: catalog.productCode },
             });
           }
