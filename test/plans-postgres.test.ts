@@ -64,6 +64,63 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
     }
   });
 
+  it('rolls back payment claims and entitlement writes when the transactional audit append fails', async () => {
+    const t = await makeTestPool();
+    try {
+      await migratePostgres(t.pool, 'plans', pgPlansMigrations);
+      const now = Date.UTC(2026, 10, 21, 8, 0, 0);
+      const user = await new PostgresUserStore(t.pool).create({
+        email: 'plans-payment-audit-rollback@forge.test',
+        displayName: 'Plans audit rollback test',
+        passwordHash: 'test-hash',
+        now,
+      });
+      const events = new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger });
+      const billing = new PostgresBillingStore(t.pool, events);
+      const service = new PlansService({
+        store: new PostgresPlanStore(t.pool),
+        billing,
+        events,
+        clock: () => now,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [{ productCode: 'plus_plan', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true }],
+        adminUsers: [],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-postgres-plan-test-secret', 'utf8'),
+      });
+      const event: PaymentEvent = {
+        eventId: 'pg-payment-audit-rollback',
+        userId: user.id,
+        amountMinor: 999,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan', itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 24 * 60 * 60 * 1000 }],
+      };
+      const original = events.appendIn.bind(events);
+      events.appendIn = async () => { throw new Error('audit-write-failed'); };
+      try {
+        await assert.rejects(() => service.processPaymentEvent(event), /audit-write-failed/);
+      } finally {
+        events.appendIn = original;
+      }
+      assert.equal((await billing.listItems(user.id)).length, 0);
+      assert.equal((await billing.listLedger(user.id)).length, 0);
+      assert.equal((await events.head()).seq, 0);
+
+      const retry = await service.processPaymentEvent(event);
+      assert.equal(retry.duplicate, false);
+      assert.equal((await billing.listItems(user.id)).length, 1);
+      assert.equal((await billing.listLedger(user.id)).length, 1);
+      assert.equal((await events.head()).seq, 3);
+    } finally {
+      await t.pool.end();
+      await t.cleanup();
+    }
+  });
+
   it('persists free-level usage metadata and enforces the $0.20 monthly cost ceiling', async () => {
     const t = await makeTestPool();
     try {
