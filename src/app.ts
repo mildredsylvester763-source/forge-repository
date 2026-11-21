@@ -235,7 +235,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
     const userPlans = new PostgresPlanStore(pool);
-    const billing = new PostgresBillingStore(pool);
+    const billing = new PostgresBillingStore(pool, events);
     const offlineSync = new PostgresOfflineSyncStore(pool);
     const rateLimitStore = new PostgresRateLimitStore(pool);
     return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
@@ -272,7 +272,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
     const userPlans = new SqlitePlanStore(db);
-    const billing = new SqliteBillingStore(db);
+    const billing = new SqliteBillingStore(db, events);
     const offlineSync = new SqliteOfflineSyncStore(db);
     const rateLimitStore = new SqliteRateLimitStore(db);
     return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
