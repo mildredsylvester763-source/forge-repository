@@ -454,29 +454,34 @@ describe('plans hooks: access engine', () => {
   });
   const input = (feature: string, over: Partial<AccessInput> = {}): AccessInput => ({
     items: [],
-    legacyPlan: 'free',
-    legacyPasses: [],
     feature,
     config: config(),
     now: 1000,
     ...over,
   });
+  const passItems = (...engines: string[]): SubscriptionItem[] => engines.map((engine, index) => ({
+    itemId: 'pass_' + engine + '_' + index, userId: 'u', itemType: 'engine_pass',
+    itemCode: engine, startsAt: 0, endsAt: 2000, status: 'active', source: 'payment',
+  }));
 
-  it('takes the base plan from the subscription list ahead of the legacy column', () => {
+  it('takes the base plan from the live subscription item', () => {
     const items: SubscriptionItem[] = [
-      { itemId: 'sub_u_1', userId: 'u', itemType: 'base_plan', itemCode: 'pro', startsAt: 0, endsAt: 2000, status: 'active', source: 'e' },
+      { itemId: 'sub_u_1', userId: 'u', itemType: 'base_plan', itemCode: 'pro', startsAt: 0, endsAt: 2000, status: 'active', source: 'payment' },
     ];
-    const decision = canUse(input('AI-045', { items, legacyPlan: 'free' }));
+    const decision = canUse(input('AI-045', { items }));
     assert.equal(decision.allowed, true);
     assert.equal(decision.plan, 'pro');
     assert.equal(decision.reason, 'unlocked');
     assert.equal(decision.level, null);
   });
 
-  it('falls back to the legacy plan column when there is no base-plan item', () => {
-    const decision = canUse(input('AI-045', { legacyPlan: 'pro' }));
-    assert.equal(decision.allowed, true);
-    assert.equal(decision.plan, 'pro');
+  it('defaults to Free when no live base-plan item exists, even if a legacy mirror is stale', () => {
+    const items: SubscriptionItem[] = [
+      { itemId: 'sub_expired', userId: 'u', itemType: 'base_plan', itemCode: 'pro', startsAt: 0, endsAt: 999, status: 'expired', source: 'payment' },
+    ];
+    const decision = canUse(input('AI-045', { items }));
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.plan, 'free');
   });
 
   it('runs an unpaid engine at the free level, never locked out (Hook 2b)', () => {
@@ -489,15 +494,15 @@ describe('plans hooks: access engine', () => {
   });
 
   it('keeps each engine at its own level when a feature spans multiple engines', () => {
-    const partial = canUse(input('TQ-027', { legacyPasses: ['music'] }));
+    const partial = canUse(input('TQ-027', { items: passItems('music') }));
     assert.equal(partial.allowed, true);
     assert.equal(partial.level, 'free');
     assert.equal(partial.reason, 'engine_free_level');
     assert.deepEqual(partial.engineLevels, { manhwa: 'free', '3d': 'free', music: 'paid' });
     assert.deepEqual(partial.limits, limits);
-    const wrong = canUse(input('TQ-027', { legacyPasses: ['voice'] }));
+    const wrong = canUse(input('TQ-027', { items: passItems('voice') }));
     assert.deepEqual(wrong.engineLevels, { manhwa: 'free', '3d': 'free', music: 'free' });
-    const allPaid = canUse(input('TQ-027', { legacyPasses: ['music', 'manhwa', '3d'] }));
+    const allPaid = canUse(input('TQ-027', { items: passItems('music', 'manhwa', '3d') }));
     assert.equal(allPaid.level, 'paid');
     assert.equal(allPaid.reason, 'engine_paid');
     assert.deepEqual(allPaid.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
@@ -505,7 +510,7 @@ describe('plans hooks: access engine', () => {
   });
 
   it('treats bundle plans as owning every engine', () => {
-    const decision = canUse(input('TQ-027', { legacyPlan: 'studio', config: config({ engineBundlePlans: ['studio'] }) }));
+    const decision = canUse(input('TQ-027', { items: [{ itemId: 'studio', userId: 'u', itemType: 'base_plan', itemCode: 'studio', startsAt: 0, endsAt: 2000, status: 'active', source: 'payment' }], config: config({ engineBundlePlans: ['studio'] }) }));
     assert.equal(decision.level, 'paid');
     assert.equal(decision.reason, 'engine_paid');
     assert.deepEqual(decision.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
@@ -518,7 +523,7 @@ describe('plans hooks: access engine', () => {
   });
 
   it('lets everyone through when the gates are disabled', () => {
-    const decision = canUse(input('AI-045', { legacyPlan: 'free', config: config({ gatesEnabled: false }) }));
+    const decision = canUse(input('AI-045', { config: config({ gatesEnabled: false }) }));
     assert.equal(decision.allowed, true);
     assert.equal(decision.reason, 'gates_disabled');
   });
@@ -527,7 +532,7 @@ describe('plans hooks: access engine', () => {
     const internalDecision = canUse(input('CO-063'));
     assert.equal(internalDecision.allowed, true);
     assert.equal(internalDecision.reason, 'internal');
-    const lowDecision = canUse(input('AI-045', { legacyPlan: 'free' }));
+    const lowDecision = canUse(input('AI-045'));
     assert.equal(lowDecision.allowed, false);
     assert.equal(lowDecision.reason, 'plan_too_low');
   });

@@ -1,5 +1,5 @@
 import { AppError } from '../../kernel/errors.ts';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Clock } from '../../kernel/clock.ts';
 import type { EventDraft, EventStore } from '../../kernel/events.ts';
 import { DEFAULT_PLAN, isEngineCode, isPlanId, type GateId, type PlanId, type PlanRecord } from './engine/plan-engine.ts';
@@ -74,6 +74,8 @@ export interface PlansDeps {
   readonly accessSnapshotTtlHours: number;
   /** Hook 9: the HMAC secret access snapshots are signed with. */
   readonly accessSecret: Buffer;
+  /** Test-only entitlement seeding. Production must use verified payment events or audited admin comp. */
+  readonly allowTestPlanWrites?: boolean;
 }
 
 export interface ProcessedPaymentResult {
@@ -102,6 +104,7 @@ export class PlansService {
   private readonly rateLimitStore: SharedRateLimiter | null;
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
+  private readonly allowTestPlanWrites: boolean;
   /** Hook 14: the fixed-window counter buckets the gateway drains. */
   private readonly rateBuckets = new Map<string, RateLimitState>();
 
@@ -119,6 +122,7 @@ export class PlansService {
     this.rateLimitStore = deps.rateLimitStore ?? null;
     this.accessSnapshotTtlHours = deps.accessSnapshotTtlHours;
     this.accessSecret = deps.accessSecret;
+    this.allowTestPlanWrites = deps.allowTestPlanWrites ?? false;
   }
 
   private async appendAuditFallback(drafts: readonly EventDraft[]): Promise<void> {
@@ -136,27 +140,53 @@ export class PlansService {
     };
   }
 
-  /** The legacy plan of record. Every account is at least Free; no row is needed for it. */
+  /** Effective plan state is derived only from subscription items; the legacy mirror is never authoritative. */
   async getPlan(userId: string): Promise<PlanRecord> {
-    const record = await this.store.findByUser(userId);
-    return record ?? { userId, plan: DEFAULT_PLAN, enginePasses: [], updatedAt: 0 };
+    const state = await this.getEntitlementState(userId);
+    return {
+      userId,
+      plan: state.plan,
+      enginePasses: [...state.passes],
+      updatedAt: state.items.reduce((latest, item) => Math.max(latest, item.startsAt), 0),
+    };
   }
 
-  /** Internal bootstrap/test writer. Public admin changes use the audited comp path below. */
+  /**
+   * Test-only state seeding. It is disabled outside FORGE_ENV=test; production plan changes
+   * must arrive as verified provider events or the audited admin-comp operation.
+   */
   async setPlan(userId: string, plan: PlanId, enginePasses: readonly string[] = [], audit: { actor?: EventDraft['actor']; reason?: string; additionalEvents?: readonly EventDraft[] } = {}): Promise<PlanRecord> {
+    if (!this.allowTestPlanWrites) throw new AppError(403, 'plan_seed_disabled', 'Direct plan seeding is available only in the test environment.');
     if (!isPlanId(plan)) throw new AppError(400, 'plan_invalid', 'Unknown plan id.');
     const passes = [...new Set(enginePasses)].sort();
     for (const pass of passes) if (!isEngineCode(pass)) throw new AppError(400, 'plan_invalid', 'An engine pass must be one of the catalog engine codes.');
-    const input = { userId, plan, enginePasses: passes, now: this.clock() };
+    const now = this.clock();
+    const input = { userId, plan, enginePasses: passes, now };
     const drafts: EventDraft[] = [{
       type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION,
       actor: audit.actor ?? { kind: 'service', id: 'plans' }, subject: { type: 'user_plan', id: userId },
       payload: { userId, plan, enginePasses: passes, ...(audit.reason === undefined ? {} : { reason: audit.reason }) },
     }, ...(audit.additionalEvents ?? [])];
-    if (this.store.supportsTransactionalAudit === true && this.store.upsertWithAudit) return this.store.upsertWithAudit(input, drafts);
+    if (this.store.supportsTransactionalAudit === true && this.store.upsertWithAudit) {
+      await this.store.upsertWithAudit(input, drafts);
+      return this.getPlan(userId);
+    }
     const record = await this.store.upsert(input);
+    const existing = await this.billing.listItems(userId);
+    for (const item of existing) {
+      if (item.status === 'active' || item.status === 'grace') await this.billing.updateItemStatus(item.itemId, 'cancelled');
+    }
+    const forever = Number.MAX_SAFE_INTEGER;
+    if (plan !== 'free') await this.billing.appendItem({
+      itemId: 'test_base_' + randomUUID(), userId, itemType: 'base_plan', itemCode: plan,
+      startsAt: now, endsAt: forever, status: 'active', source: 'test_seed',
+    }, now);
+    for (const engine of passes) await this.billing.appendItem({
+      itemId: 'test_pass_' + randomUUID(), userId, itemType: 'engine_pass', itemCode: engine,
+      startsAt: now, endsAt: forever, status: 'active', source: 'test_seed',
+    }, now);
     for (const draft of drafts) await this.events.append(draft);
-    return record;
+    return { ...record, plan, enginePasses: passes, updatedAt: now };
   }
 
   /** The one access check (Hook 2). Unknown features are refused by name, never by accident. */
@@ -167,28 +197,21 @@ export class PlansService {
     }
     const gate = FEATURE_GATES[feature];
     if (gate === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
-    const record = await this.getPlan(userId);
     const items = await this.billing.listItems(userId);
     return decideUse({
       items,
-      legacyPlan: record.plan,
-      legacyPasses: [...record.enginePasses],
       feature,
       config: this.access,
       now: this.clock(),
     });
   }
 
-  /** The effective state: the base plan from the subscription list (Hook 1), falling back to the legacy column. */
+  /** The effective state is derived exclusively from live subscription items (Hook 1). */
   async getEntitlementState(userId: string): Promise<{ plan: PlanId; passes: readonly string[]; items: readonly SubscriptionItem[] }> {
     const now = this.clock();
     const items = await this.billing.listItems(userId);
-    const record = await this.getPlan(userId);
-    const hasBasePlanHistory = items.some((item) => item.itemType === 'base_plan');
-    const plan = (activeBasePlan(items, now)?.itemCode ?? (hasBasePlanHistory ? DEFAULT_PLAN : record.plan)) as PlanId;
-    const passHistory = new Set(items.filter((item) => item.itemType === 'engine_pass').map((item) => item.itemCode));
-    const legacyPasses = record.enginePasses.filter((pass) => !passHistory.has(pass));
-    const passes = [...new Set([...activePasses(items, now), ...legacyPasses])].sort();
+    const plan = (activeBasePlan(items, now)?.itemCode ?? DEFAULT_PLAN) as PlanId;
+    const passes = activePasses(items, now);
     return { plan, passes, items };
   }
 
@@ -571,10 +594,10 @@ export class PlansService {
       reason: typeof dto.reason === 'string' ? dto.reason : '',
     });
     if (!action.ok) throw new AppError(400, action.reason, 'The admin action is invalid.', { details: { reason: action.reason } });
-    const current = await this.getPlan(action.value.userId);
+    const current = await this.getEntitlementState(action.value.userId);
     const plan = action.value.plan as PlanId;
     const now = this.clock();
-    const input = { userId: action.value.userId, plan, enginePasses: current.enginePasses, now };
+    const input = { userId: action.value.userId, plan, enginePasses: [...current.passes], now };
     const drafts: EventDraft[] = [
       { type: PlansEvents.PlanChanged, version: PLANS_EVENT_VERSION, actor: { kind: 'user', id: adminId },
         subject: { type: 'user_plan', id: action.value.userId },

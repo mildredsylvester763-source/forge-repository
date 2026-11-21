@@ -123,4 +123,34 @@ export const pgPlansMigrations: readonly Migration[] = [
     CREATE UNIQUE INDEX subscription_items_one_live_base_plan_uidx ON subscription_items (user_id)
       WHERE item_type = 'base_plan' AND status IN ('active', 'grace');
   ` },
+  {
+    version: 11,
+    name: 'migrate_legacy_plan_entitlements',
+    sql: `
+      INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at)
+      SELECT 'legacy_base:' || legacy.user_id, legacy.user_id, 'base_plan', legacy.plan,
+        legacy.updated_at, 9007199254740991, 'active', 'legacy_migration', legacy.updated_at
+      FROM user_plans AS legacy
+      WHERE legacy.plan IN ('plus', 'pro', 'studio', 'team', 'enterprise')
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_items AS existing
+          WHERE existing.user_id = legacy.user_id AND existing.item_type = 'base_plan'
+        )
+      ON CONFLICT (item_id) DO NOTHING;
+
+      INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at)
+      SELECT DISTINCT 'legacy_pass:' || legacy.user_id || ':' || pass.engine, legacy.user_id, 'engine_pass', pass.engine,
+        legacy.updated_at, 9007199254740991, 'active', 'legacy_migration', legacy.updated_at
+      FROM user_plans AS legacy
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(legacy.engine_passes) = 'array' THEN legacy.engine_passes ELSE '[]'::jsonb END
+      ) AS pass(engine)
+      WHERE pass.engine IN ('painting', 'manhwa', 'music', 'voice', 'audio', 'video', 'film', '3d', 'games', 'writing')
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_items AS existing
+          WHERE existing.user_id = legacy.user_id AND existing.item_type = 'engine_pass' AND existing.item_code = pass.engine
+        )
+      ON CONFLICT (item_id) DO NOTHING;
+    `,
+  },
 ];

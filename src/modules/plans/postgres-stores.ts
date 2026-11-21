@@ -55,6 +55,16 @@ export class PostgresPlanStore implements PlanStore {
       const owner = await conn.query<{ id: string }>('SELECT id FROM users WHERE id = $1 FOR UPDATE', [input.userId]);
       if (owner.rows.length === 0) throw new Error('billing user not found: ' + input.userId);
       await conn.query('INSERT INTO user_plans (user_id, plan, engine_passes, created_at, updated_at) VALUES ($1, $2, $3::jsonb, $4, $5) ON CONFLICT (user_id) DO UPDATE SET plan = EXCLUDED.plan, engine_passes = EXCLUDED.engine_passes, updated_at = EXCLUDED.updated_at', [input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now]);
+      await conn.query("UPDATE subscription_items SET status = 'cancelled' WHERE user_id = $1 AND status IN ('active', 'grace')", [input.userId]);
+      const forever = Number.MAX_SAFE_INTEGER;
+      if (input.plan !== 'free') await conn.query(
+        'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        ['test_base_' + randomUUID(), input.userId, 'base_plan', input.plan, input.now, forever, 'active', 'test_seed', input.now],
+      );
+      for (const engine of input.enginePasses) await conn.query(
+        'INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        ['test_pass_' + randomUUID(), input.userId, 'engine_pass', engine, input.now, forever, 'active', 'test_seed', input.now],
+      );
       const appended: EventEnvelope[] = [];
       for (const draft of drafts) appended.push(await events.appendIn(conn, draft));
       return { record: { userId: input.userId, plan: input.plan, enginePasses: [...input.enginePasses], updatedAt: input.now }, events: appended };

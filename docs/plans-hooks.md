@@ -26,10 +26,14 @@ painting, manhwa, music, voice, audio, video, film, 3d, games, writing
 ## What is built (batch A)
 
 **Hook 1 — subscriptions are a list, not one plan.** `subscription_items` table
-(migrations v2, SQLite STRICT and PostgreSQL). A user can hold one active base plan and any
-number of engine passes. `activeBasePlan` / `activePasses` in the pure engine
-`engine/subscription-engine.ts` decide what is live; a base-plan purchase supersedes the
-previous base plan (one active base plan per user, always). Free is the default, not an item.
+(migrations v2, SQLite STRICT and PostgreSQL). Migration v11 moves existing legacy plan and
+engine-pass records into subscription items without reactivating any user who already has
+subscription history. A user can hold one active base plan and any number of engine passes.
+`activeBasePlan` / `activePasses` in the pure engine `engine/subscription-engine.ts`
+decide what is live; a base-plan purchase supersedes the previous base plan (one active base
+plan per user, enforced by a partial unique index). Free is the default, not an item.
+The legacy `user_plans` row is a compatibility mirror only: access decisions and displayed
+entitlements are derived exclusively from live subscription items.
 
 **Hook 2 and 2b — canUse is the only access check.** `engine/access-engine.ts` produces one
 decision per (user, feature): allowed or refused, with the plan, passes, engine level
@@ -151,10 +155,9 @@ deletes and the owner's confirmed retention list, so nothing is destroyed yet.
 ## What is NOT complete
 
 The hooks have implementation foundations, but they are not all complete. The current verified
-status and evidence are maintained in `docs/part02-audit-ledger.md`. Important remaining work:
-
-- Legacy `user_plans` fallback/direct writes remain, including admin comp; migrate them to the
-  subscription-item model and retire the legacy entitlement source.
+status and evidence are maintained in `docs/part02-audit-ledger.md`. The access decision no
+longer reads the legacy plan/pass mirror; migration v11 carries existing records into
+subscription items. Remaining work is recorded in the audit ledger.
 - Billing mutations and hash-chained audit events are not yet one transaction. A crash between
   the billing commit and event append can leave an audit gap; add a transactional audit outbox.
 - The pass catalog still lacks per-window caps, regional minor-unit price rows and the

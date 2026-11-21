@@ -55,6 +55,12 @@ export class SqlitePlanStore implements PlanStore {
     if (!events) throw new Error('transactional plan audit requires a SQLite event store');
     const committed = transaction(this.db, () => {
       this.upsertStmt.run(input.userId, input.plan, JSON.stringify(input.enginePasses), input.now, input.now);
+      this.db.prepare("UPDATE subscription_items SET status = 'cancelled' WHERE user_id = ? AND status IN ('active', 'grace')").run(input.userId);
+      const forever = Number.MAX_SAFE_INTEGER;
+      if (input.plan !== 'free') this.db.prepare('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run('test_base_' + randomUUID(), input.userId, 'base_plan', input.plan, input.now, forever, 'active', 'test_seed', input.now);
+      const insertPass = this.db.prepare('INSERT INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (const engine of input.enginePasses) insertPass.run('test_pass_' + randomUUID(), input.userId, 'engine_pass', engine, input.now, forever, 'active', 'test_seed', input.now);
       const row = this.byUser.get(input.userId) as unknown as PlanRow | undefined;
       if (!row) throw new Error('user plan upsert failed');
       const appended = drafts.map((draft) => events.appendSync(draft));

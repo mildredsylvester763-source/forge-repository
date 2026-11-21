@@ -123,4 +123,31 @@ export const plansMigrations: readonly Migration[] = [
     CREATE UNIQUE INDEX subscription_items_one_live_base_plan_uidx ON subscription_items (user_id)
       WHERE item_type = 'base_plan' AND status IN ('active', 'grace');
   ` },
+  {
+    version: 11,
+    name: 'migrate_legacy_plan_entitlements',
+    sql: `
+      INSERT OR IGNORE INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at)
+      SELECT 'legacy_base:' || legacy.user_id, legacy.user_id, 'base_plan', legacy.plan,
+        legacy.updated_at, 9007199254740991, 'active', 'legacy_migration', legacy.updated_at
+      FROM user_plans AS legacy
+      WHERE legacy.plan IN ('plus', 'pro', 'studio', 'team', 'enterprise')
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_items AS existing
+          WHERE existing.user_id = legacy.user_id AND existing.item_type = 'base_plan'
+        );
+
+      INSERT OR IGNORE INTO subscription_items (item_id, user_id, item_type, item_code, starts_at, ends_at, status, source, created_at)
+      SELECT DISTINCT 'legacy_pass:' || legacy.user_id || ':' || pass.value, legacy.user_id, 'engine_pass', pass.value,
+        legacy.updated_at, 9007199254740991, 'active', 'legacy_migration', legacy.updated_at
+      FROM user_plans AS legacy,
+        json_each(CASE WHEN json_valid(legacy.engine_passes) THEN legacy.engine_passes ELSE '[]' END) AS pass
+      WHERE pass.type = 'text'
+        AND pass.value IN ('painting', 'manhwa', 'music', 'voice', 'audio', 'video', 'film', '3d', 'games', 'writing')
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_items AS existing
+          WHERE existing.user_id = legacy.user_id AND existing.item_type = 'engine_pass' AND existing.item_code = pass.value
+        );
+    `,
+  },
 ];

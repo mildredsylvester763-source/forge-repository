@@ -31,8 +31,6 @@ export interface AccessConfig {
 
 export interface AccessInput {
   readonly items: readonly SubscriptionItem[];
-  readonly legacyPlan: PlanId;
-  readonly legacyPasses: readonly string[];
   readonly feature: string;
   readonly config: AccessConfig;
   readonly now: number;
@@ -60,18 +58,14 @@ export interface AccessDecision {
 
 /**
  * The one access check. The feature must exist in FEATURE_GATES (the service refuses
- * unknown ids by name before calling this). The base plan comes from the subscription
- * list first, then the legacy plan column; passes are the union of live pass items and
- * the legacy pass column.
+ * unknown ids by name before calling this). The subscription list is the sole entitlement
+ * source: no legacy plan/pass column can grant access or resurrect an expired item.
  */
 export function canUse(input: AccessInput): AccessDecision {
   const gate = FEATURE_GATES[input.feature];
   const base = activeBasePlan(input.items, input.now);
-  const hasBasePlanHistory = input.items.some((item) => item.itemType === 'base_plan');
-  const plan = (base?.itemCode ?? (hasBasePlanHistory ? DEFAULT_PLAN : input.legacyPlan)) as PlanId;
-  const passHistory = new Set(input.items.filter((item) => item.itemType === 'engine_pass').map((item) => item.itemCode));
-  const legacyPasses = input.legacyPasses.filter((pass) => !passHistory.has(pass));
-  const passes = [...new Set([...activePasses(input.items, input.now), ...legacyPasses])].sort();
+  const plan = (base?.itemCode ?? DEFAULT_PLAN) as PlanId;
+  const passes = activePasses(input.items, input.now);
   const shape = {
     feature: input.feature,
     gate,
