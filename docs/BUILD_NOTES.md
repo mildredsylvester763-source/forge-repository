@@ -29,5 +29,10 @@ Hooks 1, 2/2b, 3, 4, 5, 6 and 7 are now live on mistral: subscriptions as a list
 - Read `src/modules/plans/engine/feature-gates.ts` and `docs/PROGRESS.md` before building anything. Do not rebuild implemented rows.
 - Max 2 features per batch. Every feature ships complete: engine + oracle tests + functional tests + stores + migration + service + routes + docs, with its gate written in the same batch.
 - Engines are pinned law — never modify a shipped engine; verify byte-level before touching product code.
-- Registry honesty: a summary in this file (or any lane's summary) is NOT evidence. Feature status promotes only on the per-feature source/test/migration evidence recorded in docs/PROGRESS.md. When the two disagree, PROGRESS.md wins and the gap is shown to the owner.
+- Registry honesty: a summary in this file (or any lane's summary) is NOT evidence. Feature status promotes only on per-feature source/test/migration evidence recorded in docs/PROGRESS.md. The owner clarified on 21 Nov 2026 that when source documents conflict, the newer dated document wins; PROGRESS.md records implementation evidence and does not override the governing spec.
 
+### 6. Safety and Master Build Sequence slices — 21 Nov 2026
+
+- TS-775 adds an owner-only recording/verification boundary over the existing EN-04 EventStore. It remains partial until every unrestricted action path and a durable production composition are wired; no disable path or parallel vault was added.
+- Batch 19 TS-2852 adds a data-driven dependency-map evaluator and reader port only. It consumes authoritative ledger evidence when available; it does not create a second feature catalog or enqueue work. It remains partial until the Build Ledger and scheduler integration exist.
+- Branch `manus/part36-safety` is isolated from shared `mistral`. See `docs/PROGRESS.md` for exact tests, acceptance gaps, and source reconciliation.
