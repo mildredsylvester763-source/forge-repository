@@ -306,21 +306,26 @@ export class PlansService {
   }
 
   /** Hook 3 — append a credit grant. Invalid grants are refused by name, never guessed at. */
-  async grantCredits(userId: string, grant: GrantInput): Promise<LedgerEntry> {
+  async grantCredits(userId: string, grant: GrantInput, additionalAuditEvents: readonly EventDraft[] = []): Promise<LedgerEntry> {
     const parsed = parseGrant(grant);
     if (!parsed.ok) throw new AppError(400, 'credit_grant_invalid', 'The credit grant is invalid.', { details: { reason: parsed.reason } });
     const now = this.clock();
+    let auditEvents: EventDraft[] = [];
     const stored = await this.billing.mutateLedger(userId, (entries) => {
       const appended = appendGrant(entries, userId, parsed.grant, now);
-      return { append: [appended.entry], value: appended.entry };
+      auditEvents = [
+        {
+          type: PlansEvents.CreditsGranted,
+          version: PLANS_EVENT_VERSION,
+          actor: { kind: 'service', id: 'plans' },
+          subject: { type: 'user_credits', id: userId },
+          payload: { userId, engine: appended.entry.engine, source: appended.entry.source, amount: appended.entry.amount, entryId: appended.entry.entryId },
+        },
+        ...additionalAuditEvents,
+      ];
+      return { append: [appended.entry], auditEvents, value: appended.entry };
     });
-    await this.events.append({
-      type: PlansEvents.CreditsGranted,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'service', id: 'plans' },
-      subject: { type: 'user_credits', id: userId },
-      payload: { userId, engine: stored.engine, source: stored.source, amount: stored.amount, entryId: stored.entryId },
-    });
+    await this.appendAuditFallback(auditEvents);
     return stored;
   }
 
@@ -349,6 +354,7 @@ export class PlansService {
     const windowStart = Math.floor(now / windowMs) * windowMs;
     const windowEnd = windowStart + windowMs;
 
+    let auditEvents: EventDraft[] = [];
     const result = await this.billing.mutateLedger(userId, (entries) => {
       const priorSpend = entries.filter((entry) => entry.amount < 0 && entry.jobId === input.jobId);
       if (priorSpend.length > 0) {
@@ -421,15 +427,16 @@ export class PlansService {
           details: { engine: input.engine, shortfall: outcome.shortfall, jobId: input.jobId },
         });
       }
-      return { append: outcome.entries.slice(entries.length), value: { spent: outcome.spent, from: outcome.from, replayed: false } };
+      auditEvents = [{
+        type: PlansEvents.CreditsSpent,
+        version: PLANS_EVENT_VERSION,
+        actor: { kind: 'service', id: 'plans' },
+        subject: { type: 'user_credits', id: userId },
+        payload: { userId, engine: input.engine, amount: input.amount, jobId: input.jobId },
+      }];
+      return { append: outcome.entries.slice(entries.length), auditEvents, value: { spent: outcome.spent, from: outcome.from, replayed: false } };
     });
-    if (!result.replayed) await this.events.append({
-      type: PlansEvents.CreditsSpent,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'service', id: 'plans' },
-      subject: { type: 'user_credits', id: userId },
-      payload: { userId, engine: input.engine, amount: input.amount, jobId: input.jobId },
-    });
+    await this.appendAuditFallback(auditEvents);
     return { spent: result.spent, from: result.from };
   }
 
@@ -439,13 +446,7 @@ export class PlansService {
   }
 
   private async recordAdminAction(adminId: string, action: string, targetId: string, reason: string, details: Record<string, unknown> = {}): Promise<void> {
-    await this.events.append({
-      type: PlansEvents.AdminAction,
-      version: PLANS_EVENT_VERSION,
-      actor: { kind: 'user', id: adminId },
-      subject: { type: 'admin_action_target', id: targetId },
-      payload: { action, targetId, reason, ...details },
-    });
+    await this.events.append(this.adminActionDraft(adminId, action, targetId, reason, details));
   }
 
   /** Hook 11 - nobody is an admin until the owner names them. The allowlist lives in config. */
@@ -539,9 +540,11 @@ export class PlansService {
     if (action.value.engine !== '' && !isEngineCode(action.value.engine)) {
       throw new AppError(400, 'admin-grant-engine-invalid', 'The engine tag must be a catalog engine code or empty for general credits.', {});
     }
-    const entry = await this.grantCredits(action.value.userId, { engine: action.value.engine, source: 'top_up', amount: action.value.amount, expiresAt: null, jobId: null });
-    await this.recordAdminAction(adminId, 'grant_credits', action.value.userId, action.value.reason, { entryId: entry.entryId, amount: entry.amount, engine: entry.engine });
-    return entry;
+    return this.grantCredits(
+      action.value.userId,
+      { engine: action.value.engine, source: 'top_up', amount: action.value.amount, expiresAt: null, jobId: null },
+      [this.adminActionDraft(adminId, 'grant_credits', action.value.userId, action.value.reason, { amount: action.value.amount, engine: action.value.engine })],
+    );
   }
 
   async adminCompPlan(adminId: string, body: unknown): Promise<PlanRecord> {
