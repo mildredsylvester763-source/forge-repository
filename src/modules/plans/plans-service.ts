@@ -604,8 +604,30 @@ export class PlansService {
         payload: { userId: action.value.userId, plan, enginePasses: [...current.passes], reason: action.value.reason, action: 'comp_plan' } },
       this.adminActionDraft(adminId, 'comp_plan', action.value.userId, action.value.reason, { plan }),
     ];
-    if (this.store.supportsTransactionalAudit === true && this.store.compPlanWithAudit) return this.store.compPlanWithAudit(input, 'admin_comp:' + adminId, drafts);
-    return this.setPlan(action.value.userId, plan, [...current.passes], { actor: { kind: 'user', id: adminId }, reason: action.value.reason, additionalEvents: [drafts[1]!] });
+    if (this.store.supportsTransactionalAudit === true && this.store.compPlanWithAudit) {
+      return this.store.compPlanWithAudit(input, 'admin_comp:' + adminId, drafts);
+    }
+    // The in-memory development adapter has no cross-store transaction. Keep its manual
+    // override path separate from the test-only setPlan seeder and still write subscription items.
+    await this.store.upsert(input);
+    const existing = await this.billing.listItems(action.value.userId);
+    for (const item of existing) {
+      if (item.itemType === 'base_plan' && (item.status === 'active' || item.status === 'grace')) {
+        await this.billing.updateItemStatus(item.itemId, 'cancelled');
+      }
+    }
+    if (plan !== 'free') await this.billing.appendItem({
+      itemId: 'comp_' + randomUUID(),
+      userId: action.value.userId,
+      itemType: 'base_plan',
+      itemCode: plan,
+      startsAt: now,
+      endsAt: Number.MAX_SAFE_INTEGER,
+      status: 'active',
+      source: 'admin_comp:' + adminId,
+    }, now);
+    for (const draft of drafts) await this.events.append(draft);
+    return this.getPlan(action.value.userId);
   }
 
   async adminPauseAccount(adminId: string, body: unknown): Promise<{ userId: string; paused: boolean; queuedForDeletion: boolean }> {

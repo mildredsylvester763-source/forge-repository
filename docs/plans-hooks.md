@@ -137,11 +137,12 @@ Routes: `POST /v1/promotions/define` (admin), `/v1/promotions/redeem`, `/v1/prom
 **Hook 14 — rate limits at the gateway.** Pure engine `engine/rate-limit-engine.ts`:
 fixed-window counters with named refusals and an honest retryAfterMs. `FORGE_RATE_LIMITS`
 JSON (e.g. `{"user":{"limit":60,"windowMs":60000}}`) — DISABLED until the owner sets it.
-When enabled, every gated route enforces the per-user limit after sign-in, before canUse
-and before any AI call, answering 429 rate_limited with scope and retryAfterMs. A per-device
-rule is parsed and the service has a device-bucket method, but the gateway currently has no
-trusted device identifier and the middleware does not call it; device-level enforcement is
-not yet operational. Route wiring: `gate-middleware.ts`.
+When enabled, every gated route enforces the per-user and per-device limits after sign-in,
+before canUse and before any AI call, answering 429 rate_limited with scope and retryAfterMs.
+The gateway issues a one-year HttpOnly, SameSite=Strict device cookie containing an opaque UUID
+signed with the access-snapshot HMAC secret; invalid or expired tokens receive a fresh identity.
+The device rule remains disabled until the owner supplies a limit/window in `FORGE_RATE_LIMITS`.
+Route wiring: `gate-middleware.ts`.
 
 **Hook 16 — export and delete my data.** Pure engine `engine/account-data-engine.ts`:
 buildAccountExport (plan, passes, subscription items, credit ledger, in one bundle) and
