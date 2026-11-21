@@ -66,7 +66,7 @@ export interface BillingStore {
   setAccountState(userId: string, state: AccountControlState, auditEvent?: EventDraft): Promise<AccountControlState>;
     listLedger(userId: string): Promise<readonly LedgerEntry[]>;
   appendLedger(entry: LedgerEntry): Promise<LedgerEntry>;
-  mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T>;
+  mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[], items: readonly SubscriptionItem[]) => LedgerMutation<T>): Promise<T>;
 }
 
 /** Development and test store. A mutation contains no await between check and commit. */
@@ -191,7 +191,8 @@ export class InMemoryBillingStore implements BillingStore {
 
   async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
     const current = this.ledger.get(userId) ?? [];
-    const mutation = apply(current);
+    const items = [...this.items.values()].filter((item) => item.userId === userId);
+    const mutation = apply(current, items);
     const next = [...current];
     for (const entry of mutation.append) {
       if (next.some((row) => row.entryId === entry.entryId)) throw new Error('ledger entry already exists: ' + entry.entryId);
