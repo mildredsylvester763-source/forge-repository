@@ -33,7 +33,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         clock: () => now,
         access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
         monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
-        passCatalog: [{ productCode: 'plus_plan', type: 'base_plan', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true }],
+        passCatalog: [{ productCode: 'plus_plan', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true }],
         adminUsers: [],
         countryCatalog: [],
         rateLimits: { user: null, device: null },
