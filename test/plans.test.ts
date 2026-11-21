@@ -266,6 +266,41 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('rolls back payment, subscription and credits when the transactional audit append fails (Hook 10)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-payment-audit-rollback@forge.test');
+      const now = h.clock.now;
+      const event = {
+        eventId: 'evt_audit_rollback',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan' as const, itemCode: 'pro_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const eventStore = h.app.events as unknown as { appendSync: (...args: unknown[]) => unknown };
+      const original = eventStore.appendSync.bind(eventStore);
+      eventStore.appendSync = () => { throw new Error('audit-write-failed'); };
+      try {
+        await assert.rejects(() => h.app.plans.processPaymentEvent(event), /audit-write-failed/);
+      } finally {
+        eventStore.appendSync = original;
+      }
+
+      const rolledBack = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(rolledBack.items.length, 0);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 0);
+
+      const retry = await h.app.plans.processPaymentEvent(event);
+      assert.equal(retry.duplicate, false);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'pro');
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 7500);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('claims payment ids and commits subscription/credit effects atomically under concurrent retries (Hook 6)', async () => {
     const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
