@@ -189,7 +189,7 @@ export class InMemoryBillingStore implements BillingStore {
     return entry;
   }
 
-  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[]) => LedgerMutation<T>): Promise<T> {
+  async mutateLedger<T>(userId: string, apply: (entries: readonly LedgerEntry[], items: readonly SubscriptionItem[]) => LedgerMutation<T>): Promise<T> {
     const current = this.ledger.get(userId) ?? [];
     const items = [...this.items.values()].filter((item) => item.userId === userId);
     const mutation = apply(current, items);
