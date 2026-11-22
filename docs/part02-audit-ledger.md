@@ -4,7 +4,7 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Current branch head:** `167d818e53405fe97bc6b00950302bf14a37a0c6` (ledger update after the latest code commit `87600b95749e88fb2eea2c14411bc4d61e471d8c`).  
+**Latest code commit:** `87600b95749e88fb2eea2c14411bc4d61e471d8c`; the ledger is updated after that code commit.  
 **Latest verified code checkpoint:** `09467782c1c1798a85e3111b67dde31173271c54`. GitHub Actions run [44887995902](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/44887995902) passed typecheck and the full test job at that checkpoint.  
 **New commits after the verified checkpoint:** `949e0bad`, `e937f2f`, `23ad4ce`, `87600b9`. These add production rate-limit configuration enforcement and concurrent job-charge regression tests. GitHub currently reports no commit status checks for the latest SHA, so these commits are **committed but not yet CI-verified**. Do not describe them as passing.  
 **Audit date:** 2026-11-22.
