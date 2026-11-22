@@ -11,6 +11,10 @@ const prod = (extra: Record<string, string> = {}) => ({
   FORGE_ALLOWED_ORIGINS: 'https://app.example.com',
   FORGE_DATABASE_URL: 'postgresql://forge:secret@db.example.com:5432/forge',
   FORGE_PAYMENT_WEBHOOK_SECRET: 'pwhsec'.repeat(8),
+  FORGE_RATE_LIMITS: JSON.stringify({
+    user: { limit: 120, windowMs: 60_000 },
+    device: { limit: 80, windowMs: 60_000 },
+  }),
   ...extra,
 });
 
@@ -53,6 +57,18 @@ describe('configuration safety', () => {
     assert.equal(ok.storage.databaseSsl, 'verify');
     assert.equal(ok.storage.databasePath, null);
   });
+  it('requires both per-user and per-device gateway rate limits in production (Hook 14)', () => {
+    assert.throws(() => loadConfig(prod({ FORGE_RATE_LIMITS: '' })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_RATE_LIMITS: JSON.stringify({ user: { limit: 10, windowMs: 60_000 } }) })), ConfigError);
+    assert.throws(() => loadConfig(prod({ FORGE_RATE_LIMITS: JSON.stringify({ device: { limit: 10, windowMs: 60_000 } }) })), ConfigError);
+    const configured = loadConfig(prod());
+    assert.deepEqual(configured.plans.rateLimits, {
+      user: { limit: 120, windowMs: 60_000 },
+      device: { limit: 80, windowMs: 60_000 },
+    });
+    assert.deepEqual(loadConfig({ FORGE_ENV: 'test' }).plans.rateLimits, { user: null, device: null });
+  });
+
   it('requires an encrypted, verified database connection in production', () => {
     assert.throws(() => loadConfig(prod({ FORGE_DATABASE_SSL: 'off' })), ConfigError);
     assert.throws(() => loadConfig(prod({ FORGE_DATABASE_SSL: 'sometimes' })), ConfigError);
