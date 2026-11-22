@@ -181,6 +181,39 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
     } finally { await t.pool.end(); await t.cleanup(); }
   });
 
+  it('charges a PostgreSQL job once when the same job is submitted concurrently (Hook 3)', async () => {
+    const t = await makeTestPool();
+    try {
+      await migratePostgres(t.pool, 'plans', pgPlansMigrations);
+      const now = Date.UTC(2026, 10, 21, 8, 0, 0);
+      const user = await new PostgresUserStore(t.pool).create({
+        email: 'plans-job-concurrent@forge.test',
+        displayName: 'Plans concurrent job',
+        passwordHash: 'test-hash',
+        now,
+      });
+      const events = new PostgresEventStore({ pool: t.pool, clock: () => now, logger: silentLogger });
+      const billing = new PostgresBillingStore(t.pool, events);
+      const service = new PlansService({
+        store: new PostgresPlanStore(t.pool, events), billing, events, clock: () => now,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 }, passCatalog: [], adminUsers: [], countryCatalog: [],
+        rateLimits: { user: null, device: null }, accessSnapshotTtlHours: 6, accessSecret: Buffer.from('forge-postgres-plan-test-secret', 'utf8'),
+      });
+      await service.grantCredits(user.id, { engine: '', source: 'top_up', amount: 20, expiresAt: null, jobId: null });
+      const input = { engine: 'music', amount: 5, jobId: 'pg-job-concurrent-retry', costUsdMicros: 23 };
+      const [first, retry] = await Promise.all([
+        service.spendCredits(user.id, input),
+        service.spendCredits(user.id, input),
+      ]);
+      assert.deepEqual(retry, first);
+      assert.equal((await service.creditBalances(user.id)).general, 15);
+      const charges = (await billing.listLedger(user.id)).filter((entry) => entry.amount < 0 && entry.jobId === input.jobId);
+      assert.equal(charges.reduce((sum, entry) => sum - entry.amount, 0), 5);
+      assert.ok(charges.every((entry) => entry.jobEngine === 'music'));
+    } finally { await t.pool.end(); await t.cleanup(); }
+  });
+
   it('commits an admin comp and audit events in one PostgreSQL transaction (Hooks 1, 10, 11)', async () => {
     const t = await makeTestPool();
     try {
