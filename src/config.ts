@@ -416,6 +416,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     const r = parsedLimits as Record<string, unknown>;
     rateLimits = { user: parseLimitRule(r.user, 'FORGE_RATE_LIMITS.user'), device: parseLimitRule(r.device, 'FORGE_RATE_LIMITS.device') };
   }
+  // Hook 14 is mandatory at the production gateway. Do not silently deploy with either
+  // per-user or per-device protection disabled; the owner must choose the actual limits.
+  if (production && (rateLimits.user === null || rateLimits.device === null)) {
+    throw new ConfigError('FORGE_RATE_LIMITS must configure both user and device limits in production');
+  }
   const accessSnapshotTtlHours = int(env, 'FORGE_ACCESS_SNAPSHOT_TTL_HOURS', 6, 1, 72);
   let accessSecret: Buffer;
   if (env.FORGE_ACCESS_SNAPSHOT_SECRET !== undefined && env.FORGE_ACCESS_SNAPSHOT_SECRET !== '') {
