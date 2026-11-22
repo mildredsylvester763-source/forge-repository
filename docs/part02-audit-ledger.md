@@ -67,6 +67,8 @@ Repository inspection: `src/app.ts` currently composes task runtime, orchestrato
 
 A real implementation cannot be completed by adding placeholder APIs or simulated deployment success. These four features require the owner to select and authorize the deployment provider/target and supply its integration credentials, plus the production promotion/rollback boundary. Until that is available, all four remain blocked and no mock deployment implementation has been added. DP-005–DP-008 are not started because they depend on the same deployment substrate.
 
+Cross-branch preservation check: `src/app.ts` on `main`, `claude`, `mistral`, `plan-hooks-foundation`, `manus/part36-safety` and `forge-part02-audit` has no deployment module. `gpt-part2-build-ci` contains a separate `build-ci` module but no deployment wiring. No divergent branch was modified or merged; retain `gpt-part2-build-ci` for its later catalogue audit rather than cherry-picking it into the deployment batch.
+
 ## Recent implementation evidence
 
 - `0946778` — latest previously CI-verified Plan Hooks checkpoint; full typecheck and test job passed in run [44887995902](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/44887995902).
