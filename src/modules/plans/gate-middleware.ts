@@ -10,9 +10,9 @@ import type { PlansService } from './plans-service.ts';
  * every gated route asks canUse, and nothing else decides. A gated route first proves the
  * caller is signed in (401), then asks canUse: a switched-off feature answers 503
  * (feature_off, flipped in config without a release), a plan below the gate answers 402
- * (plan_required, with the feature, gate, current plan and reason). Engine rows are never
- * locked — canUse always allows them and the limits are the credits' job. Free and internal
- * rows pass through untouched, as do routes with no catalog entry.
+ * (plan_required, with the feature, gate, current plan and reason). Free and internal rows
+ * still pass through canUse so account pauses and feature switches apply. Public identity
+ * routes use the same check without a user; IdentityService owns their sign-in throttles.
  */
 const DEVICE_COOKIE_MAX_AGE_SEC = 365 * 24 * 60 * 60;
 const DEVICE_COOKIE_MAX_AGE_MS = DEVICE_COOKIE_MAX_AGE_SEC * 1000;
@@ -57,15 +57,31 @@ export function applyRouteGates(
   const wrapped: RouteTable = {};
   for (const [path, entry] of Object.entries(routes)) {
     const decision = gateForRoute(path);
-    if (decision === null || decision.gate === 'free' || decision.gate === 'internal') {
+    if (decision === null) {
       wrapped[path] = entry;
       continue;
     }
+    const authRoute = path.startsWith('/v1/auth/');
     const gated: Partial<Record<Method, RouteHandler>> = {};
     for (const method of Object.keys(entry) as Method[]) {
       const handler = entry[method];
       if (handler === undefined) continue;
       gated[method] = async (ctx) => {
+        if (authRoute) {
+          const verdict = await plans.canUse(null, decision.feature);
+          if (!verdict.allowed) {
+            if (verdict.reason === 'feature_off') {
+              throw new AppError(503, 'feature_off', 'This feature is temporarily switched off.', {
+                details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
+              });
+            }
+            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`, {
+              details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
+            });
+          }
+          return handler(ctx);
+        }
+
         const auth = await identity.authenticate(ctx.cookie(cookie.name));
         if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
 

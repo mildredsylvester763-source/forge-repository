@@ -190,14 +190,19 @@ export class PlansService {
   }
 
   /** The one access check (Hook 2). Unknown features are refused by name, never by accident. */
-  async canUse(userId: string, feature: string): Promise<AccessDecision> {
-    const accountState = await this.billing.getAccountState(userId);
-    if (accountState.paused || accountState.deletionQueuedAt !== null) {
-      throw new AppError(403, 'account_paused', 'This account is paused or has a pending deletion request. Contact support.');
-    }
+  async canUse(userId: string | null, feature: string): Promise<AccessDecision> {
     const gate = FEATURE_GATES[feature];
     if (gate === undefined) throw new AppError(404, 'plan_feature_unknown', 'Unknown feature id.');
-    const items = await this.billing.listItems(userId);
+    // Public identity flows still pass through the one feature-switch decision, but they
+    // cannot have an account pause checked before a session exists. Their own handlers
+    // enforce authentication where required.
+    if (userId !== null) {
+      const accountState = await this.billing.getAccountState(userId);
+      if (accountState.paused || accountState.deletionQueuedAt !== null) {
+        throw new AppError(403, 'account_paused', 'This account is paused or has a pending deletion request. Contact support.');
+      }
+    }
+    const items = userId === null ? [] : await this.billing.listItems(userId);
     return decideUse({
       items,
       feature,

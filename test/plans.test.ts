@@ -873,6 +873,97 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
   });
 });
 
+
+describe('Plan Hooks free/internal route enforcement', () => {
+  it('applies feature switches to a Free AI route (Hook 5)', async () => {
+    const h = await startHarness({ FORGE_FEATURE_SWITCHES: 'AI-057:false' });
+    try {
+      const user = await freeUser(h, 'free-ai-switch@forge.test');
+      const response = await h.post('/v1/web-search/search', { query: 'FORGE feature switch test' }, { cookie: user.cookie });
+      assert.equal(response.status, 503);
+      assert.equal(await errorCode(response), 'feature_off');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('blocks a paused Free account before a Free AI route handler (Hooks 2 and 11)', async () => {
+    const h = await startHarness({ FORGE_ADMIN_USERS: 'u_admin' });
+    try {
+      const user = await freeUser(h, 'free-ai-paused@forge.test');
+      await h.app.plans.adminPauseAccount('u_admin', {
+        userId: user.id,
+        reason: 'verify paused-account enforcement on Free routes',
+        pause: true,
+      });
+      const response = await h.post('/v1/web-search/search', { query: 'paused account test' }, { cookie: user.cookie });
+      assert.equal(response.status, 403);
+      assert.equal(await errorCode(response), 'account_paused');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces per-device limits on a Free AI route before handler work (Hook 14)', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({
+        user: { limit: 20, windowMs: 60_000 },
+        device: { limit: 1, windowMs: 60_000 },
+      }),
+    });
+    try {
+      const user = await freeUser(h, 'free-ai-device-limit@forge.test');
+      const first = await h.post('/v1/web-search/search', { query: 'device rate test' }, { cookie: user.cookie });
+      assert.notEqual(first.status, 429);
+      const issued = first.headers.getSetCookie().find((value) => value.startsWith('forge_device='));
+      assert.ok(issued, 'Free AI route must issue a signed device cookie');
+      const deviceCookie = issued.split(';')[0] ?? '';
+      const second = await h.post('/v1/web-search/search', { query: 'device rate test' }, { cookie: user.cookie + '; ' + deviceCookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'device');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces per-user limits on a Free AI route before handler work (Hook 14)', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({
+        user: { limit: 1, windowMs: 60_000 },
+        device: { limit: 20, windowMs: 60_000 },
+      }),
+    });
+    try {
+      const user = await freeUser(h, 'free-ai-user-limit@forge.test');
+      const first = await h.post('/v1/web-search/search', { query: 'user rate test' }, { cookie: user.cookie });
+      assert.notEqual(first.status, 429);
+      const second = await h.post('/v1/web-search/search', { query: 'user rate test' }, { cookie: user.cookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'user');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('applies feature switches to public identity routes without requiring a session', async () => {
+    const h = await startHarness({ FORGE_FEATURE_SWITCHES: 'CO-001:false' });
+    try {
+      const response = await h.post('/v1/auth/register', {
+        email: 'identity-switch@forge.test',
+        password: GOOD_PASSWORD,
+        displayName: 'Identity Switch',
+      });
+      assert.equal(response.status, 503);
+      assert.equal(await errorCode(response), 'feature_off');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+
 describe('Plan Hooks per-device gateway rate limit', () => {
   it('uses a signed HttpOnly server-issued device cookie before gated handler work', async () => {
     const h = await startHarness({
