@@ -856,9 +856,23 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(await errorCode(unconfirmed), 'account-delete-unconfirmed');
       const exported = await h.post('/v1/account/export', {}, { cookie: user.cookie });
       assert.equal(exported.status, 200);
-      const bundle = (await exported.json()) as { userId: string; plan: string; retention: { keep: string[]; erase: string[]; verify: string[] } };
+      const bundle = (await exported.json()) as {
+        userId: string;
+        plan: string;
+        profile: { id: string; email: string; displayName: string };
+        security: { sessions: unknown[]; trustedDevices: unknown[] };
+        retention: { keep: string[]; erase: string[]; verify: string[] };
+      };
       assert.equal(bundle.userId, user.id);
       assert.equal(bundle.plan, 'free');
+      assert.equal(bundle.profile.id, user.id);
+      assert.equal(bundle.profile.email, 'batchb-data@forge.test');
+      assert.equal(Object.hasOwn(bundle.profile, 'passwordHash'), false);
+      assert.ok(Array.isArray(bundle.security.sessions));
+      assert.ok(bundle.security.sessions.length >= 1);
+      assert.ok(Array.isArray(bundle.security.trustedDevices));
+      assert.match(exported.headers.get('content-disposition') ?? '', /attachment; filename="forge-account-export\.json"/);
+      assert.equal(exported.headers.get('cache-control'), 'no-store');
       assert.deepEqual(bundle.retention.keep, ['invoices']);
       const deleted = await h.post('/v1/account/delete', { confirm: true }, { cookie: user.cookie });
       assert.equal(deleted.status, 200);

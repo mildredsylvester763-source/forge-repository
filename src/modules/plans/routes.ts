@@ -1,6 +1,6 @@
 import { AppError } from '../../kernel/errors.ts';
 import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.ts';
-import { IdentityService, type PublicUser } from '../identity/index.ts';
+import { IdentityService, sessionCredential, type PublicUser } from '../identity/index.ts';
 import type { PlanPrices } from './engine/plan-engine.ts';
 import type { PaymentProvider } from './payment-provider.ts';
 import type { PlansService } from './plans-service.ts';
@@ -28,7 +28,7 @@ export function plansRoutes(
   provider: PaymentProvider,
 ): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<PublicUser> => {
-    const auth = await identity.authenticate(ctx.cookie(cookie.name));
+    const auth = await identity.authenticate(sessionCredential(ctx, cookie.name));
     if (!auth) throw new AppError(401, 'unauthenticated', 'Sign in required.');
     return auth.user;
   };
@@ -187,8 +187,24 @@ export function plansRoutes(
     '/v1/account/export': {
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
-        const bundle = await plans.exportAccountData(user.id);
-        return { status: 200, body: bundle };
+        const credential = sessionCredential(ctx, cookie.name);
+        const [bundle, sessions, trustedDevices] = await Promise.all([
+          plans.exportAccountData(user.id),
+          identity.listSessions(credential),
+          identity.listTrustedDevices(credential),
+        ]);
+        return {
+          status: 200,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Content-Disposition': 'attachment; filename="forge-account-export.json"',
+          },
+          body: {
+            ...bundle,
+            profile: user,
+            security: { sessions, trustedDevices },
+          },
+        };
       },
     },
     '/v1/account/delete': {
