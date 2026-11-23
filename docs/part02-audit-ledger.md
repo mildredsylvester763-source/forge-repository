@@ -81,6 +81,20 @@ The existing central gate registry already records these plan levels. No runtime
 
 **Next batch in document order:** DP-009–DP-012. The existing deployment-substrate blocker is recorded once; do not repeat the same cross-branch inspection unless repository evidence changes.
 
+### Third four-feature batch: DP-009–DP-012 — BLOCKED BEFORE IMPLEMENTATION
+
+Exact catalog requirements (Part 02 PDF, page 3):
+- **DP-009 (Plus):** Automatic rollback on errors, latency, or SLO breach.
+- **DP-010 (Plus):** Rollback to any previous release with a data-compatibility check.
+- **DP-011 (Pro):** Database migration orchestration with expand-and-contract safety.
+- **DP-012 (Team, or Studio):** Deployment windows and freeze periods; the Team route requires at least three seats.
+
+The gate registry already reflects these plan levels. The repository has a versioned, checksummed, forward-only migration framework, but it applies registered migrations as application startup work; it has no expand/contract phase model, compatibility window, deployment coordinator or release-aware migration state machine. There is no deployment history or rollback actuator, no telemetry/SLO source connected to a deployment controller, and no deployment calendar/freeze policy. These are not completed by the existing generic migration runner or static feature switches.
+
+All four remain blocked on the deployment provider/target and its authorized integration. DP-009 additionally needs trusted error/latency/SLO signals and a rollback actuator; DP-010 needs release history and schema/data compatibility metadata; DP-011 needs a staged migration lifecycle; DP-012 needs a deployment scheduler integrated with Team/Studio seat policy. No unsafe automatic rollback or migration-phase behavior has been invented.
+
+**Next batch in document order:** DP-013–DP-016. Reuse the recorded deployment-substrate blocker unless repository evidence changes.
+
 ## Recent implementation evidence
 
 - `949e0bad` / `e937f2f` — production configuration requires both user and device rate-limit rules; config tests cover missing, partial and valid production settings.
