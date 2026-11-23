@@ -188,11 +188,18 @@ export function plansRoutes(
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
         const credential = sessionCredential(ctx, cookie.name);
-        const [bundle, sessions, trustedDevices] = await Promise.all([
+        const [bundle, sessions] = await Promise.all([
           plans.exportAccountData(user.id),
           identity.listSessions(credential),
-          identity.listTrustedDevices(credential),
         ]);
+        // Trusted-device storage is an optional deployment capability. Make its absence
+        // explicit in the export instead of failing the entire account download.
+        let trustedDevices: unknown[] | null = null;
+        try {
+          trustedDevices = await identity.listTrustedDevices(credential);
+        } catch (error) {
+          if (!(error instanceof AppError) || error.code !== 'not_implemented') throw error;
+        }
         return {
           status: 200,
           headers: {

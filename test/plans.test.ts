@@ -860,7 +860,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
         userId: string;
         plan: string;
         profile: { id: string; email: string; displayName: string };
-        security: { sessions: unknown[]; trustedDevices: unknown[] };
+        security: { sessions: unknown[]; trustedDevices: unknown[] | null };
         retention: { keep: string[]; erase: string[]; verify: string[] };
       };
       assert.equal(bundle.userId, user.id);
@@ -870,7 +870,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(Object.hasOwn(bundle.profile, 'passwordHash'), false);
       assert.ok(Array.isArray(bundle.security.sessions));
       assert.ok(bundle.security.sessions.length >= 1);
-      assert.ok(Array.isArray(bundle.security.trustedDevices));
+      assert.ok(bundle.security.trustedDevices === null || Array.isArray(bundle.security.trustedDevices));
       assert.match(exported.headers.get('content-disposition') ?? '', /attachment; filename="forge-account-export\.json"/);
       assert.equal(exported.headers.get('cache-control'), 'no-store');
       assert.deepEqual(bundle.retention.keep, ['invoices']);
