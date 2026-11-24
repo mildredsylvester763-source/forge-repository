@@ -89,6 +89,30 @@ import {
   type PinPlan,
   type ReservationPlan,
 } from './engine/model-access-engine.ts';
+import {
+  defineTuningPipeline as runDefineTuningPipeline,
+  advanceTuningStage as runAdvanceTuningStage,
+  type TuningAdvance,
+  type TuningMetrics,
+  type TuningPipeline,
+} from './engine/preference-tuning-engine.ts';
+import {
+  planDistillation as runPlanDistillation,
+  advanceDistillationStage as runAdvanceDistillationStage,
+  type DistillationAdvance,
+  type DistillationMetrics,
+  type DistillationPlan,
+} from './engine/distillation-engine.ts';
+import {
+  defineTrackedExperiment as runDefineTrackedExperiment,
+  logTrackedPoint as runLogTrackedPoint,
+  trackedCurves as runTrackedCurves,
+  compareTrackedExperiments as runCompareTrackedExperiments,
+  type TrackedComparison,
+  type TrackedCurve,
+  type TrackedExperiment,
+  type TrackedPoint,
+} from './engine/experiment-tracking-engine.ts';
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
 import type {
@@ -178,7 +202,29 @@ interface EvalCaseShape {
  * pins, reservations and on-prem packages. Every refusal is named, never a
  * silent guess. Zero-trust scoping on every query.
  */
+/** AI-015 tuning pipelines, session state per user. Ephemeral by design like streams. */
+interface StoredTuningPipeline {
+  pipeline: TuningPipeline;
+  createdAt: number;
+  verdict: 'accepted' | 'rejected' | null;
+}
+
+/** AI-016 distillation plans, session state per user. Ephemeral by design like streams. */
+interface StoredDistillationPlan {
+  plan: DistillationPlan;
+  createdAt: number;
+  verdict: 'accepted' | 'rejected' | null;
+}
+
+/** AI-018 tracked experiments, session state per user. Ephemeral by design like streams. */
+interface StoredTrackedExperiment {
+  experiment: TrackedExperiment;
+  createdAt: number;
+}
 export class AiTrainingService {
+  private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
+  private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
+  private readonly trackedExperiments = new Map<string, StoredTrackedExperiment>();
   private readonly store: AiTrainingStore;
   private readonly events: EventStore;
   private readonly clock: Clock;
@@ -1640,6 +1686,168 @@ export class AiTrainingService {
     return saved;
   }
 
+
+  // ---- AI-015 preference tuning pipelines ----
+
+  async createTuningPipeline(userId: string, body: unknown): Promise<{ pipeline: TuningPipeline; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const hyperRaw = (dto.hyperparams ?? {}) as Record<string, unknown>;
+    const result = runDefineTuningPipeline({
+      pipelineId: typeof dto.pipelineId === 'string' ? dto.pipelineId : '',
+      method: typeof dto.method === 'string' ? dto.method : '',
+      pairs: (Array.isArray(dto.pairs) ? dto.pairs : []).map((raw) => {
+        const p = (raw ?? {}) as Record<string, unknown>;
+        return {
+          prompt: typeof p.prompt === 'string' ? p.prompt : '',
+          chosen: typeof p.chosen === 'string' ? p.chosen : '',
+          rejected: typeof p.rejected === 'string' ? p.rejected : '',
+        };
+      }),
+      hyperparams: {
+        learningRate: typeof hyperRaw.learningRate === 'number' ? hyperRaw.learningRate : Number.NaN,
+        beta: typeof hyperRaw.beta === 'number' ? hyperRaw.beta : Number.NaN,
+        epochs: typeof hyperRaw.epochs === 'number' ? hyperRaw.epochs : Number.NaN,
+      },
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.pipelineId;
+    if (this.tuningPipelines.has(key)) throw conflict('tuning-pipeline-duplicate:' + result.value.pipelineId);
+    const createdAt = this.clock();
+    this.tuningPipelines.set(key, { pipeline: result.value, createdAt, verdict: null });
+    return { pipeline: result.value, createdAt };
+  }
+
+  async tuningStatus(userId: string, body: unknown): Promise<{ pipeline: TuningPipeline; createdAt: number; verdict: 'accepted' | 'rejected' | null }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const pipelineId = typeof dto.pipelineId === 'string' ? dto.pipelineId.trim() : '';
+    const stored = this.tuningPipelines.get(userId + ':' + pipelineId);
+    if (!stored) throw notFound('tuning-pipeline-not-found:' + pipelineId);
+    return { pipeline: stored.pipeline, createdAt: stored.createdAt, verdict: stored.verdict };
+  }
+
+  async advanceTuningStage(userId: string, body: unknown): Promise<TuningAdvance> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const pipelineId = typeof dto.pipelineId === 'string' ? dto.pipelineId.trim() : '';
+    const stored = this.tuningPipelines.get(userId + ':' + pipelineId);
+    if (!stored) throw notFound('tuning-pipeline-not-found:' + pipelineId);
+    const metricsRaw = (dto.metrics ?? {}) as Record<string, unknown>;
+    const metrics: TuningMetrics | undefined = dto.metrics === undefined ? undefined : {
+      rewardMargin: typeof metricsRaw.rewardMargin === 'number' ? metricsRaw.rewardMargin : Number.NaN,
+      acceptanceRate: typeof metricsRaw.acceptanceRate === 'number' ? metricsRaw.acceptanceRate : Number.NaN,
+    };
+    const result = runAdvanceTuningStage(stored.pipeline, metrics);
+    if (!result.ok) throw refusal(result.reason);
+    stored.pipeline = { ...stored.pipeline, stage: result.value.stage, stageIndex: result.value.stageIndex };
+    if (result.value.verdict !== null) stored.verdict = result.value.verdict;
+    return result.value;
+  }
+
+  // ---- AI-016 distillation ----
+
+  async planDistillation(userId: string, body: unknown): Promise<{ plan: DistillationPlan; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runPlanDistillation({
+      planId: typeof dto.planId === 'string' ? dto.planId : '',
+      teacherModelId: typeof dto.teacherModelId === 'string' ? dto.teacherModelId : '',
+      teacherVersion: typeof dto.teacherVersion === 'number' ? dto.teacherVersion : Number.NaN,
+      studentModelId: typeof dto.studentModelId === 'string' ? dto.studentModelId : '',
+      teacherParams: typeof dto.teacherParams === 'number' ? dto.teacherParams : Number.NaN,
+      studentParams: typeof dto.studentParams === 'number' ? dto.studentParams : Number.NaN,
+      samples: (Array.isArray(dto.samples) ? dto.samples : []).map((raw) => {
+        const s = (raw ?? {}) as Record<string, unknown>;
+        return {
+          prompt: typeof s.prompt === 'string' ? s.prompt : '',
+          teacherOutput: typeof s.teacherOutput === 'string' ? s.teacherOutput : '',
+        };
+      }),
+      qualityGate: typeof dto.qualityGate === 'number' ? dto.qualityGate : Number.NaN,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.planId;
+    if (this.distillationPlans.has(key)) throw conflict('distillation-plan-duplicate:' + result.value.planId);
+    const createdAt = this.clock();
+    this.distillationPlans.set(key, { plan: result.value, createdAt, verdict: null });
+    return { plan: result.value, createdAt };
+  }
+
+  async distillationStatus(userId: string, body: unknown): Promise<{ plan: DistillationPlan; createdAt: number; verdict: 'accepted' | 'rejected' | null }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const planId = typeof dto.planId === 'string' ? dto.planId.trim() : '';
+    const stored = this.distillationPlans.get(userId + ':' + planId);
+    if (!stored) throw notFound('distillation-plan-not-found:' + planId);
+    return { plan: stored.plan, createdAt: stored.createdAt, verdict: stored.verdict };
+  }
+
+  async advanceDistillationStage(userId: string, body: unknown): Promise<DistillationAdvance> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const planId = typeof dto.planId === 'string' ? dto.planId.trim() : '';
+    const stored = this.distillationPlans.get(userId + ':' + planId);
+    if (!stored) throw notFound('distillation-plan-not-found:' + planId);
+    const metricsRaw = (dto.metrics ?? {}) as Record<string, unknown>;
+    const metrics: DistillationMetrics | undefined = dto.metrics === undefined ? undefined : {
+      studentAccuracy: typeof metricsRaw.studentAccuracy === 'number' ? metricsRaw.studentAccuracy : Number.NaN,
+    };
+    const result = runAdvanceDistillationStage(stored.plan, metrics);
+    if (!result.ok) throw refusal(result.reason);
+    stored.plan = { ...stored.plan, stage: result.value.stage, stageIndex: result.value.stageIndex };
+    if (result.value.verdict !== null) stored.verdict = result.value.verdict;
+    return result.value;
+  }
+
+  // ---- AI-018 experiment tracking ----
+
+  async createTrackedExperiment(userId: string, body: unknown): Promise<{ experiment: TrackedExperiment; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runDefineTrackedExperiment({
+      experimentId: typeof dto.experimentId === 'string' ? dto.experimentId : '',
+      config: dto.config,
+      metrics: dto.metrics,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.experimentId;
+    if (this.trackedExperiments.has(key)) throw conflict('tracked-experiment-duplicate:' + result.value.experimentId);
+    const createdAt = this.clock();
+    this.trackedExperiments.set(key, { experiment: result.value, createdAt });
+    return { experiment: result.value, createdAt };
+  }
+
+  private resolveTrackedExperiment(userId: string, dto: Record<string, unknown>): StoredTrackedExperiment {
+    const experimentId = typeof dto.experimentId === 'string' ? dto.experimentId.trim() : '';
+    const stored = this.trackedExperiments.get(userId + ':' + experimentId);
+    if (!stored) throw notFound('tracked-experiment-not-found:' + experimentId);
+    return stored;
+  }
+
+  async logExperimentPoint(userId: string, body: unknown): Promise<TrackedPoint> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTrackedExperiment(userId, dto);
+    const result = runLogTrackedPoint(stored.experiment, {
+      step: dto.step,
+      metric: typeof dto.metric === 'string' ? dto.metric : '',
+      value: dto.value,
+    });
+    if (!result.ok) throw refusal(result.reason);
+    stored.experiment = result.value.experiment;
+    return result.value.point;
+  }
+
+  async experimentCurves(userId: string, body: unknown): Promise<{ experimentId: string; curves: TrackedCurve[] }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTrackedExperiment(userId, dto);
+    const metric = typeof dto.metric === 'string' && dto.metric !== '' ? dto.metric : undefined;
+    const result = runTrackedCurves(stored.experiment, metric);
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
+
+  async compareTrackedExperiments(userId: string, body: unknown): Promise<TrackedComparison> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const a = this.resolveTrackedExperiment(userId, { experimentId: dto.a });
+    const b = this.resolveTrackedExperiment(userId, { experimentId: dto.b });
+    const result = runCompareTrackedExperiments(a.experiment, b.experiment, typeof dto.metric === 'string' ? dto.metric : '');
+    if (!result.ok) throw refusal(result.reason);
+    return result.value;
+  }
   async verifyPackage(userId: string, body: unknown): Promise<{ accepted: boolean; fingerprint: string; modelId: string; versionId: number }> {
     const dto = (body ?? {}) as Record<string, unknown>;
     const fingerprint = typeof dto.fingerprint === 'string' ? dto.fingerprint.trim() : '';
