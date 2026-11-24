@@ -113,6 +113,20 @@ import {
   type TrackedExperiment,
   type TrackedPoint,
 } from './engine/experiment-tracking-engine.ts';
+import {
+  startLongRunningTask as runStartLongRunningTask,
+  recordCheckpoint as runRecordCheckpoint,
+  pauseLongRunningTask as runPauseLongRunningTask,
+  resumeLongRunningTask as runResumeLongRunningTask,
+  completeLongRunningTask as runCompleteLongRunningTask,
+  type LongRunningTask,
+  type TaskCheckpoint,
+} from './engine/longrunning-task-engine.ts';
+import {
+  defineTaskBudget as runDefineTaskBudget,
+  chargeTaskBudget as runChargeTaskBudget,
+  type TaskBudget,
+} from './engine/task-budget-engine.ts';
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
 import type {
@@ -221,10 +235,24 @@ interface StoredTrackedExperiment {
   experiment: TrackedExperiment;
   createdAt: number;
 }
+/** AI-084 long-running tasks, session state per user. Ephemeral by design like streams. */
+interface StoredLongRunningTask {
+  task: LongRunningTask;
+  createdAt: number;
+}
+
+/** AI-085 task budgets, session state per user. Ephemeral by design like streams. */
+interface StoredTaskBudget {
+  budget: TaskBudget;
+  createdAt: number;
+}
+
 export class AiTrainingService {
   private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
   private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
   private readonly trackedExperiments = new Map<string, StoredTrackedExperiment>();
+  private readonly longRunningTasks = new Map<string, StoredLongRunningTask>();
+  private readonly taskBudgets = new Map<string, StoredTaskBudget>();
   private readonly store: AiTrainingStore;
   private readonly events: EventStore;
   private readonly clock: Clock;
@@ -1848,6 +1876,107 @@ export class AiTrainingService {
     if (!result.ok) throw refusal(result.reason);
     return result.value;
   }
+  // ---- AI-084 long-running tasks ----
+
+  async startLongRunningTask(userId: string, body: unknown): Promise<{ task: LongRunningTask; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runStartLongRunningTask({
+      taskId: typeof dto.taskId === 'string' ? dto.taskId : '',
+      kind: typeof dto.kind === 'string' ? dto.kind : '',
+    });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.taskId;
+    if (this.longRunningTasks.has(key)) throw conflict('longrunning-task-duplicate:' + result.value.taskId);
+    const createdAt = this.clock();
+    this.longRunningTasks.set(key, { task: result.value, createdAt });
+    return { task: result.value, createdAt };
+  }
+
+  private resolveLongRunningTask(userId: string, dto: Record<string, unknown>): StoredLongRunningTask {
+    const taskId = typeof dto.taskId === 'string' ? dto.taskId.trim() : '';
+    const stored = this.longRunningTasks.get(userId + ':' + taskId);
+    if (!stored) throw notFound('longrunning-task-not-found:' + taskId);
+    return stored;
+  }
+
+  async checkpointTask(userId: string, body: unknown): Promise<{ task: LongRunningTask; checkpoint: TaskCheckpoint }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runRecordCheckpoint(stored.task, { step: dto.step, state: dto.state });
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value.task;
+    return result.value;
+  }
+
+  async pauseTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runPauseLongRunningTask(stored.task);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async resumeTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const fromCheckpointId = typeof dto.fromCheckpointId === 'string' && dto.fromCheckpointId !== '' ? dto.fromCheckpointId : undefined;
+    const result = runResumeLongRunningTask(stored.task, fromCheckpointId);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async completeTask(userId: string, body: unknown): Promise<{ task: LongRunningTask }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    const result = runCompleteLongRunningTask(stored.task);
+    if (!result.ok) throw refusal(result.reason);
+    stored.task = result.value;
+    return { task: result.value };
+  }
+
+  async longRunningTaskStatus(userId: string, body: unknown): Promise<{ task: LongRunningTask; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveLongRunningTask(userId, dto);
+    return { task: stored.task, createdAt: stored.createdAt };
+  }
+
+  // ---- AI-085 per-task budgets ----
+
+  async defineTaskBudget(userId: string, body: unknown): Promise<{ budget: TaskBudget; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runDefineTaskBudget({ taskId: typeof dto.taskId === 'string' ? dto.taskId : '', limits: dto.limits });
+    if (!result.ok) throw refusal(result.reason);
+    const key = userId + ':' + result.value.taskId;
+    if (this.taskBudgets.has(key)) throw conflict('task-budget-duplicate:' + result.value.taskId);
+    const createdAt = this.clock();
+    this.taskBudgets.set(key, { budget: result.value, createdAt });
+    return { budget: result.value, createdAt };
+  }
+
+  private resolveTaskBudget(userId: string, dto: Record<string, unknown>): StoredTaskBudget {
+    const taskId = typeof dto.taskId === 'string' ? dto.taskId.trim() : '';
+    const stored = this.taskBudgets.get(userId + ':' + taskId);
+    if (!stored) throw notFound('task-budget-not-found:' + taskId);
+    return stored;
+  }
+
+  async chargeTaskBudget(userId: string, body: unknown): Promise<{ budget: TaskBudget }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTaskBudget(userId, dto);
+    const result = runChargeTaskBudget(stored.budget, { timeMs: dto.timeMs, costUsdMicros: dto.costUsdMicros, toolCalls: dto.toolCalls });
+    if (!result.ok) throw refusal(result.reason);
+    stored.budget = result.value;
+    return { budget: result.value };
+  }
+
+  async taskBudgetStatus(userId: string, body: unknown): Promise<{ budget: TaskBudget; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const stored = this.resolveTaskBudget(userId, dto);
+    return { budget: stored.budget, createdAt: stored.createdAt };
+  }
+
   async verifyPackage(userId: string, body: unknown): Promise<{ accepted: boolean; fingerprint: string; modelId: string; versionId: number }> {
     const dto = (body ?? {}) as Record<string, unknown>;
     const fingerprint = typeof dto.fingerprint === 'string' ? dto.fingerprint.trim() : '';
