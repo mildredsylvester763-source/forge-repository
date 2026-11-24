@@ -740,3 +740,22 @@ Per-feature status:
 No functional code was changed in this batch. The repository has useful health, event and outbox primitives, but no incident management state machine or OpenTelemetry data path. No synthetic incidents or severity policies were invented.
 
 **Next batch in document order:** OB-043–OB-046 (war room with live channel/timeline/roles/evidence, incident agent with ranked hypotheses, unified logs/metrics/traces/deploy timeline, and postmortems with follow-up tasks).
+
+
+### Thirty-fifth four-feature batch: OB-043–OB-046 — LIVE-TESTING/AGENT/EVENT PRIMITIVES ADJACENT; INCIDENT WAR ROOM AND CHANGE CAUSALITY MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 14–15):
+- **OB-043 (PRO; Team, also Studio):** War room: live channel, timeline, roles, linked evidence. Catalog note: needs team seats (3 minimum) or a Studio plan.
+- **OB-044 (PRO; Pro):** Incident Agent live investigation with ranked hypotheses.
+- **OB-045 (PRO; Pro):** One timeline for logs, metrics, traces, deploys, and config changes.
+- **OB-046 (PRO; Pro):** Suspect-change finder: which commit, deploy, or flag likely caused it.
+
+Per-feature status:
+- **OB-043 — PARTIAL COLLABORATION PRIMITIVES; INCIDENT WAR ROOM MISSING.** Live-testing has owner-scoped collaboration roles, session messages, findings and a replayable test timeline. These belong to test sessions, not incidents. There is no incident entity, incident-scoped live channel, responder role/assignment, linked observability evidence, war-room lifecycle or team-seat enforcement for incident collaboration.
+- **OB-044 — PARTIAL GENERAL AGENT ORCHESTRATION; INCIDENT INVESTIGATION MISSING.** The orchestrator can select agents, plan tool actions and record agent events. It has no incident context loader, hypothesis schema/ranking/evidence confidence, hypothesis-to-signal links, investigator loop or incident-state integration. General agent planning is not an incident investigation agent.
+- **OB-045 — PARTIAL AUDIT EVENT SEQUENCE; UNIFIED CROSS-SIGNAL TIMELINE MISSING.** The event store provides an ordered hash-chained audit sequence and correlation/causation IDs. It does not ingest or normalize logs, metrics, traces, deployments and configuration changes into one queryable timeline. No trace/deploy/config-change sources or cross-signal time alignment exists.
+- **OB-046 — BLOCKED / NOT IMPLEMENTED.** No incident baseline, deployment/change inventory, feature-flag change history, commit-to-deploy mapping, temporal correlation model or ranked causal hypothesis engine exists. Build & CI's push/PR trigger events carry commit SHAs but are not deployment events and do not prove causality.
+
+No functional code was changed in this batch. Existing live-testing collaboration and orchestrator agents are not incident management; the event chain is not a multi-signal observability timeline. No suspect commit/deploy/flag was fabricated.
+
+**Next batch in document order:** OB-047–OB-050 (remediation suggestions with risk preview; policy-bounded autopilot remediation; on-call schedules/rotations/overrides/follow-the-sun; and escalation policies with acknowledgement timers).
