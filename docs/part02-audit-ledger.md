@@ -4,8 +4,8 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Latest code commit:** `8c008ecdc518aaa9ea13be318f49c63932d3cde5`; this ledger update follows that code checkpoint.  
-**Latest verified code checkpoint:** `8c008ecdc518aaa9ea13be318f49c63932d3cde5`. GitHub Actions run [45134257552](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45134257552) passed typecheck and the full test job: 982 tests, 981 passed, 0 failed, 1 skipped.  
+**Last CI-verified code checkpoint recorded:** `8c008ecdc518aaa9ea13be318f49c63932d3cde5`. GitHub Actions run [45134257552](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45134257552) completed successfully: typecheck passed and the full test job reported 982 tests, 981 passed, 0 failed, 1 skipped.  
+**Later code present but not independently CI-verified in this run:** DP-015's Pro-gated dependency-graph planner, route and tests are present on `forge-part02-audit`. The branch advanced 10 commits beyond the previously reported `f957dde`; the observed delta includes the DP-015 implementation and ledger updates. The exact code commit SHA and a successful status for that later code were not surfaced, so DP-015 remains partial and unverified at the current checkpoint.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
 **Audit date:** 2026-11-24.
 
@@ -286,3 +286,27 @@ No fake serverless deploy, container build, predicted traffic curve or authorita
 
 **Next batch in document order:** DP-045–DP-048. Audit existing job queues/schedulers and the current database migration framework; DP-048 may have a reusable migration foundation, but preview/rollback must be verified separately.
 
+
+
+### Twelfth four-feature batch: DP-045–DP-048 — JOB/SCHEDULER AND BACKUP PARTIALS; MANAGED DATABASE AND MIGRATION CONTROL INCOMPLETE
+
+Exact catalog requirements (Part 02 PDF, page 6):
+- **DP-045 (PRO; Plus):** Job and queue management.
+- **DP-046 (PRO; Plus):** Cron and scheduled job manager.
+- **DP-047 (PRO; Plus):** Managed database provisioning, backups, replicas.
+- **DP-048 (FREE; Free):** Database migrations with preview and rollback.
+
+Cross-branch audit:
+- The working branch `forge-part02-audit` contains task-run history/state management and the kernel transactional outbox. Neither is a general-purpose job queue: task runs are user-owned histories, while the outbox delivers committed events.
+- The preserved `gpt-part2-build-ci` branch contains a separate Build & CI module. Comparing it with `forge-part02-audit` reports **diverged**, 343 commits ahead and 834 behind, with 60 changed files. Do not merge it wholesale. Its relevant paths include `src/modules/build-ci/store.ts`, `sqlite-store.ts`, `postgres-store.ts`, `schedule-occurrences.ts`, `schedule-dispatcher.ts`, `cron.ts`, `worker.ts`, and their tests.
+- The Build & CI worker explicitly says it creates authorized queued pipeline runs but does not execute registered pipeline tasks. Its scheduled dispatcher creates those queued runs; it is not a general job executor.
+
+Per-feature status:
+- **DP-045 — PARTIAL ADJACENT IMPLEMENTATION; EXECUTION CONTRACT MISSING.** The working branch's `src/modules/task-runtime/` persists user task runs and event histories but has no queue claims, worker leases, retry/dead-letter lifecycle or generic job executor. `src/kernel/outbox.ts` provides a durable event-delivery queue, not a job queue. On `gpt-part2-build-ci`, `build_pipeline_runs` persists idempotent queued pipeline-run records, and webhook delivery has leases/retries/dead letters, but the worker does not execute pipeline tasks. This is useful adjacent work, not a complete DP-045 job/queue manager. A trusted task-executor registry and job lifecycle contract are still absent; arbitrary caller-supplied commands must not be executable.
+- **DP-046 — PARTIAL ON DIVERGENT BRANCH; NOT IN WORKING BRANCH.** The preserved Build & CI branch has a five-field cron parser, IANA timezone handling, bounded occurrence scans, durable schedule occurrences with unique identities, leases, retries, scan cursors and a scheduler worker. Tests in `test/build-ci-cron.test.ts`, `test/build-ci-schedule-dispatcher.test.ts` and `test/build-ci-worker.test.ts` cover timezone/DST behavior, exactly-once occurrence dispatch, retry after authorization failure, superseded pipeline versions, paused schedules, bounded worker cycles and workspace pagination. However, the dispatcher only creates queued pipeline-run records; the worker does not execute jobs. The module is not integrated into `forge-part02-audit`, and the source branch is materially divergent. No wholesale merge or duplicate scheduler port was made.
+- **DP-047 — PARTIAL ADJACENT BACKUP CAPABILITY; PROVISIONING/REPLICAS MISSING.** The working branch's `src/kernel/backup.ts` creates consistent SQLite snapshots, checksums and verifies database integrity/audit-chain integrity; it also supports retention pruning and a local schedule. `src/kernel/backup-offsite.ts` defines and verifies off-site backup manifests/receipts. These are application backup/restore primitives, not managed database provisioning, replica creation/monitoring, failover or provider-managed lifecycle. No cloud database provider, authorized account, target region or replica policy exists.
+- **DP-048 — BLOCKED / NOT IMPLEMENTED.** `src/kernel/sqlite.ts` and `src/kernel/postgres-migrations.ts` apply versioned, checksummed, forward-only application migrations. The migration contract contains version, name and SQL only; it has no preview/diff model or down/compensation migration contract. Build & CI's `createRollbackVersion` rolls back pipeline definitions by appending a new immutable version; it is not database rollback. Applying a generic down-SQL convention to already-shipped schemas without an explicit compatibility and data-loss policy would be unsafe. No fake preview or rollback was added.
+
+No functional code was changed in this batch: DP-045/046 need a trusted executable job contract and careful selective integration of the divergent Build & CI work; DP-047 needs an authorized managed-database provider and replica policy; DP-048 needs a defined migration format and rollback/data-compatibility contract. These are recorded as specific blockers rather than falsely marked complete.
+
+**Next batch in document order:** DP-049–DP-052 (cache management, object storage/CDN management, DNS safe-change previews, and SSL certificate lifecycle). Inspect existing cache/R2/DNS/certificate code and preserved branches before deciding which portions are reusable.
