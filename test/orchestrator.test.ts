@@ -121,7 +121,8 @@ describe('orchestrator routes (FORGE AI-073..078)', () => {
       assert.equal(await errorCode(planDenied), 'tool-denied:coordinator:fs-write');
 
       const sandbox = await h.post('/v1/orchestrator/sandbox', { tool: 'shell-exec', command: 'ls', timeout: 5 }, { cookie });
-      const sandboxBody = (await sandbox.json()) as { verdict: { ok: boolean; timeout: number; restrictions: string[] } };
+      const sandboxBody = (await sandbox.json()) as { verdict: { ok: boolean; enforcement: 'preflight-only'; timeout: number; restrictions: string[] } };
+      assert.equal(sandboxBody.verdict.enforcement, 'preflight-only');
       assert.equal(sandboxBody.verdict.ok, true);
       assert.equal(sandboxBody.verdict.timeout, 5);
       assert.deepEqual(sandboxBody.verdict.restrictions, ['workspace-only-fs', 'no-network', 'timeout-5s']);
