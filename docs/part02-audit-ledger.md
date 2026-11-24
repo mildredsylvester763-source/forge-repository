@@ -702,3 +702,22 @@ Per-feature status:
 No functional code was changed in this batch. A safe PII-scrubbing policy needs explicit data classes, field-level exceptions, trace handling and privacy/retention rules; broad regex replacement without a policy could either leak data or destroy operational evidence.
 
 **Next batch in document order:** OB-035–OB-038. Verify the exact next-page requirements and their plan assignments before auditing.
+
+
+### Thirty-third four-feature batch: OB-035–OB-038 — REQUEST TIMING EXISTS; PROFILING, DB INSIGHTS, FRONTEND TIMING AND CDN ANALYTICS MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 13–14):
+- **OB-035 (PRO; Pro):** Production profiling: CPU, memory, flame graphs.
+- **OB-036 (PRO; Pro):** Database insights: slow queries, locks, index suggestions.
+- **OB-037 (PRO; Plus):** Frontend performance: web vitals, long tasks, render timing.
+- **OB-038 (PRO; Pro):** Network and CDN analytics.
+
+Per-feature status:
+- **OB-035 — PARTIAL REQUEST DURATION LOGGING; PRODUCTION PROFILING MISSING.** `src/kernel/http.ts` measures request duration and logs status/route, and AI model-serving has latency percentiles. There is no CPU/memory profiler, allocation/GC profile, sampling profiler, flame-graph collector, profile storage or production profile viewer.
+- **OB-036 — BLOCKED / NOT IMPLEMENTED.** SQLite/PostgreSQL stores issue queries directly, but no query-duration instrumentation, normalized query fingerprint, slow-query threshold, lock/wait sampling, explain-plan capture, index recommendation engine or DB-insights dashboard exists. Static SQL and successful persistence tests are not database performance insights.
+- **OB-037 — BLOCKED / NOT IMPLEMENTED.** The current product tree is a backend service and contains no browser/mobile frontend instrumentation SDK. No Web Vitals, long-task observer, navigation/render timing, device/network classification, client sampling or frontend performance ingestion pipeline exists.
+- **OB-038 — BLOCKED / NOT IMPLEMENTED.** No CDN provider or edge distribution is configured. The narrow R2 audit-anchor adapter and server request logs do not expose network path timing, edge cache hit/miss, origin latency, egress volume, regional POP performance or CDN analytics.
+
+No functional code was changed in this batch. Request duration and model-serving latency are narrower application metrics; they do not justify claims of continuous profiling, database insights, frontend monitoring or CDN analytics.
+
+**Next batch in document order:** OB-039–OB-042 (Forge-internal creative-tool telemetry; OpenTelemetry support in/out; incident declaration; severity levels and response playbooks). OB-039 is explicitly **FREE (not sold), Internal, Not sold (internal)** and must remain Forge-internal.
