@@ -217,3 +217,30 @@ The shared prerequisites are a durable artifact registry, trusted build output, 
 
 **Next batch in document order:** DP-033–DP-036 (Infrastructure). Before implementing, inspect existing cloud/IaC modules and any preserved branch work; do not assume the deployment blocker automatically applies to independent infrastructure-editor capabilities.
 
+
+
+### Ninth four-feature batch: DP-033–DP-036 — INFRASTRUCTURE EDITOR / PLAN / DRIFT BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 5):
+- **DP-033 (FREE):** Infrastructure-as-code editor with visual and code views.
+- **DP-034 (Plus):** Infrastructure plan preview with cost and risk.
+- **DP-035 (Pro):** Drift detection between declared and actual infrastructure.
+- **DP-036 (Pro):** Drift auto-fix proposals.
+
+Branch-preservation audit for IaC/cloud/Kubernetes/provisioning paths found no matching infrastructure module or implementation in these current heads:
+- `main`: `ec6716f`
+- `mistral`: `a508de2`
+- `manus/part36-safety`: `0621556`
+- `gpt-part2-build-ci`: `43436fd`
+- `forge-part02-audit`: `6c5b8b6`
+
+Per-feature status:
+- **DP-033 — BLOCKED.** No frontend/editor subsystem, IaC parser/AST, visual graph model or code serializer exists. A backend-only placeholder cannot deliver both visual and code editing.
+- **DP-034 — BLOCKED.** No IaC plan engine, provider plan adapter, cost-estimation catalog or risk policy exists. Producing numeric cost/risk without provider and pricing inputs would fabricate values.
+- **DP-035 — BLOCKED.** No declared-state store, cloud inventory adapters, provider credentials or drift reconciliation engine exists. A static diff cannot establish actual cloud state.
+- **DP-036 — BLOCKED.** No drift findings or provider write adapter exist. Auto-fix proposals must be derived from a verified drift record and remain non-mutating until an authorized apply workflow exists.
+
+The shared prerequisites are an IaC language/model decision, a frontend editor, provider read access, verified cost data and workspace-scoped cloud credentials. DP-036 additionally needs an explicit proposal approval/apply boundary and provider write authorization. No Terraform/Pulumi parser, guessed cloud costs or fake drift records were added.
+
+**Next batch in document order:** DP-037–DP-040. Inspect cloud provisioning and Kubernetes capabilities across preserved branches; continue without overwriting divergent work.
+
