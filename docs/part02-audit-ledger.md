@@ -173,3 +173,25 @@ These four features need an authorized durable artifact-storage target and a rea
 
 **Next batch in document order:** DP-025–DP-028. Continue to preserve the separate `gpt-part2-build-ci` branch and inspect its relevant release/build work before porting anything.
 
+
+
+### Seventh four-feature batch: DP-025–DP-028 — PLATFORM RELEASE INFRASTRUCTURE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 4):
+- **DP-025 (Plus):** Android release pipeline: bundles, signing keys, store submission.
+- **DP-026 (Plus):** iOS build and store submission pipeline.
+- **DP-027 (Pro):** Desktop installers with auto-update channels.
+- **DP-028 (Pro):** Over-the-air updates for web and mobile where allowed.
+
+Repository evidence: neither `forge-part02-audit` nor the preserved `gpt-part2-build-ci` tree contains Android/iOS store integration, desktop packaging, installer/update-channel code, OTA update distribution, or app-store submission modules. The preserved Build & CI branch has pipeline definitions, provider webhooks and schedule dispatch, but the pipeline code is a planner/queueing subsystem and explicitly does not execute build tasks or deployments. No macOS build runner, mobile signing material, app-store credentials or update-distribution target is configured.
+
+Per-feature status:
+- **DP-025 — BLOCKED.** No Android bundle build runner, keystore/KMS signing path, artifact registry or Google Play submission integration. Store credentials and signing authority are not present.
+- **DP-026 — BLOCKED.** No macOS/iOS build runner, certificate/provisioning-profile management, artifact pipeline or App Store Connect submission integration. These platform-specific credentials and build infrastructure cannot be inferred.
+- **DP-027 — BLOCKED.** No desktop packaging/signing pipeline, installer artifact store, update manifest service or channel-aware updater. A release-channel label without signed update delivery is not an auto-update system.
+- **DP-028 — BLOCKED.** No web/mobile OTA distribution adapter or platform policy matrix defining which update classes are permitted. A generic download endpoint would not prove platform-compliant OTA delivery.
+
+The four features require owner-authorized build runners, artifact storage, platform signing-key custody, store/update provider credentials and a defined rollout/update policy. No fake store submission, unsigned package, installer, or OTA-success status was introduced.
+
+**Next batch in document order:** DP-029–DP-032. Reuse this platform/artifact-infrastructure blocker; do not re-audit the same absent integration unless repository evidence changes.
+
