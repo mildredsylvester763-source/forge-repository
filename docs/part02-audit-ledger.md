@@ -683,3 +683,22 @@ Per-feature status:
 No functional code was changed in this batch. Agent audit events and commit-aware pipeline triggers are partial correlation primitives only; no spans, deployments or unified observability query service were simulated.
 
 **Next batch in document order:** OB-031–OB-034 (saved views/shareable investigations, retention tiers/sampling controls, observability cost controls, and PII scrubbing in logs/traces).
+
+
+### Thirty-second four-feature batch: OB-031–OB-034 — INVESTIGATION/RETENTION/COST CONTROLS MISSING; CREDENTIAL REDACTION IS NOT PII SCRUBBING
+
+Exact catalog requirements (Part 02 PDF, page 13):
+- **OB-031 (PRO; Plus):** Saved views and shareable investigations.
+- **OB-032 (PRO; Plus):** Retention tiers and sampling controls.
+- **OB-033 (PRO; Plus):** Observability cost controls.
+- **OB-034 (FREE; Free):** PII scrubbing in logs and traces.
+
+Per-feature status:
+- **OB-031 — BLOCKED / NOT IMPLEMENTED.** No unified observability query/dashboard model exists to save, version, share or permission-scope an investigation. Search endpoints in other product modules are not saved log/metric/trace investigations.
+- **OB-032 — BLOCKED / NOT IMPLEMENTED.** There is no observability ingestion pipeline with per-signal retention tiers, sampling configuration, tail-based sampling, retention enforcement or user-visible sampling evidence. Event-chain append-only integrity and backup pruning are different storage policies.
+- **OB-033 — BLOCKED / NOT IMPLEMENTED.** No telemetry volume metering, ingest/retention budget, cardinality controls, cost allocation, budget alert or cost-based sampling controller exists. AI model token-cost budgets do not measure observability storage/ingestion cost.
+- **OB-034 — PARTIAL CREDENTIAL REDACTION; PII SCRUBBING MISSING.** `src/kernel/logger.ts` redacts values whose field names resemble credentials (password, token, secret, cookie, authorization, key, credential). It does not scrub email addresses, phone numbers, IP addresses, names or other PII from arbitrary strings, error messages or stack traces, and no trace pipeline exists. `src/kernel/http.ts` currently includes request IP in structured request logs. Credential-key redaction must not be described as PII scrubbing.
+
+No functional code was changed in this batch. A safe PII-scrubbing policy needs explicit data classes, field-level exceptions, trace handling and privacy/retention rules; broad regex replacement without a policy could either leak data or destroy operational evidence.
+
+**Next batch in document order:** OB-035–OB-038. Verify the exact next-page requirements and their plan assignments before auditing.
