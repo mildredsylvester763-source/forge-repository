@@ -371,3 +371,24 @@ Per-feature status:
 No functional code was changed in this batch. The existing configuration, AI cost ledger and model-serving scale planner are real adjacent capabilities, but rebranding them as project infrastructure controls would be inaccurate. DP-057 needs an environment/secret ownership model; DP-058/059 need a trusted cloud billing feed and allocation policy; DP-060 needs provider inventory and a safe cleanup approval boundary.
 
 **Next batch in document order:** DP-061–DP-064 (region/failover configuration, infrastructure template library, ephemeral microVM sandboxes, and runner-fleet management). Audit existing sandbox, template and runner work across the preserved branches before porting anything.
+
+
+### Sixteenth four-feature batch: DP-061–DP-064 — TEMPLATE ADJACENCY; REGIONAL FAILOVER, MICROVM SANDBOXES AND RUNNER FLEET MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 7–8):
+- **DP-061 (ENTERPRISE; Enterprise):** Region and failover configuration.
+- **DP-062 (FREE; Free):** Infrastructure template library.
+- **DP-063 (FREE; Free):** Ephemeral sandbox environments with microVM isolation.
+- **DP-064 (PRO; Pro):** Runner fleet management: shared, dedicated, self-hosted.
+
+Cross-branch inspection: no compared branch exposes a region/failover, microVM sandbox or runner-fleet subsystem. The preserved `gpt-part2-build-ci` branch adds `src/modules/build-ci/templates.ts` and template tests, but those are immutable Build & CI pipeline templates, not infrastructure provisioning templates. Its worker host explicitly does not execute pipeline tasks.
+
+Per-feature status:
+- **DP-061 — BLOCKED / NOT IMPLEMENTED.** No region inventory/selection, data-residency policy, regional resource provisioning, health-based failover, traffic failover controller or failback workflow exists. Database TLS and model-serving GPU assignment do not provide regional failover. A production region/failover design needs approved providers, regions, data residency and recovery objectives.
+- **DP-062 — PARTIAL ADJACENT PIPELINE TEMPLATES; INFRASTRUCTURE TEMPLATES MISSING.** The divergent Build & CI branch has workspace/shared pipeline templates, immutable versions, import provenance, access grants, revocation/deprecation and template-version diffs. `test/build-ci-templates.test.ts` covers the pipeline-template lifecycle. These templates describe build pipelines; they do not provision cloud infrastructure, validate infrastructure parameters/policies, or apply/destroy resource plans. The branch remains unmerged and materially divergent.
+- **DP-063 — BLOCKED / NOT IMPLEMENTED.** No Firecracker/microVM runtime, jailer, kernel/image lifecycle, ephemeral VM provisioner, per-sandbox network/storage boundary, snapshot/teardown controller or isolation verification exists. User task-run persistence and application-level approval gates are not an isolation boundary. No process/container sandbox was relabelled as microVM isolation.
+- **DP-064 — BLOCKED / NOT IMPLEMENTED.** No runner registration/identity, heartbeat, capability advertisement, shared/dedicated/self-hosted fleet inventory, capacity scheduler, job claim/lease, runner drain or execution agent exists. Build & CI's `BuildCiWorkerHost` processes webhook and schedule queues but explicitly does not execute pipeline tasks. AI model-serving dedicated instances are not build runners.
+
+No functional code was changed in this batch. DP-061 needs approved region/provider and recovery policy; DP-062 needs infrastructure template schemas and a provisioner; DP-063 needs an authorized microVM runtime and isolation threat model; DP-064 needs a trusted runner execution contract and fleet host lifecycle. Existing pipeline templates were not duplicated or misrepresented as infrastructure templates.
+
+**Next batch in document order:** DP-065–DP-068. DP-065 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal and do not expose it as a customer feature. DP-066 is network egress policy per job, DP-067 is per-job resource/time limits, and DP-068 is shared build cache across runs. Verify DP-065's feature-gate treatment before adding any customer-facing route.
