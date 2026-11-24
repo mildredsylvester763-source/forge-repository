@@ -149,3 +149,27 @@ All four remain blocked for end-to-end delivery by the missing authorized deploy
 
 **Next batch in document order:** DP-021–DP-024. Inspect the preserved Build & CI branch for artifact-registry, signing, SBOM and provenance work before implementing anything.
 
+
+
+### Sixth four-feature batch: DP-021–DP-024 — ARTIFACT PIPELINE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 4):
+- **DP-021 (FREE):** Artifact registry for containers, packages, binaries and app bundles.
+- **DP-022 (Plus):** Artifact signing and verification at deploy time.
+- **DP-023 (Plus):** SBOM attached to every artifact.
+- **DP-024 (Pro):** Build provenance records.
+
+Current-branch inspection: `forge-part02-audit` has no artifact registry, artifact metadata/blob store, build runner, artifact signing service, SBOM generator/attachment path or provenance record store. Existing model/country/tool registries are unrelated and are not being counted as artifact delivery.
+
+Divergent-branch inspection: `gpt-part2-build-ci` contains a Build & CI pipeline-definition service, provider connections, webhook ingress, schedule dispatch and bounded changed-file retrieval. Its pipeline module explicitly describes itself as planning only and states that it does not execute tasks, write queues or deploy. The inspected pipeline/store/routes/migrations do not implement artifact storage, SBOM generation, artifact signing, deployment verification or build provenance. The branch remains untouched; no speculative partial port was made.
+
+Per-feature status:
+- **DP-021 — BLOCKED.** No durable artifact blob-storage provider or registry metadata model is configured. A database row without durable blob storage would not be an artifact registry.
+- **DP-022 — BLOCKED.** Requires artifact digests, a trusted signing-key/KMS boundary, signature verification and a deployment-time verification hook. No artifact pipeline or signing-key provider exists.
+- **DP-023 — BLOCKED.** No build execution/output pipeline exists to generate an SBOM from the actual artifact inputs and attach it to every artifact. A source-tree dependency list would not prove every emitted artifact is covered.
+- **DP-024 — BLOCKED.** No trusted build runner emits source, toolchain, inputs and output digests, and there is no immutable provenance store. Pipeline-definition versions are not build provenance.
+
+These four features need an authorized durable artifact-storage target and a real build/runner integration before production behavior can be implemented. DP-022 additionally needs a key-management/signing authority; DP-023 needs an agreed SBOM format and artifact-input inventory; DP-024 needs trusted runner attestations and provenance retention. No fake registry, unsigned-as-signed status, empty SBOM or fabricated provenance record was added.
+
+**Next batch in document order:** DP-025–DP-028. Continue to preserve the separate `gpt-part2-build-ci` branch and inspect its relevant release/build work before porting anything.
+
