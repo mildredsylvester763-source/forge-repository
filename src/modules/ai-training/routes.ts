@@ -731,6 +731,20 @@ export function aiTrainingRoutes(service: AiTrainingService, identity: IdentityS
         return { status: 200, body: result };
       },
     },
+    '/v1/ai-training/critique/run': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.selfCritique(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
+    '/v1/ai-training/uncertainty/report': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const user = await requireUser(ctx);
+        const result = await service.uncertaintyReport(user.id, await ctx.json());
+        return { status: 200, body: result };
+      },
+    },
     '/v1/ai-training/access/packages/verify': {
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);

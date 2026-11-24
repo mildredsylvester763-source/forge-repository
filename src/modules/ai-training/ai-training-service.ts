@@ -127,6 +127,14 @@ import {
   chargeTaskBudget as runChargeTaskBudget,
   type TaskBudget,
 } from './engine/task-budget-engine.ts';
+import {
+  runSelfCritique as runRunSelfCritique,
+  type CritiqueReport,
+} from './engine/self-critique-engine.ts';
+import {
+  buildUncertaintyReport as runBuildUncertaintyReport,
+  type UncertaintyReport,
+} from './engine/uncertainty-report-engine.ts';
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
 import type {
@@ -247,12 +255,26 @@ interface StoredTaskBudget {
   createdAt: number;
 }
 
+/** AI-086 critique reports, session state per user. Ephemeral by design like streams. */
+interface StoredCritiqueReport {
+  report: CritiqueReport;
+  createdAt: number;
+}
+
+/** AI-087 uncertainty reports, session state per user. Ephemeral by design like streams. */
+interface StoredUncertaintyReport {
+  report: UncertaintyReport;
+  createdAt: number;
+}
+
 export class AiTrainingService {
   private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
   private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
   private readonly trackedExperiments = new Map<string, StoredTrackedExperiment>();
   private readonly longRunningTasks = new Map<string, StoredLongRunningTask>();
   private readonly taskBudgets = new Map<string, StoredTaskBudget>();
+  private readonly critiqueReports = new Map<string, StoredCritiqueReport>();
+  private readonly uncertaintyReports = new Map<string, StoredUncertaintyReport>();
   private readonly store: AiTrainingStore;
   private readonly events: EventStore;
   private readonly clock: Clock;
@@ -1975,6 +1997,28 @@ export class AiTrainingService {
     const dto = (body ?? {}) as Record<string, unknown>;
     const stored = this.resolveTaskBudget(userId, dto);
     return { budget: stored.budget, createdAt: stored.createdAt };
+  }
+
+  // ---- AI-086 self-critique pass ----
+
+  async selfCritique(userId: string, body: unknown): Promise<{ report: CritiqueReport; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runRunSelfCritique({ resultId: typeof dto.resultId === 'string' ? dto.resultId : '', summary: dto.summary, items: dto.items });
+    if (!result.ok) throw refusal(result.reason);
+    const createdAt = this.clock();
+    this.critiqueReports.set(userId + ':' + result.value.resultId, { report: result.value, createdAt });
+    return { report: result.value, createdAt };
+  }
+
+  // ---- AI-087 uncertainty report ----
+
+  async uncertaintyReport(userId: string, body: unknown): Promise<{ report: UncertaintyReport; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runBuildUncertaintyReport({ subjectId: typeof dto.subjectId === 'string' ? dto.subjectId : '', summary: dto.summary, items: dto.items });
+    if (!result.ok) throw refusal(result.reason);
+    const createdAt = this.clock();
+    this.uncertaintyReports.set(userId + ':' + result.value.subjectId, { report: result.value, createdAt });
+    return { report: result.value, createdAt };
   }
 
   async verifyPackage(userId: string, body: unknown): Promise<{ accepted: boolean; fingerprint: string; modelId: string; versionId: number }> {
