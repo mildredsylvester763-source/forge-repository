@@ -664,3 +664,22 @@ Per-feature status:
 No functional code was changed in this batch. Existing source scanners, audit/consent ledgers, dataset admission checks and model-serving metrics are useful primitives, but none was promoted to a complete monitoring product without the missing continuous collection, policy and alert paths.
 
 **Next batch in document order:** OB-027–OB-030 (agent-action monitoring/anomaly detection; trace-to-code navigation; deployment markers on charts; and one query language across logs, metrics and traces).
+
+
+### Thirty-first four-feature batch: OB-027–OB-030 — AGENT AUDIT AND COMMIT TRIGGER PRIMITIVES PARTIAL; TRACE NAVIGATION, DEPLOY MARKERS AND UNIFIED QUERY MISSING
+
+Exact catalog requirements (Part 02 PDF, page 13):
+- **OB-027 (PRO; Pro):** Agent action monitoring with anomaly detection.
+- **OB-028 (PRO; Plus):** Trace-to-code: jump from any span to the exact function and commit.
+- **OB-029 (FREE; Free):** Deployment markers on every chart.
+- **OB-030 (PRO; Plus):** One query language across logs, metrics, and traces.
+
+Per-feature status:
+- **OB-027 — PARTIAL AGENT ACTION AUDIT; ANOMALY DETECTION MISSING.** The orchestrator records agent/tool-plan actions and the shared event envelope supports `actor.kind = 'agent'`, correlation and causation identifiers. The source-scanning policy branch also emits findings. There is no baseline over agent action frequency/sequence/permission denials, behavioral anomaly model, risk score, incident state or alert integration. Auditability is not anomaly detection.
+- **OB-028 — BLOCKED / NOT IMPLEMENTED.** The HTTP kernel has request IDs and events have correlation/causation IDs, but no distributed spans, source-map/function symbol index, span-to-stack mapping, commit metadata propagation or code navigation link exists. Build & CI triggers can carry a commit SHA, but that does not connect a span to an exact function and commit.
+- **OB-029 — BLOCKED / NOT IMPLEMENTED.** No dashboard/chart system exists and there is no deployment lifecycle/record on the working branch. The small DP-015 dependency planner does not deploy releases. The divergent Build & CI branch records pipeline versions and trigger runs but does not deploy, so it cannot emit reliable deployment markers on charts.
+- **OB-030 — BLOCKED / NOT IMPLEMENTED.** No shared logs/metrics/traces schema, parser, query planner, authorization-aware query engine, time-series/log/trace backend or cross-signal join semantics exists. Existing module search endpoints are domain-specific and are not an observability query language.
+
+No functional code was changed in this batch. Agent audit events and commit-aware pipeline triggers are partial correlation primitives only; no spans, deployments or unified observability query service were simulated.
+
+**Next batch in document order:** OB-031–OB-034 (saved views/shareable investigations, retention tiers/sampling controls, observability cost controls, and PII scrubbing in logs/traces).
