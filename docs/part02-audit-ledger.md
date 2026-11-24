@@ -455,3 +455,22 @@ Per-feature status:
 No functional code was changed in this batch. DP-073–DP-075 remain Forge-internal and not sold, as the catalog requires; DP-076 needs an authorized GitHub App/API migration contract and a resumable import/reconciliation workflow before it can be implemented honestly.
 
 **Next batch in document order:** DP-077–DP-080 (GitLab/Bitbucket import, GitHub↔FORGE mirror mode, verified cutover checklist, and internal-only FORGE upgrade pipeline). DP-080 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal.
+
+
+### Twentieth four-feature batch: DP-077–DP-080 — PROVIDER WEBHOOK ADJACENCY; REPOSITORY IMPORT/MIRROR/CUTOVER AND INTERNAL UPGRADE PIPELINE MISSING
+
+Exact catalog requirements (Part 02 PDF, page 9):
+- **DP-077 (FREE; Free):** Import from GitLab and Bitbucket.
+- **DP-078 (FREE; Free):** Mirror mode: keep GitHub and FORGE in sync during the transition.
+- **DP-079 (FREE; Free):** Cutover checklist and verification before retiring the old host.
+- **DP-080 (FREE not sold; Internal):** FORGE upgrade pipeline: a canary FORGE instance tests the next FORGE version. Catalog explicitly says **Not sold (internal)**.
+
+Per-feature status:
+- **DP-077 — PARTIAL PROVIDER CONNECTIVITY; IMPORT NOT IMPLEMENTED.** The preserved `gpt-part2-build-ci` branch supports GitHub and GitLab webhook ingress and workspace-scoped provider connections. It has no Bitbucket provider adapter and no GitLab/Bitbucket repository importer that preserves full history, branches, tags, issues and merge requests. Webhook subscriptions are not repository migration.
+- **DP-078 — PARTIAL EVENT INGRESS; BIDIRECTIONAL MIRROR MISSING.** GitHub/GitLab webhook events can trigger queued Build & CI pipeline runs on the divergent branch, but there is no Git remote mirror engine, scheduled fetch/push reconciliation, ref conflict detection/resolution, LFS/submodule handling, issue/PR synchronization or divergence dashboard. The worker does not execute pipeline tasks, and no GitHub↔FORGE mirror state is maintained.
+- **DP-079 — BLOCKED / NOT IMPLEMENTED.** No migration cutover state machine, source/destination parity checks, branch/tag/issue/PR reconciliation report, freeze window, write-stop confirmation, rollback window, DNS/remote switch or old-host retirement verification exists. A static checklist without the preceding import and mirror evidence would be misleading.
+- **DP-080 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; CANARY SELF-UPGRADE MISSING.** `part02-feature-gates.ts` maps DP-080 to `internal`; internal rows remain Forge machinery and are not customer plan entitlements. The current repository's verified build/test pipeline is GitHub Actions; no isolated canary FORGE instance, self-hosted build/deploy executor, version promotion controller, health/SLO gate or automatic rollback for FORGE's own release exists. The divergent Build & CI module still does not execute pipeline tasks. Preserve DP-080 as internal-only and do not expose it to customers.
+
+No functional code was changed in this batch. GitLab/GitHub event ingress is useful adjacent work but does not satisfy repository import, bidirectional mirror or safe cutover. Those features require provider API authorization, a history-preserving Git transfer engine, reconciliation semantics and a verified cutover/rollback process. DP-080 remains internal-only.
+
+**Next batch in document order:** DP-081–DP-084. DP-081 is explicitly **FREE (not sold), Internal, Not sold (internal)**; DP-083 is also explicitly **FREE (not sold), Internal, Not sold (internal)**. Preserve both as Forge-internal. DP-082 is the customer-facing Enterprise bootstrap installer; verify exact page text and inspect installation/migration tooling before implementation.
