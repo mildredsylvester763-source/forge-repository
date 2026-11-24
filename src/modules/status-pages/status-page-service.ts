@@ -7,7 +7,9 @@ import { STATUS_COMPONENT_STATES, type CreateStatusComponentInput, type CreateSt
 export interface StatusPageView extends StatusPageRecord { readonly components: readonly StatusComponentRecord[]; }
 function isConflict(err:unknown):boolean{const code=errorCode(err);const message=err instanceof Error?err.message:String(err);return code==='23505'||code==='SQLITE_CONSTRAINT_UNIQUE'||message.includes('status_page_slug_conflict')||message.includes('status_component_name_conflict')||message.toLowerCase().includes('unique constraint');}
 export class StatusPageService {
-  constructor(private readonly store:StatusPageStore,private readonly clock:Clock){}
+  private readonly store: StatusPageStore;
+  private readonly clock: Clock;
+  constructor(store: StatusPageStore, clock: Clock) { this.store = store; this.clock = clock; }
   private async ownedPage(ownerId:string,pageId:string):Promise<StatusPageRecord>{const p=await this.store.getPage(pageId);if(!p||p.ownerId!==ownerId)throw new AppError(404,'status_page_not_found','Status page not found.');return p;}
   async createPage(ownerId:string,input:CreateStatusPageInput):Promise<StatusPageView>{
     const name=input.name.trim(),slug=input.slug.trim().toLowerCase(),summary=(input.summary??'').trim();

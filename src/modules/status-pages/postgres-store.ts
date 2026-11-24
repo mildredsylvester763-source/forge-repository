@@ -9,7 +9,8 @@ const pageRecord=(r:PageRow):StatusPageRecord=>({id:r.id,ownerId:r.owner_id,slug
 const componentRecord=(r:ComponentRow):StatusComponentRecord=>({id:r.id,pageId:r.page_id,name:r.name,description:r.description,state:r.state,position:r.position,createdAt:Number(r.created_at),updatedAt:Number(r.updated_at)});
 const changeRecord=(r:ChangeRow):StatusComponentChange=>({id:r.id,pageId:r.page_id,componentId:r.component_id,actorId:r.actor_id,previousState:r.previous_state,nextState:r.next_state,reason:r.reason,createdAt:Number(r.created_at)});
 export class PostgresStatusPageStore implements StatusPageStore {
-  constructor(private readonly pool:SqlPool){}
+  private readonly pool: SqlPool;
+  constructor(pool: SqlPool) { this.pool = pool; }
   async createPage(p:StatusPageRecord):Promise<StatusPageRecord>{const r=await this.pool.query<PageRow>('INSERT INTO status_pages (id,owner_id,slug,name,summary,published,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[p.id,p.ownerId,p.slug,p.name,p.summary,p.published,p.createdAt,p.updatedAt]);if(!r.rows[0])throw new Error('status page insert returned no row');return pageRecord(r.rows[0]);}
   async getPage(id:string):Promise<StatusPageRecord|null>{const r=await this.pool.query<PageRow>('SELECT * FROM status_pages WHERE id = $1',[id]);return r.rows[0]?pageRecord(r.rows[0]):null;}
   async getPageBySlug(slug:string):Promise<StatusPageRecord|null>{const r=await this.pool.query<PageRow>('SELECT * FROM status_pages WHERE slug = $1',[slug]);return r.rows[0]?pageRecord(r.rows[0]):null;}

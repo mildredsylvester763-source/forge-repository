@@ -9,7 +9,8 @@ const pageRecord=(r:PageRow):StatusPageRecord=>({id:r.id,ownerId:r.owner_id,slug
 const componentRecord=(r:ComponentRow):StatusComponentRecord=>({id:r.id,pageId:r.page_id,name:r.name,description:r.description,state:r.state,position:r.position,createdAt:r.created_at,updatedAt:r.updated_at});
 const changeRecord=(r:ChangeRow):StatusComponentChange=>({id:r.id,pageId:r.page_id,componentId:r.component_id,actorId:r.actor_id,previousState:r.previous_state,nextState:r.next_state,reason:r.reason,createdAt:r.created_at});
 export class SqliteStatusPageStore implements StatusPageStore {
-  constructor(private readonly db:Database) {}
+  private readonly db: Database;
+  constructor(db: Database) { this.db = db; }
   async createPage(page:StatusPageRecord):Promise<StatusPageRecord>{
     this.db.prepare('INSERT INTO status_pages (id,owner_id,slug,name,summary,published,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
       .run(page.id,page.ownerId,page.slug,page.name,page.summary,page.published?1:0,page.createdAt,page.updatedAt); return page;

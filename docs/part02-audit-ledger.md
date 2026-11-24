@@ -798,3 +798,6 @@ Files added: src/modules/status-pages/types.ts, store.ts, in-memory-store.ts, sq
 Files updated: src/app.ts, src/main.ts, src/modules/plans/engine/route-gates.ts, test/pg-helpers.ts, and this ledger.
 
 **Next batch in document order:** OB-055–OB-058. Verify the exact catalog rows and plan notes before assessment.
+
+
+OB-052 verification note: the first CI attempt for commit 88575881 failed during TypeScript typecheck because three new classes used constructor parameter properties, which the repository's erasableSyntaxOnly compiler setting forbids. No tests ran in that attempt. The constructor declarations have been rewritten as explicit fields/assignments in the corrective commit; the feature remains unverified until the next full CI run passes.
