@@ -331,3 +331,24 @@ Per-feature status:
 No functional code was changed in this batch. The cache and R2 components are real but materially narrower than the catalog features; expanding them into shared infrastructure requires an agreed cache/object ownership and lifecycle model. DNS and certificate automation require owner-authorized domains/provider credentials and a key-custody boundary. Those blockers are recorded rather than hidden behind placeholder APIs.
 
 **Next batch in document order:** DP-053–DP-056 (load balancing/traffic routing, private networking/service mesh, secrets management/rotation, and secret access audit/break-glass). Inspect the existing secret store and authorization/audit primitives; do not confuse them with cloud network or secret-manager provider integrations.
+
+
+### Fourteenth four-feature batch: DP-053–DP-056 — NETWORKING BLOCKED; SECRET-REFERENCE ROTATION AND AUDIT PARTIALS
+
+Exact catalog requirements (Part 02 PDF, page 7):
+- **DP-053 (PRO; Pro):** Load balancer and traffic routing rules.
+- **DP-054 (ENTERPRISE; Enterprise):** Private networking and service mesh.
+- **DP-055 (PRO; Plus):** Secrets manager with rotation.
+- **DP-056 (ENTERPRISE; Enterprise):** Secret access audit and break-glass access.
+
+Cross-branch evidence: the current working branch has ordinary application route dispatch and database TLS configuration, not network load-balancer or service-mesh control. The preserved `gpt-part2-build-ci` branch adds workspace-scoped provider-secret references and append-only provider-connection events, but remains divergent from `forge-part02-audit`; its provider connection subsystem was not merged. Its security secret scanner detects secrets in source text; it is not a secrets vault.
+
+Per-feature status:
+- **DP-053 — BLOCKED / NOT IMPLEMENTED.** No load-balancer provider adapter, listener/backend inventory, health-probe model, weighted traffic policy, safe route preview, traffic-switch/rollback controller or provider authorization exists. Application route tables and feature gates are not load balancing or network traffic routing.
+- **DP-054 — BLOCKED / NOT IMPLEMENTED.** No private-network/VPC/subnet provisioning, private service discovery, service-mesh control plane, workload identity, mTLS certificate lifecycle, mesh policy or sidecar/ambient data plane exists. PostgreSQL TLS and HSTS protect specific connections/HTTP responses; they do not provide private networking or a service mesh.
+- **DP-055 — PARTIAL ON DIVERGENT BRANCH; GENERAL SECRETS MANAGER MISSING.** On `gpt-part2-build-ci`, `src/modules/build-ci/provider-connections.ts` and `provider-connection-operations.ts` store workspace-scoped `secret://`, `vault://` or `kms://` references, resolve values only through an external `ProviderSecretResolver`, validate workspace ownership, rotate references with compare-and-swap semantics and revoke connections. `test/build-ci-provider-connections.test.ts` covers inline-secret rejection, cross-workspace isolation, rotation/revocation races and secret-value non-disclosure. `test/build-ci-provider-connection-operations.test.ts` covers workspace authorization, append-only audit and secret-safe summaries. This is a provider-connection integration boundary, not a Forge-owned secrets manager: no central secret CRUD/version store, encryption/key custody, rotation schedule/worker, provider-wide secret inventory or generic application consumer exists.
+- **DP-056 — PARTIAL AUDIT PRIMITIVES; ACCESS LOGGING AND BREAK-GLASS MISSING.** The same divergent provider-connection subsystem records append-only `created`, `secret_reference_rotated` and `revoked` events with workspace and actor attribution; tests verify that audit metadata omits secret references and that event rows cannot be updated/deleted. It does not record every actual secret read/use, nor implement emergency break-glass approval, justification, time-bounded elevation, notification, expiry and post-access review. Generic admin/action audit events do not substitute for secret-access audit and break-glass control.
+
+No functional code was changed in this batch. DP-053/054 require owner-authorized network targets and provider integrations; DP-055/056 require a defined secret authority/key-custody boundary and break-glass policy. The useful provider-connection work remains preserved on `gpt-part2-build-ci` and was not copied as though it were a complete secrets product.
+
+**Next batch in document order:** DP-057–DP-060 (environment-variable management with diff/rollback, cost monitoring/forecasts/budgets, cost anomaly alerts, and right-sizing/idle-resource cleanup suggestions). Inspect existing config/secret references and AI cost accounting, while keeping application settings and model-cost ledgers distinct from infrastructure environment and cloud-cost management.
