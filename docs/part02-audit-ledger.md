@@ -759,3 +759,22 @@ Per-feature status:
 No functional code was changed in this batch. Existing live-testing collaboration and orchestrator agents are not incident management; the event chain is not a multi-signal observability timeline. No suspect commit/deploy/flag was fabricated.
 
 **Next batch in document order:** OB-047–OB-050 (remediation suggestions with risk preview; policy-bounded autopilot remediation; on-call schedules/rotations/overrides/follow-the-sun; and escalation policies with acknowledgement timers).
+
+
+### Thirty-sixth four-feature batch: OB-047–OB-050 — REMEDIATION/INCIDENT DEPENDENCIES MISSING; ON-CALL TEAM/SEAT FOUNDATION NOT WIRED
+
+Exact catalog requirements (Part 02 PDF, page 15):
+- **OB-047 (PRO; Pro):** Suggested remediation with risk preview.
+- **OB-048 (PRO; Pro):** Autopilot remediation within policy: rollback, restart, scale, flag off.
+- **OB-049 (PRO; Team, also Studio):** On-call schedules with rotations, overrides, follow-the-sun. Catalog note: needs team seats (3 minimum) or a Studio plan.
+- **OB-050 (PRO; Team, also Studio):** Escalation policies with acknowledgement timers. Catalog note: needs team seats (3 minimum) or a Studio plan.
+
+Per-feature status:
+- **OB-047 — BLOCKED / NOT IMPLEMENTED.** There is no incident record/state model, alert-to-incident linkage, incident evidence bundle, ranked hypothesis engine, remediation catalog or risk-preview evaluator. The orchestrator can plan generic agent actions, but it does not produce incident-specific remediation proposals or quantify their blast radius, reversibility, confidence and expected impact. No generic "safe" score has been fabricated.
+- **OB-048 — BLOCKED / NOT IMPLEMENTED.** No approved remediation action registry, per-action policy constraints, approval/authorization boundary, execution journal, rollback verification or incident remediation controller exists. The only deployment feature present is DP-015's dependency-graph planner; it does not deploy or roll back. Restart/scale/feature-flag actuators are not wired. Automatic mutation without those controls would be unsafe.
+- **OB-049 — BLOCKED / NOT IMPLEMENTED.** The source tree has no on-call scheduling module, routes, schedule/override persistence or rotation/follow-the-sun resolver. A workspace implementation exists as isolated source, but the application composition root does not wire its membership service or routes, and the plan access decision does not enforce the catalog's three-seat minimum. The governing plan notes also leave the Team seat entitlement/billing model and sellable price book owner-blocked. A schedule built on an unverified team/seat model would misgrant access and could assign responders who are not authorized team members.
+- **OB-050 — BLOCKED / NOT IMPLEMENTED.** There is no incident lifecycle, escalation-policy schema, durable acknowledgement state, timer worker or responder notification dispatcher. The generic transactional outbox is a delivery primitive, not an escalation scheduler or notification channel. No acknowledgement timer can be claimed operational until due-stage transitions are driven reliably and the assigned responders are notified.
+
+No functional code was changed in this batch. Existing orchestrator planning, live-testing collaboration, the DP-015 dependency graph, and the generic outbox are adjacent primitives only; none was promoted into incident remediation or on-call functionality. OB-049/050 additionally depend on a confirmed Team/Studio seat and membership model. The seven SC rows marked "Not tiered here" remain excluded from ordinary subscription gating.
+
+**Next batch in document order:** OB-051–OB-054 (on-call load/fatigue reporting; status page management with component states; AI-drafted customer updates for approval; incident roles: commander, scribe and communications). Verify the exact page text and plan notes before assessing.
