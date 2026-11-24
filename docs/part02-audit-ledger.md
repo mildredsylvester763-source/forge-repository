@@ -607,3 +607,22 @@ Per-feature status:
 No functional code was changed in this batch. The live-testing, health and request-log features are useful adjacent components, but they do not create production synthetic monitors or SLO accounting. No synthetic uptime or SLA values were invented.
 
 **Next batch in document order:** OB-015–OB-018 (burn-rate alerts; performance regression detection tied to commits/deploys; capacity planning/forecasting; and cost attribution by service, team and feature).
+
+
+### Twenty-eighth four-feature batch: OB-015–OB-018 — OUTBOX DELIVERY PRIMITIVE PARTIAL; ALERT RULES, OWNERSHIP ROUTING AND CHANNELS MISSING
+
+Exact catalog requirements (Part 02 PDF, page 12):
+- **OB-015 (PRO; Pro):** Burn-rate alerts.
+- **OB-016 (PRO; Plus):** Alert rules with dedupe, grouping, and suppression.
+- **OB-017 (PRO; Team, also Studio):** Alert routing by ownership from the graph. Catalog note: needs team seats (3 minimum) or a Studio plan.
+- **OB-018 (PRO; Plus):** Channels: push, email, SMS, chat, voice call.
+
+Per-feature status:
+- **OB-015 — BLOCKED / NOT IMPLEMENTED.** The prerequisite SLO/error-budget model (OB-014) is absent. No rolling-window burn-rate calculation, multi-window policy, alert state machine, dedupe key or burn-rate notification exists. No burn-rate value was inferred from request logs.
+- **OB-016 — PARTIAL DURABLE EVENT DELIVERY; ALERT RULE ENGINE MISSING.** `src/kernel/outbox.ts` provides transactional event delivery with persisted retry/backoff, delivered/dead-lettered states and event-ID identity. It does not define metric/event alert conditions, rule versions, grouping keys, alert fingerprints, suppression windows, recovery/resolution events or alert lifecycle state. The outbox is a delivery substrate, not an alert manager.
+- **OB-017 — BLOCKED / NOT IMPLEMENTED.** No service ownership graph, component-to-team mapping, on-call schedule, escalation chain, fallback owner or ownership-change audit exists. The divergent workspace membership modules provide roles/membership, not an ownership graph or on-call routing. Team plan gates alone cannot route alerts.
+- **OB-018 — BLOCKED / NOT IMPLEMENTED.** No push-token registry/provider, email delivery adapter, SMS gateway, chat integration, voice-call provider, delivery preference/consent model, channel retry policy or per-channel delivery receipt exists. Identity email normalization and event outbox delivery do not send notifications.
+
+No functional code was changed in this batch. OB-016 can reuse the durable outbox only after an alert model and channel delivery contract exist; OB-015 depends on SLOs; OB-017 needs an ownership/on-call graph; OB-018 needs provider credentials, consent and channel adapters. No placeholder notification endpoints were added.
+
+**Next batch in document order:** OB-019–OB-022 (explainable metric anomaly detection, commit/deploy-linked performance regression detection, capacity planning/forecasting, and cost attribution by service/team/feature).
