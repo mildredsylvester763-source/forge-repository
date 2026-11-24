@@ -569,3 +569,22 @@ Per-feature status:
 No functional code was changed in this batch. The logger and event store are useful primitives, but implementing aggregation, automatic instrumentation, general metrics and dashboards requires a coherent telemetry pipeline and data-retention/authorization model; no in-memory-only dashboard placeholder was added.
 
 **Next batch in document order:** OB-007–OB-010 (natural-language dashboard creation, error tracking with grouping/regression detection, release health by version, and real-user monitoring for web/mobile [C]).
+
+
+### Twenty-sixth four-feature batch: OB-007–OB-010 — DASHBOARD/ERROR/RELEASE/RUM SYSTEMS MISSING; REQUEST LOGGING AND TEST REGRESSION ADJACENT
+
+Exact catalog requirements (Part 02 PDF, page 11):
+- **OB-007 (FREE; Free):** Natural-language dashboard creation.
+- **OB-008 (FREE; Free):** Error tracking with grouping and regression detection.
+- **OB-009 (FREE; Free):** Release health: errors and crashes per version.
+- **OB-010 (PRO; Plus):** Real user monitoring for web and mobile [C].
+
+Per-feature status:
+- **OB-007 — BLOCKED / NOT IMPLEMENTED.** No dashboard definition/query model or dashboard renderer exists, so there is no safe target for natural-language dashboard generation. The orchestrator can classify intents and plan tasks, but it does not translate natural-language requests into validated observability dashboard specifications.
+- **OB-008 — PARTIAL ERROR LOGGING/TEST REGRESSION; ERROR TRACKING MISSING.** `src/kernel/http.ts` logs unhandled errors with request ID and route, and `src/kernel/logger.ts` redacts structured log fields. The test-quality module has visual/test regression checks, not runtime exception tracking. There is no durable error-event intake, stack normalization, grouping fingerprint, issue lifecycle, affected-release correlation, regression detection or alert workflow.
+- **OB-009 — PARTIAL PIPELINE/VERSION RECORDS ON DIVERGENT BRANCH; RELEASE HEALTH MISSING.** The preserved Build & CI branch records immutable pipeline versions and queued run statuses, but does not execute or deploy releases. The working branch has no release/deployment record tied to runtime errors/crashes. AI model versions and their serving metrics are not FORGE application release health. No per-release crash/error-rate aggregation, regression gate or release health view exists.
+- **OB-010 — BLOCKED / NOT IMPLEMENTED.** No browser/mobile RUM SDK, page-view/session sampling, Web Vitals, navigation/resource timing, crash beacon, consent/privacy controls, client-side identity boundary or ingestion pipeline exists. Server request logs and synthetic/live-testing sessions are not real-user monitoring.
+
+No functional code was changed in this batch. The existing request logs, test regression utilities and divergent pipeline version records are adjacent signals only; no error tracker or RUM endpoint was fabricated.
+
+**Next batch in document order:** OB-011–OB-014 (mobile crash and session replay, synthetic monitoring, uptime checks with SLA reports, and alert rules with routing/escalation). Verify the exact catalog page and distinguish synthetic tests from real-user telemetry.
