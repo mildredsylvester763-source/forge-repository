@@ -352,3 +352,22 @@ Per-feature status:
 No functional code was changed in this batch. DP-053/054 require owner-authorized network targets and provider integrations; DP-055/056 require a defined secret authority/key-custody boundary and break-glass policy. The useful provider-connection work remains preserved on `gpt-part2-build-ci` and was not copied as though it were a complete secrets product.
 
 **Next batch in document order:** DP-057–DP-060 (environment-variable management with diff/rollback, cost monitoring/forecasts/budgets, cost anomaly alerts, and right-sizing/idle-resource cleanup suggestions). Inspect existing config/secret references and AI cost accounting, while keeping application settings and model-cost ledgers distinct from infrastructure environment and cloud-cost management.
+
+
+### Fifteenth four-feature batch: DP-057–DP-060 — APPLICATION-LEVEL CONFIG/COST/SCALE PRIMITIVES; INFRASTRUCTURE CONTROL INCOMPLETE
+
+Exact catalog requirements (Part 02 PDF, page 7):
+- **DP-057 (FREE; Free):** Environment variable management with diff and rollback.
+- **DP-058 (PRO; Plus):** Cost monitoring, forecasts, and budgets per project and service.
+- **DP-059 (PRO; Pro):** Cost anomaly alerts.
+- **DP-060 (PRO; Pro):** Right-sizing and idle-resource cleanup suggestions.
+
+Per-feature status:
+- **DP-057 — PARTIAL ADJACENT VERSIONING; PROJECT ENVIRONMENT MANAGEMENT MISSING.** The working branch's `src/config.ts` reads process-level `FORGE_*` environment settings at service startup; it does not provide workspace/project environment-variable CRUD, encrypted value storage, masked reads, environment promotion, change diff, or rollback. The divergent Build & CI branch versions immutable pipeline definitions and can diff/rollback those definitions, but that is not environment-variable management. Provider secret references are not a general environment-variable store. No project environment mutation API was added without a workspace/environment ownership and secret-value policy.
+- **DP-058 — PARTIAL ADJACENT AI COST ACCOUNTING; CLOUD PROJECT/SERVICE COST MONITORING MISSING.** The working branch's `src/modules/ai-training/engine/cost-reproducibility-engine.ts` tracks per-training-run cost against a hard budget, and `task-budget-engine.ts` accounts time, cost and tool-call limits per task. `ai-training-service.ts` persists training-run cost entries. `test/ai-training-engines.test.ts` covers cost ledger limits and task-budget arithmetic; `test/ai-training.test.ts` covers the lifecycle and budget breach. These are model/task costs, not cloud provider invoice ingestion, project/service allocation, forecast models, or budget rollups across infrastructure.
+- **DP-059 — BLOCKED / NOT IMPLEMENTED.** No cloud-cost usage feed, project/service spend time series, seasonality/baseline model, anomaly detector, alert threshold policy, notification channel or deduplicated alert lifecycle exists. A hard per-run budget refusal is not anomaly detection and cannot be represented as a cost anomaly alert.
+- **DP-060 — PARTIAL ADJACENT MODEL-SERVING SCALE PLANNING; INFRASTRUCTURE RIGHT-SIZING/IDLE CLEANUP MISSING.** `src/modules/ai-training/engine/model-serving-engine.ts` calculates replica recommendations from request rate, latency, replica concurrency, target utilization and GPU assignment, and reduces replicas cautiously one at a time. `test/ai-training-lifecycle-engines.test.ts` covers serving scale planning and refusal cases. This is model-serving capacity planning; there is no cloud resource inventory, utilization history, idle-resource detection, projected savings, safe cleanup recommendation or provider-side cleanup operation. It does not complete DP-060.
+
+No functional code was changed in this batch. The existing configuration, AI cost ledger and model-serving scale planner are real adjacent capabilities, but rebranding them as project infrastructure controls would be inaccurate. DP-057 needs an environment/secret ownership model; DP-058/059 need a trusted cloud billing feed and allocation policy; DP-060 needs provider inventory and a safe cleanup approval boundary.
+
+**Next batch in document order:** DP-061–DP-064 (region/failover configuration, infrastructure template library, ephemeral microVM sandboxes, and runner-fleet management). Audit existing sandbox, template and runner work across the preserved branches before porting anything.
