@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { GOOD_PASSWORD, sessionCookie, setPlanForTest, startHarness, type Harness } from './helpers.ts';
+import { GOOD_PASSWORD, sessionCookie, setPlanForTest, startHarness } from './helpers.ts';
 
 const errorCode = async (res: Response): Promise<string> => {
   const body = (await res.json()) as { error: { code: string } };
