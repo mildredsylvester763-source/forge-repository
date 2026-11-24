@@ -16,6 +16,7 @@ export const statusPageMigrations: readonly Migration[] = [{
       UNIQUE(page_id, name)
     ) STRICT;
     CREATE INDEX status_page_components_order_idx ON status_page_components(page_id, position, id);
+    CREATE UNIQUE INDEX status_page_components_name_ci_idx ON status_page_components(page_id, lower(name));
     CREATE TABLE status_component_changes (
       id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES status_pages(id) ON DELETE CASCADE,
       component_id TEXT NOT NULL REFERENCES status_page_components(id) ON DELETE CASCADE,
@@ -25,5 +26,7 @@ export const statusPageMigrations: readonly Migration[] = [{
       reason TEXT NOT NULL, created_at INTEGER NOT NULL
     ) STRICT;
     CREATE INDEX status_component_changes_page_idx ON status_component_changes(page_id, created_at, id);
+    CREATE TRIGGER status_component_changes_no_update BEFORE UPDATE ON status_component_changes
+      BEGIN SELECT RAISE(ABORT, 'status component changes are append-only'); END;
   `
 }];

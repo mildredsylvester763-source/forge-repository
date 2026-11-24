@@ -24,6 +24,7 @@ export class PostgresStatusPageStore implements StatusPageStore {
       const row=current.rows[0];if(!row)return null;if(row.state===state)return componentRecord(row);
       const updated=await conn.query<ComponentRow>('UPDATE status_page_components SET state = $1, updated_at = $2 WHERE id = $3 AND page_id = $4 RETURNING *',[state,now,componentId,pageId]);
       await conn.query('INSERT INTO status_component_changes (id,page_id,component_id,actor_id,previous_state,next_state,reason,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[randomUUID(),pageId,componentId,actorId,row.state,state,reason,now]);
+      await conn.query('UPDATE status_pages SET updated_at = $1 WHERE id = $2',[now,pageId]);
       return updated.rows[0]?componentRecord(updated.rows[0]):null;
     });
   }

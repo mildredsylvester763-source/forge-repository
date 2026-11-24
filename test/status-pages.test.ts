@@ -47,3 +47,31 @@ describe('status page management (OB-052)',()=>{
     }finally{await h.close();}
   });
 });
+
+
+it('uses the SQLite store with transactional, immutable component history', async () => {
+  const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+  try {
+    const owner = await signedIn(h, 'status-sqlite@forge.test');
+    await h.app.plans.setPlan(owner.userId, 'plus');
+    const created = await h.post('/v1/status-pages', { name: 'SQLite Status', slug: 'sqlite-status' }, { cookie: owner.cookie });
+    assert.equal(created.status, 201);
+    const page = (await created.json() as { page: { id: string } }).page;
+    const componentResponse = await h.post('/v1/status-pages/components', { pageId: page.id, name: 'Worker' }, { cookie: owner.cookie });
+    assert.equal(componentResponse.status, 201);
+    const component = (await componentResponse.json() as { component: { id: string } }).component;
+    h.clock.now += 1000;
+    const changed = await h.post('/v1/status-pages/components/state', {
+      pageId: page.id, componentId: component.id, state: 'partial_outage', reason: 'Worker queue delay.',
+    }, { cookie: owner.cookie });
+    assert.equal(changed.status, 200);
+    const db = h.app.db;
+    assert.ok(db);
+    const pageRow = db.prepare('SELECT updated_at FROM status_pages WHERE id = ?').get(page.id) as { updated_at: number };
+    assert.equal(pageRow.updated_at, h.clock.now);
+    const historyRow = db.prepare('SELECT id FROM status_component_changes WHERE page_id = ?').get(page.id) as { id: string };
+    assert.throws(() => db.prepare('UPDATE status_component_changes SET reason = ? WHERE id = ?').run('tampered', historyRow.id), /append-only/);
+  } finally {
+    await h.close();
+  }
+});

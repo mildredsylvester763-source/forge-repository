@@ -32,7 +32,9 @@ export class InMemoryStatusPageStore implements StatusPageStore {
   async setComponentState(pageId: string, componentId: string, state: StatusComponentState, actorId: string, reason: string, now: number): Promise<StatusComponentRecord | null> {
     const current=this.components.get(componentId); if(!current || current.pageId!==pageId) return null; if(current.state===state) return copy(current);
     const next={...current,state,updatedAt:now}; this.components.set(componentId,next);
-    this.history.push({id:randomUUID(),pageId,componentId,actorId,previousState:current.state,nextState:state,reason,createdAt:now}); return copy(next);
+    this.history.push({id:randomUUID(),pageId,componentId,actorId,previousState:current.state,nextState:state,reason,createdAt:now});
+    const page=this.pages.get(pageId); if(page) this.pages.set(pageId,{...page,updatedAt:now});
+    return copy(next);
   }
   async listHistory(pageId: string): Promise<StatusComponentChange[]> {
     return this.history.filter((item)=>item.pageId===pageId).sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id)).map(copy);

@@ -34,6 +34,7 @@ export class SqliteStatusPageStore implements StatusPageStore {
       this.db.prepare('UPDATE status_page_components SET state = ?, updated_at = ? WHERE id = ? AND page_id = ?').run(state,now,componentId,pageId);
       this.db.prepare('INSERT INTO status_component_changes (id,page_id,component_id,actor_id,previous_state,next_state,reason,created_at) VALUES (?,?,?,?,?,?,?,?)')
         .run(randomUUID(),pageId,componentId,actorId,r.state,state,reason,now);
+      this.db.prepare('UPDATE status_pages SET updated_at = ? WHERE id = ?').run(now,pageId);
       return componentRecord({...r,state,updated_at:now});
     });
   }

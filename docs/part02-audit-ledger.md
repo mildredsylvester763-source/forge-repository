@@ -801,3 +801,5 @@ Files updated: src/app.ts, src/main.ts, src/modules/plans/engine/route-gates.ts,
 
 
 OB-052 verification note: the first CI attempt for commit 88575881 failed during TypeScript typecheck because three new classes used constructor parameter properties, which the repository's erasableSyntaxOnly compiler setting forbids. No tests ran in that attempt. The constructor declarations have been rewritten as explicit fields/assignments in the corrective commit; the feature remains unverified until the next full CI run passes.
+
+OB-052 follow-up verification: commit 88df054 passed TypeScript typecheck. Its full test run exposed one stale route-registry assertion (the route map correctly grew from 295 to 300 after adding five OB-052 management paths); both new status-page route tests passed. The next correction updates the pinned route count and expands durable-adapter coverage, adds case-insensitive component-name uniqueness, keeps the page timestamp current on component changes, and prevents in-place mutation of component history while allowing account-deletion cascades.
