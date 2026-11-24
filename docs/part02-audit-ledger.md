@@ -411,3 +411,28 @@ Per-feature status:
 No functional code was changed in this batch. DP-065 remains internal-only as the catalog requires; DP-066/067/068 depend on an actual isolated runner execution boundary before network, resource and cache guarantees can be enforced. The divergent Build & CI branch is preserved and was not merged wholesale.
 
 **Next batch in document order:** DP-069–DP-072 (browser-based remote development environments, sandbox snapshots, internal-only untrusted-code isolation, and runner location choice). DP-071 is also explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal and do not expose it as a customer feature.
+
+
+### Eighteenth four-feature batch: DP-069–DP-072 — REMOTE DEVELOPMENT AND SNAPSHOTS MISSING; INTERNAL SANDBOX PRECHECK MADE EXPLICIT
+
+Exact catalog requirements (Part 02 PDF, page 8):
+- **DP-069 (PRO; Plus):** Remote development environments in the browser.
+- **DP-070 (PRO; Pro):** Sandbox snapshots: save and restore a running state.
+- **DP-071 (FREE not sold; Internal):** Untrusted-code isolation for marketplace plugins and agents. Catalog explicitly says **Not sold (internal)**.
+- **DP-072 (ENTERPRISE; Enterprise):** Runner location choice, including near users.
+
+Per-feature status:
+- **DP-069 — BLOCKED / NOT IMPLEMENTED.** No browser-hosted IDE/terminal, remote workspace provisioner, persistent development filesystem, browser session lifecycle, workspace collaboration or remote development host exists. Build & CI pipeline templates and the browser-facing HTTP API are not remote development environments.
+- **DP-070 — PARTIAL ADJACENT LOGICAL REPLAY; LIVE SANDBOX SNAPSHOTS MISSING.** `src/modules/task-runtime/engine/task-history.ts` stores a contiguous append-only task event journal and can replay logical task/step/gate state to a sequence number; the task-runtime service persists that journal. This does not snapshot a running VM/container, process memory, open files, filesystem layers or network state, and cannot restore a running sandbox. No snapshot provider, image/delta store, consistency barrier or restore lifecycle exists.
+- **DP-071 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; RUNTIME ISOLATION NOT IMPLEMENTED.** `src/modules/plans/engine/part02-feature-gates.ts` maps DP-071 to `internal`, and `feature-gates.ts` states internal rows are Forge machinery, never sold and never enforced as customer plan gates. Preserve that treatment. The existing `src/modules/orchestrator/engine/execution-sandbox.ts` is a pure policy preflight (tool allowlist, command denylist, path and egress checks); it does not launch or isolate untrusted code. To prevent the API from implying otherwise, the verdict now explicitly returns `enforcement: 'preflight-only'`, and the module comment states that a trusted OS/VM runtime must enforce the restrictions. This is a safety-transparency correction, **not** microVM/container isolation or completion of DP-071.
+- **DP-072 — BLOCKED / NOT IMPLEMENTED.** No runner fleet, region/zone inventory, placement scheduler, location affinity, user-latency measurement, residency policy or cross-region runner failover exists. The model-serving GPU planner and PostgreSQL TLS setting do not select runner locations.
+
+Functional safety change in this batch:
+- `src/modules/orchestrator/engine/execution-sandbox.ts`: every success and refusal now labels the result `enforcement: 'preflight-only'`; documentation explicitly disclaims process/VM/filesystem/network enforcement.
+- `test/orchestrator-engines.test.ts` and `test/orchestrator.test.ts`: assert the preflight-only marker for engine verdicts and the HTTP response.
+- Commits: `32079ccb5ff36c987055edd47c0e588f2585a93b`, `6772450ecf7ae3901e3d567504ad4fc648a538c5`, `5375a7baca2b91862ad2b7368ffe4a9333dd98ea`.
+- Verification: the three files were re-fetched from `forge-part02-audit` and the marker/comment/test assertions were confirmed present. GitHub's combined-status query for `5375a7b` returned no status checks; **the code change is committed but CI/typecheck/full tests remain unverified**. The last CI-verified checkpoint is still the earlier run recorded at the top of this ledger.
+
+No sandbox execution backend, browser development host or runner placement mechanism was fabricated.
+
+**Next batch in document order:** DP-073–DP-076. DP-073 is explicitly **FREE (not sold), Internal, Not sold (internal)** and must remain internal-only. DP-074 is spot/preemptible capacity with retries; inspect the continuation on the next catalog page before implementation, along with DP-075/076 exact wording.
