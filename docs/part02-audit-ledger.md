@@ -493,3 +493,22 @@ Per-feature status:
 No functional code was changed in this batch. The workspace branch was inspected and preserved; it was not merged because it is divergent and lacks route/app integration and end-to-end tenant isolation. DP-082/084 require an approved deployment topology and provider boundary; DP-081/083 remain internal-only.
 
 **Next batch in document order:** DP-085–DP-088 (on-prem installs via Helm/installer packages, air-gapped installs with offline update bundles, on-prem license/entitlement checks, and self-hosted telemetry controls). Inspect the existing license/entitlement and telemetry code, but do not equate ordinary SaaS billing or application logs with offline on-prem licensing/telemetry controls.
+
+
+### Twenty-second four-feature batch: DP-085–DP-088 — INSTALLER/ON-PREM DISTRIBUTION MISSING; OFFLINE, LICENSE AND TELEMETRY PRIMITIVES PARTIAL
+
+Exact catalog requirements (Part 02 PDF, page 10):
+- **DP-085 (ENTERPRISE; Enterprise):** On-prem installs via Helm and installer packages.
+- **DP-086 (ENTERPRISE; Enterprise):** Air-gapped installs with offline update bundles.
+- **DP-087 (ENTERPRISE; Enterprise):** License management and entitlement checks for on-prem.
+- **DP-088 (ENTERPRISE; Enterprise):** Telemetry controls for self-hosted installs [C].
+
+Per-feature status:
+- **DP-085 — BLOCKED / NOT IMPLEMENTED.** The working branch has Node build/start scripts and SQLite/PostgreSQL adapters, but no Dockerfile, Helm chart, installer package, cluster bootstrap, configuration/secret provisioning, health-gated upgrade or uninstall lifecycle. No self-hosted deployment topology is declared. `npm run build && npm start` is a developer/server start path, not Helm or an on-prem installer.
+- **DP-086 — PARTIAL ADJACENT OFFLINE CAPABILITIES; SOFTWARE UPDATE BUNDLES MISSING.** `src/modules/ai-training/engine/model-serving-engine.ts` can describe on-device model bundles for llama.cpp/CoreML/ONNX/TFLite/WebGPU, and `src/kernel/offline-sync.ts` plus `src/modules/offline-sync/routes.ts` handle owner-scoped offline data synchronization. Neither creates signed FORGE application release bundles with a complete dependency manifest, version compatibility, signature verification, air-gapped transfer/import, staged apply and rollback. Model bundles and data-sync operations are not on-prem software updates.
+- **DP-087 — PARTIAL ADJACENT SAAS ENTITLEMENT; ON-PREM LICENSE MANAGEMENT MISSING.** The working branch has central `canUse` plan gates, subscription-item entitlements and HMAC-signed access snapshots with expiry/user binding. These remain tied to the hosted billing/entitlement service and live server-state checks. There is no signed on-prem license artifact, offline signature verification lifecycle, installation/node binding, activation/renewal, grace period, revocation list, seat/instance count or license administration workflow. The existing access snapshot is not a full on-prem license system.
+- **DP-088 — PARTIAL LOG HYGIENE; SELF-HOSTED TELEMETRY CONTROLS MISSING.** `src/kernel/logger.ts` redacts credential-like fields and `FORGE_LOG_LEVEL` controls application log verbosity. The append-only event chain is an audit record, not product telemetry. No self-hosted telemetry enable/disable policy, outbound endpoint selection, sampling/retention controls, payload minimization, tenant/site identity, consent record or verifiable no-egress mode exists. No telemetry was silently enabled or fabricated.
+
+No functional code was changed in this batch. DP-085 needs an agreed supported deployment matrix; DP-086 needs a signed release/bundle format; DP-087 needs license issuance, binding and revocation policy; DP-088 needs a documented telemetry data contract and self-hosted privacy controls.
+
+**Next batch in document order:** DP-089–DP-092 (whole-install backup/restore, internal-only active-active multi-region FORGE, internal-only public FORGE status page, and plugin/agent upgrade compatibility checker). DP-090 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal.
