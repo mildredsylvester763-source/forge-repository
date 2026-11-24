@@ -436,3 +436,22 @@ Functional safety change in this batch:
 No sandbox execution backend, browser development host or runner placement mechanism was fabricated.
 
 **Next batch in document order:** DP-073–DP-076. DP-073 is explicitly **FREE (not sold), Internal, Not sold (internal)** and must remain internal-only. DP-074 is spot/preemptible capacity with retries; inspect the continuation on the next catalog page before implementation, along with DP-075/076 exact wording.
+
+
+### Nineteenth four-feature batch: DP-073–DP-076 — THREE INTERNAL-ONLY FEATURES; GITHUB REPOSITORY MIGRATION MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 8–9):
+- **DP-073 (FREE not sold; Internal):** Compute metering for billing. Catalog explicitly says **Not sold (internal)**.
+- **DP-074 (FREE not sold; Internal):** Spot and preemptible capacity with safe retry. Catalog explicitly says **Not sold (internal)**.
+- **DP-075 (FREE not sold; Internal):** FORGE hosts FORGE: its own repo, builds, and deploys run inside FORGE. Catalog explicitly says **Not sold (internal)**.
+- **DP-076 (FREE; Free):** Migration assistant: import repos with full history, branches, tags, issues, and PRs from GitHub.
+
+Per-feature status:
+- **DP-073 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; COMPLETE COMPUTE METERING NOT PRESENT.** `part02-feature-gates.ts` maps DP-073 to `internal`; the registry law keeps internal rows out of customer plan enforcement. Existing per-training-run cost entries and per-task cost budgets are adjacent accounting primitives, but there is no trusted runner/compute usage meter that attributes CPU/GPU/memory/time consumption to billable jobs. Keep the feature internal and do not expose a customer entitlement.
+- **DP-074 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; SPOT/PREEMPTIBLE EXECUTION MISSING.** DP-074 is in the internal gate range. No cloud spot/preemptible capacity provider, interruption signal handler, checkpoint-aware retry policy, idempotent requeue or capacity substitution exists. The preserved Build & CI worker does not execute pipeline tasks, so its webhook/schedule retry behavior is not safe retry of preempted compute.
+- **DP-075 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; SELF-HOSTING FORGE ON FORGE MISSING.** DP-075 is in the internal gate range. This repository's verified build/test evidence is from GitHub Actions; the working branch has no self-hosted runner fleet or internal deployment pipeline that builds and deploys FORGE itself. The divergent Build & CI branch still has no task executor. Do not claim self-hosting from GitHub Actions CI or from a pipeline-definition module.
+- **DP-076 — BLOCKED / NOT IMPLEMENTED.** No GitHub repository migration workflow was found that clones/imports full Git history, branches and tags, then imports issues and pull requests with identity/state/timestamp mapping and reconciliation. The preserved Build & CI branch has GitHub/GitLab webhook ingress and workspace-scoped provider connections, but those are event triggers and trust bindings, not a migration assistant. No GitHub App/API import authorization, repository transfer plan, history-preserving clone worker, issue/PR mapping, resumable checkpoint or post-import verification exists. The required full-history and issue/PR scope cannot be met by a shallow workspace search or webhook subscription.
+
+No functional code was changed in this batch. DP-073–DP-075 remain Forge-internal and not sold, as the catalog requires; DP-076 needs an authorized GitHub App/API migration contract and a resumable import/reconciliation workflow before it can be implemented honestly.
+
+**Next batch in document order:** DP-077–DP-080 (GitLab/Bitbucket import, GitHub↔FORGE mirror mode, verified cutover checklist, and internal-only FORGE upgrade pipeline). DP-080 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal.
