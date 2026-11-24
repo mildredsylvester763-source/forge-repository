@@ -550,3 +550,22 @@ Per-feature status:
 No functional code was changed in this batch. DP-093/094 remain internal-only. OB-001/002 have useful health/event correlation primitives, but the full monitoring and tracing data paths are absent; no fake metrics or spans were added.
 
 **Next batch in document order:** OB-003–OB-006 (log aggregation with fast search, auto-instrumentation and structured logging helpers, custom/infrastructure/business metrics, and dashboard builder with templates).
+
+
+### Twenty-fifth four-feature batch: OB-003–OB-006 — STRUCTURED LOGGING/EVENT HISTORY PARTIAL; AGGREGATION, GENERAL METRICS AND DASHBOARDS MISSING
+
+Exact catalog requirements (Part 02 PDF, page 11):
+- **OB-003 (FREE; Free):** Log aggregation with fast search.
+- **OB-004 (FREE; Free):** Auto-instrumentation and structured logging helpers.
+- **OB-005 (FREE; Free):** Metrics: custom, infrastructure, business.
+- **OB-006 (FREE; Free):** Dashboard builder with templates.
+
+Per-feature status:
+- **OB-003 — PARTIAL LOG SOURCES; AGGREGATION/SEARCH MISSING.** `src/kernel/logger.ts` emits structured JSON records through a configurable sink, and `src/kernel/events.ts` stores an append-only hash-chained event stream with bounded sequence reads. There is no multi-process log collector, indexed log store, query/filter/search API, time/field index, retention/partition policy or fast-search UI. The audit event chain is not a searchable application log aggregator.
+- **OB-004 — PARTIAL STRUCTURED LOGGER; AUTO-INSTRUMENTATION MISSING.** The logger supports child context and redacts sensitive-looking fields before output. The HTTP kernel dispatches routes but does not automatically create request/dependency spans, capture route latency/status/error metrics, propagate trace context or instrument database/provider calls. Explicit event emission and manually supplied logger fields are not automatic instrumentation.
+- **OB-005 — PARTIAL DOMAIN METRICS; GENERAL CUSTOM/INFRASTRUCTURE/BUSINESS METRICS MISSING.** The AI model-serving lifecycle has domain-specific request, latency, success/error, token and cost aggregation, with engine tests. No general metric registry, custom metric ingestion, host/container/DB infrastructure collectors, business metric definitions, label cardinality controls, aggregation windows or metrics exporter exists.
+- **OB-006 — BLOCKED / NOT IMPLEMENTED.** No dashboard definition/store, reusable dashboard templates, widget/query model, permission-scoped data source, dashboard renderer or dashboard lifecycle routes exist. Health endpoints and static test reports are not a dashboard builder.
+
+No functional code was changed in this batch. The logger and event store are useful primitives, but implementing aggregation, automatic instrumentation, general metrics and dashboards requires a coherent telemetry pipeline and data-retention/authorization model; no in-memory-only dashboard placeholder was added.
+
+**Next batch in document order:** OB-007–OB-010 (natural-language dashboard creation, error tracking with grouping/regression detection, release health by version, and real-user monitoring for web/mobile [C]).
