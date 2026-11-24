@@ -721,3 +721,22 @@ Per-feature status:
 No functional code was changed in this batch. Request duration and model-serving latency are narrower application metrics; they do not justify claims of continuous profiling, database insights, frontend monitoring or CDN analytics.
 
 **Next batch in document order:** OB-039–OB-042 (Forge-internal creative-tool telemetry; OpenTelemetry support in/out; incident declaration; severity levels and response playbooks). OB-039 is explicitly **FREE (not sold), Internal, Not sold (internal)** and must remain Forge-internal.
+
+
+### Thirty-fourth four-feature batch: OB-039–OB-042 — INTERNAL CREATIVE TELEMETRY; OTEL AND INCIDENT MANAGEMENT MISSING
+
+Exact catalog requirements (Part 02 PDF, page 14):
+- **OB-039 (FREE not sold; Internal):** Creative tool telemetry: render times, export failures, GPU use [C]. Catalog explicitly says **Not sold (internal)**.
+- **OB-040 (PRO; Plus):** OpenTelemetry support in and out.
+- **OB-041 (FREE; Free):** Incident declaration, manual and automatic.
+- **OB-042 (PRO; Plus):** Severity levels and response playbooks.
+
+Per-feature status:
+- **OB-039 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; CREATIVE TELEMETRY NOT IMPLEMENTED.** OB-039 is in the internal gate range. No creative-render/export module, render job lifecycle, GPU telemetry collector or creative-tool failure event stream exists in the working branch. Preserve it as internal-only; do not expose a customer route.
+- **OB-040 — BLOCKED / NOT IMPLEMENTED.** No OpenTelemetry SDK/provider, OTLP receiver/exporter, trace/span context propagation, metrics/logs bridge, sampling configuration or collector endpoint exists. Request IDs, event correlation IDs and structured logs are not OpenTelemetry support in or out.
+- **OB-041 — BLOCKED / NOT IMPLEMENTED.** No incident entity/store, declaration endpoint, automatic incident trigger, status transition lifecycle, acknowledgement, mitigation/resolution timestamp or incident audit timeline exists. `/healthz`, `/readyz`, event logs and outbox dead letters are inputs that could feed incidents later; they are not incident declarations.
+- **OB-042 — BLOCKED / NOT IMPLEMENTED.** No severity taxonomy, impact/scope model, escalation timer, responder assignment, response playbook catalog, action checklist, approval boundary or severity-change audit exists. Error codes and plan tiers are not incident severity levels.
+
+No functional code was changed in this batch. The repository has useful health, event and outbox primitives, but no incident management state machine or OpenTelemetry data path. No synthetic incidents or severity policies were invented.
+
+**Next batch in document order:** OB-043–OB-046 (war room with live channel/timeline/roles/evidence, incident agent with ranked hypotheses, unified logs/metrics/traces/deploy timeline, and postmortems with follow-up tasks).
