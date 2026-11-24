@@ -126,3 +126,26 @@ Exact catalog requirements (Part 02 PDF, page 3):
 **Verification:** Initial run [45348330363](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45348330363) passed typecheck but exposed a stale route-inventory assertion (expected 294; actual 295 after adding DP-015). Commit `b6ec86b` updated the expected count and explicitly pinned the DP-015 route. Follow-up run [45348651252](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45348651252) passed typecheck and all tests: 989 tests, 988 passed, 0 failed, 1 skipped.
 
 **Next batch in document order:** DP-017–DP-020. Continue only after this batch's code and audit ledger have a recorded CI result.
+
+
+### Fifth four-feature batch: DP-017–DP-020 — DEPLOYMENT INTEGRATION BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 4):
+- **DP-017 (FREE):** Deployment diff — what changed in code, config, infrastructure and data.
+- **DP-018 (Plus):** Automatic live verification after rollout.
+- **DP-019 (FREE):** Deploy from mobile with biometric confirmation.
+- **DP-020 (FREE):** Deployment history with full audit and revert.
+
+The existing modules provide useful adjacent primitives, but none is wired to a deployment lifecycle:
+
+- **DP-017 — PARTIAL ADJACENT PRIMITIVE; NOT IMPLEMENTED.** The preserved `gpt-part2-build-ci` branch has `src/modules/build-ci/changed-files.ts`, a bounded GitHub/GitLab pull-request file-list resolver. It returns changed paths and explicitly marks provider-limited or incomplete results. That is not a deployment diff: it does not compare release artifacts, classify code/config/infrastructure/data changes, or connect changes to a deployment target. The module is not copied or merged into this branch; preserve it for a later selective integration.
+- **DP-018 — BLOCKED.** The current branch has a durable `LiveTestingService` and test-session lifecycle, but there is no rollout-complete event, deployment provider, or automatic handoff from a successful release to a live-verification run. A manually created test session is not automatic post-rollout verification.
+- **DP-019 — PARTIAL SECURITY PRIMITIVE; NOT IMPLEMENTED.** Existing passkey authentication requests WebAuthn `userVerification: required`, which is appropriate for a device user-verification ceremony. However, no deployment action-bound challenge, one-time deploy authorization, mobile deployment UI, or deployment provider is wired. A normal sign-in passkey assertion is not proof that a specific deployment was confirmed.
+- **DP-020 — PARTIAL ADJACENT PRIMITIVES; NOT IMPLEMENTED.** The main branch has an append-only event store. The preserved `gpt-part2-build-ci` branch has immutable pipeline-definition versions and pipeline rollback, but those are Build & CI configuration versions, not deployment release records or artifact/environment rollback history. No deployment event model or release revert actuator exists on `forge-part02-audit`.
+
+All four remain blocked for end-to-end delivery by the missing authorized deployment provider/target and release lifecycle. DP-017 also needs a complete source/artifact/infrastructure/data diff contract; DP-018 needs trusted rollout signals and live-test orchestration; DP-019 needs action-bound step-up authorization and a mobile client; DP-020 needs immutable deployment release records and a provider-backed revert operation. No simulated deployment status, fake biometric assertion, or fake rollback was added.
+
+**Cross-branch preservation:** `gpt-part2-build-ci` remains untouched at `43436fd`. Its changed-file resolver and pipeline-version history are recorded as future integration candidates only; no wholesale merge was performed.
+
+**Next batch in document order:** DP-021–DP-024. Inspect the preserved Build & CI branch for artifact-registry, signing, SBOM and provenance work before implementing anything.
+
