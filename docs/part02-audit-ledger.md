@@ -474,3 +474,22 @@ Per-feature status:
 No functional code was changed in this batch. GitLab/GitHub event ingress is useful adjacent work but does not satisfy repository import, bidirectional mirror or safe cutover. Those features require provider API authorization, a history-preserving Git transfer engine, reconciliation semantics and a verified cutover/rollback process. DP-080 remains internal-only.
 
 **Next batch in document order:** DP-081–DP-084. DP-081 is explicitly **FREE (not sold), Internal, Not sold (internal)**; DP-083 is also explicitly **FREE (not sold), Internal, Not sold (internal)**. Preserve both as Forge-internal. DP-082 is the customer-facing Enterprise bootstrap installer; verify exact page text and inspect installation/migration tooling before implementation.
+
+
+### Twenty-first four-feature batch: DP-081–DP-084 — INTERNAL SELF-UPDATE/MULTI-TENANCY; BOOTSTRAP AND DEDICATED STACKS MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 9–10):
+- **DP-081 (FREE not sold; Internal):** Self-update with automatic rollback.
+- **DP-082 (ENTERPRISE; Enterprise):** Bootstrap installer: bring up a fresh FORGE from nothing.
+- **DP-083 (FREE not sold; Internal):** SaaS multi-tenant mode.
+- **DP-084 (ENTERPRISE; Enterprise):** Dedicated single-tenant stacks.
+
+Per-feature status:
+- **DP-081 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; SELF-UPDATE NOT IMPLEMENTED.** DP-081 is in the internal gate range. No self-update agent, signed release manifest, staged upgrade, health gate, migration compatibility check or automatic rollback controller exists. GitHub Actions CI verifies code; it does not self-update a running FORGE installation. Preserve the feature as internal-only.
+- **DP-082 — BLOCKED / NOT IMPLEMENTED.** The working branch has a Node backend with `npm run build/start`, database migrations and backup/restore CLI primitives, but no Dockerfile, Compose deployment, Helm chart, installer/bootstrap script, infrastructure provisioning plan, secrets bootstrap or first-admin setup workflow was found. A package start command is not a bootstrap installer. No cloud account or target topology is available to provision a fresh production installation.
+- **DP-083 — INTERNAL-ONLY; UNINTEGRATED WORKSPACE FOUNDATION ON DIVERGENT BRANCH, NOT SAAS TENANCY.** DP-083 is in the internal gate range. The preserved `plan-hooks-foundation` branch contains `src/modules/workspaces/` with workspace/member records, SQLite/PostgreSQL stores, migrations and a service, and the `gpt-part2-build-ci` branch has a separate workspace-membership reader for pipeline authorization. However, the workspaces module has no `routes.ts` and is not wired into that branch's `src/app.ts`; the current `forge-part02-audit` app also does not compose it. Neither branch establishes tenant context across all module queries, per-tenant data isolation, tenant lifecycle/provisioning, quotas, tenant billing or cross-tenant access tests. This is partial, unintegrated workspace groundwork—not SaaS multi-tenant mode. Keep DP-083 internal-only and do not expose a customer entitlement.
+- **DP-084 — BLOCKED / NOT IMPLEMENTED.** No tenant-specific infrastructure stack provisioner, isolated database/cache/object store, per-tenant network boundary, deployment lifecycle, health/upgrade orchestration or dedicated-stack billing exists. A workspace with `workspaceType: 'enterprise'` on the divergent workspace branch is a metadata classification, not a dedicated single-tenant deployment.
+
+No functional code was changed in this batch. The workspace branch was inspected and preserved; it was not merged because it is divergent and lacks route/app integration and end-to-end tenant isolation. DP-082/084 require an approved deployment topology and provider boundary; DP-081/083 remain internal-only.
+
+**Next batch in document order:** DP-085–DP-088 (on-prem installs via Helm/installer packages, air-gapped installs with offline update bundles, on-prem license/entitlement checks, and self-hosted telemetry controls). Inspect the existing license/entitlement and telemetry code, but do not equate ordinary SaaS billing or application logs with offline on-prem licensing/telemetry controls.
