@@ -645,3 +645,22 @@ Per-feature status:
 No functional code was changed in this batch. Existing AI-specific metric, trend, scale and cost primitives are useful but too narrow to represent general observability or cloud-finance capabilities. No synthetic baselines, forecasts, release-performance values or team cost allocations were invented.
 
 **Next batch in document order:** OB-023–OB-026. Read the exact next-page feature names and plan assignments before auditing.
+
+
+### Thirtieth four-feature batch: OB-023–OB-026 — SOURCE SECURITY, AUDIT AND DATA/MODEL QUALITY PRIMITIVES PARTIAL
+
+Exact catalog requirements (Part 02 PDF, page 13):
+- **OB-023 (PRO; Pro):** Security monitoring and detection rules.
+- **OB-024 (ENTERPRISE; Enterprise):** Compliance monitoring and evidence collection.
+- **OB-025 (PRO; Pro):** Data-quality monitoring.
+- **OB-026 (FREE not sold; Internal):** Model monitoring: drift, latency, quality, cost. Catalog explicitly says **Not sold (internal)**.
+
+Per-feature status:
+- **OB-023 — PARTIAL SOURCE SCANNING; RUNTIME SECURITY MONITORING MISSING.** The preserved Build & CI branch has `src/modules/security/secrets.ts` and `policy.ts` for secret-pattern and dependency-policy scanning, with redacted findings and configurable source-policy rules. This scans repository content; it does not collect runtime security telemetry, detect suspicious user/service behavior, evaluate a general detection-rule stream, correlate incidents or route alerts. The module is on a divergent branch and is not integrated into `forge-part02-audit`.
+- **OB-024 — PARTIAL AUDIT/CONSENT EVIDENCE; COMPLIANCE CONTROL MONITORING MISSING.** The working branch has actor/subject-attributed hash-chained events, identity/plans audit events, and a durable consent grant/revoke ledger in training-data. These are valuable evidence sources. There is no control framework mapping, evidence request/schedule, policy evaluation, retention/attestation workflow, regulatory control coverage, evidence export package or compliance status report.
+- **OB-025 — PARTIAL INGESTION QUALITY/PROVENANCE; CONTINUOUS DATA-QUALITY MONITORING MISSING.** Training-data admission records rights, source-terms, consent, license and quality scores; the AI-training data path enforces classification/consent gates and stores dataset snapshots/quality values. This provides admission-time checks and provenance, not ongoing quality monitors for freshness, completeness, schema drift, duplicate rates, distribution shifts, lineage breakage or alerting across data pipelines.
+- **OB-026 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; MODEL MONITORING PARTIAL.** `part02-feature-gates.ts` maps OB-026 to `internal`; preserve it outside customer plan entitlements. The AI-training module already records model-serving latency/throughput/cost metrics (including p50/p95/p99), eval scores and trend samples, and can report degraded trend buckets. It does not yet provide a complete input/data drift detector with explainable baselines and a unified monitor lifecycle across drift, latency, quality and cost. Keep this Forge-internal and do not expose it as a customer feature.
+
+No functional code was changed in this batch. Existing source scanners, audit/consent ledgers, dataset admission checks and model-serving metrics are useful primitives, but none was promoted to a complete monitoring product without the missing continuous collection, policy and alert paths.
+
+**Next batch in document order:** OB-027–OB-030 (agent-action monitoring/anomaly detection; trace-to-code navigation; deployment markers on charts; and one query language across logs, metrics and traces).
