@@ -182,7 +182,10 @@ describe('ai-training tuning, distillation and experiment tracking (AI-015/016/0
       const s2 = await advance({ studentAccuracy: 0.85 });
       assert.deepEqual({ stage: s2.stage, verdict: s2.verdict }, { stage: 'evaluate', verdict: 'accepted' });
       const s3 = await advance();
-      assert.deepEqual({ stage: s3.stage, complete: s3.complete, verdict: s3.verdict }, { stage: 'register', complete: true, verdict: 'accepted' });
+      assert.equal(s3.stage, 'register');
+      assert.equal(s3.complete, true);
+      // the verdict is returned on the advance into evaluate; the register advance carries null
+      assert.equal(s3.verdict, null);
       const status = await h.post('/v1/ai-training/distill/status', { planId: 'distill-1' }, { cookie });
       assert.equal(((await status.json()) as { verdict: string }).verdict, 'accepted');
     } finally {
