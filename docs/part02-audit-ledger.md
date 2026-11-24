@@ -266,3 +266,23 @@ The required prerequisites are owner-authorized cloud accounts/roles, a secret-m
 
 **Next batch in document order:** DP-041–DP-044. Continue in order; reuse these recorded infrastructure prerequisites only where the next exact requirements depend on them.
 
+
+
+### Eleventh four-feature batch: DP-041–DP-044 — SERVERLESS / CONTAINER / PREDICTIVE SCALE / GPU POOL PARTIALS
+
+Exact catalog requirements (Part 02 PDF, page 6):
+- **DP-041 (Plus):** Serverless functions: deploy, version, trace.
+- **DP-042 (FREE):** Container builds with image optimization.
+- **DP-043 (Pro):** Autoscaling policies with predictive scaling.
+- **DP-044 (Pro):** GPU pool management for AI and render jobs.
+
+Per-feature status:
+- **DP-041 — BLOCKED.** No serverless function deployment target, function artifact/version store, invocation gateway or distributed tracing integration exists. AI model serving is not a serverless function deployment platform.
+- **DP-042 — BLOCKED.** No container build executor, Docker/BuildKit adapter, image optimizer or image registry exists. The preserved Build & CI branch queues pipeline runs but does not execute pipeline tasks or build container images.
+- **DP-043 — PARTIAL ADJACENT IMPLEMENTATION; PREDICTIVE REQUIREMENT MISSING.** Existing `src/modules/ai-training/engine/model-serving-engine.ts` implements reactive serving scale planning using Little's law and current `requestsPerSecond`/latency inputs. It does not forecast future demand or create a persistent autoscaling policy/controller. `recordServingMetrics` stores caller-supplied aggregate samples, but it does not record a trusted request-rate time series or forecast. Evidence: `test/ai-training-lifecycle-engines.test.ts` and `test/ai-training-lifecycle.test.ts` cover reactive scale planning and refusal paths. This does not satisfy predictive scaling.
+- **DP-044 — PARTIAL ADJACENT IMPLEMENTATION; SHARED AI/RENDER POOL MISSING.** Existing `planServingScale` assigns model-serving replicas across a caller-supplied GPU list. `reserveSlots` persists per-user/model reservations, but `poolTotal` and `reservedByOthers` are caller-supplied rather than read from a trusted global inventory; reservations are not shared across tenants or render jobs. No authoritative GPU inventory, scheduler, health telemetry or render-job integration exists. Evidence: `src/modules/ai-training/ai-training-service.ts`, `src/modules/ai-training/ai-training-store.ts`, `src/modules/ai-training/engine/model-serving-engine.ts`, and the lifecycle tests. This is not production GPU-pool management.
+
+No fake serverless deploy, container build, predicted traffic curve or authoritative GPU capacity was added. DP-043 requires trusted telemetry with time windows and an owner-approved forecast horizon/scale policy; DP-044 requires a shared inventory/allocator and a render-job consumer with authorized resource ownership.
+
+**Next batch in document order:** DP-045–DP-048. Audit existing job queues/schedulers and the current database migration framework; DP-048 may have a reusable migration foundation, but preview/rollback must be verified separately.
+
