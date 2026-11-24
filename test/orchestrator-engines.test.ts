@@ -423,9 +423,11 @@ describe('orchestrator engine: tool registry (AI-077)', () => {
 describe('orchestrator engine: execution sandbox (AI-078)', () => {
   it('runs pinned sandbox checks and refuses by name', () => {
     const sb1 = runSandboxed({ tool: 'fs-write', timeout: 60, fileWrites: ['/workspace/a.txt'] });
+    assert.equal(sb1.enforcement, 'preflight-only');
     assert.ok(sb1.ok === true && sb1.tool === 'fs-write' && sb1.timeout === 60);
     assert.deepEqual(sb1.restrictions, ['workspace-only-fs', 'no-network', 'timeout-60s']);
     const sb2 = runSandboxed({ tool: 'web-fetch', egress: { host: 'api.example.com' }, egressAllowlist: ['api.example.com'] });
+    assert.equal(sb2.enforcement, 'preflight-only');
     assert.ok(sb2.ok === true);
     assert.equal(sb2.restrictions![3], 'egress:api.example.com');
     assert.equal(runSandboxed({ tool: 'fs-read' }).timeout, 30);
@@ -486,9 +488,9 @@ describe('orchestrator engine: execution sandbox (AI-078)', () => {
       }
       const v = runSandboxed(input);
       if (expected !== null) {
-        assert.ok(v.ok === false && v.reason === expected, 'case ' + c + ': expected ' + expected + ' got ' + String(v.reason));
+        assert.ok(v.enforcement === 'preflight-only' && v.ok === false && v.reason === expected, 'case ' + c + ': expected ' + expected + ' got ' + String(v.reason));
       } else {
-        assert.ok(v.ok === true && v.tool === tool && v.timeout === timeout, 'case ' + c);
+        assert.ok(v.enforcement === 'preflight-only' && v.ok === true && v.tool === tool && v.timeout === timeout, 'case ' + c);
         const oRestr = ['workspace-only-fs', 'no-network', 'timeout-' + timeout + 's'];
         const egress = input.egress as { host: string } | undefined;
         if (egress !== undefined) oRestr.push('egress:' + egress.host);
