@@ -151,6 +151,7 @@ import {
   type PlanStore,
 } from './modules/plans/index.ts';
 
+import { StatusPageService, InMemoryStatusPageStore, PostgresStatusPageStore, SqliteStatusPageStore, statusPageMigrations, statusPageRoutes, type StatusPageStore } from './modules/status-pages/index.ts';
 import { offlineSyncRoutes } from './modules/offline-sync/index.ts';
 import { deploymentRoutes } from './modules/deployments/index.ts';
 
@@ -179,6 +180,7 @@ export interface ForgeApp {
   searchIntegrity: SearchIntegrityService;
   aiTraining: AiTrainingService;
   trainingData: TrainingDataService;
+  statusPages: StatusPageService;
   plans: PlansService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
@@ -206,6 +208,7 @@ interface Storage {
   searchIntegrity: SearchIntegrityStore;
   aiTraining: AiTrainingStore;
   trainingData: TrainingDataStore;
+  statusPages: StatusPageStore;
   userPlans: PlanStore;
   billing: BillingStore;
   offlineSync: OfflineSyncStore;
@@ -235,11 +238,12 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const searchIntegrity = new PostgresSearchIntegrityStore(pool);
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
+    const statusPages = new PostgresStatusPageStore(pool);
     const userPlans = new PostgresPlanStore(pool, events);
     const billing = new PostgresBillingStore(pool, events);
     const offlineSync = new PostgresOfflineSyncStore(pool);
     const rateLimitStore = new PostgresRateLimitStore(pool);
-    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -256,6 +260,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'search_integrity', searchIntegrityMigrations);
     migrate(db, 'ai_training', aiTrainingMigrations);
     migrate(db, 'training_data', trainingDataMigrations);
+    migrate(db, 'status_pages', statusPageMigrations);
     migrate(db, 'plans', plansMigrations);
     const outbox = new SqliteOutboxStore(db);
     const events = new SqliteEventStore({ db, clock, logger, outbox });
@@ -272,11 +277,12 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const searchIntegrity = new SqliteSearchIntegrityStore(db);
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
+    const statusPages = new SqliteStatusPageStore(db);
     const userPlans = new SqlitePlanStore(db, events);
     const billing = new SqliteBillingStore(db, events);
     const offlineSync = new SqliteOfflineSyncStore(db);
     const rateLimitStore = new SqliteRateLimitStore(db);
-    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const outbox = new InMemoryOutboxStore();
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger, outbox });
@@ -293,13 +299,14 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const searchIntegrity = new InMemorySearchIntegrityStore();
   const aiTraining = new InMemoryAiTrainingStore();
   const trainingData = new InMemoryTrainingDataStore();
+  const statusPages = new InMemoryStatusPageStore();
   const userPlans = new InMemoryPlanStore();
   const billing = new InMemoryBillingStore();
   const syncDb = openDatabase(':memory:');
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);
   const rateLimitStore = new InMemoryRateLimitStore();
-  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
@@ -365,6 +372,8 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
 
   const trainingData = new TrainingDataService({ store: storage.trainingData, events, clock });
 
+  const statusPages = new StatusPageService(storage.statusPages, clock);
+
   const plans = new PlansService({
     store: storage.userPlans,
     billing: storage.billing,
@@ -404,6 +413,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...searchIntegrityRoutes(searchIntegrity, identity, config.cookie),
     ...aiTrainingRoutes(aiTraining, identity, config.cookie),
     ...trainingDataRoutes(trainingData, identity, config.cookie),
+    ...statusPageRoutes(statusPages, identity, config.cookie),
     ...plansRoutes(plans, identity, config.cookie, config.plans, new HmacPaymentProvider(config.plans.paymentWebhookSecret)),
   };
 
@@ -427,6 +437,6 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, plans, logger, db: storage.db, outbox: storage.outbox, close };
+  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, plans, logger, db: storage.db, outbox: storage.outbox, close };
 }
 

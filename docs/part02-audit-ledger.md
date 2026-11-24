@@ -778,3 +778,23 @@ Per-feature status:
 No functional code was changed in this batch. Existing orchestrator planning, live-testing collaboration, the DP-015 dependency graph, and the generic outbox are adjacent primitives only; none was promoted into incident remediation or on-call functionality. OB-049/050 additionally depend on a confirmed Team/Studio seat and membership model. The seven SC rows marked "Not tiered here" remain excluded from ordinary subscription gating.
 
 **Next batch in document order:** OB-051–OB-054 (on-call load/fatigue reporting; status page management with component states; AI-drafted customer updates for approval; incident roles: commander, scribe and communications). Verify the exact page text and plan notes before assessing.
+
+
+### Thirty-seventh four-feature batch: OB-051–OB-054 — STATUS PAGE MANAGEMENT IMPLEMENTED; ON-CALL ANALYTICS, AI CUSTOMER DRAFTS AND INCIDENT ROLES DEPEND ON MISSING INCIDENT/ON-CALL FOUNDATION
+
+Exact catalog requirements (Part 02 PDF, page 15):
+- **OB-051 (PRO; Team, also Studio):** On-call load and fatigue reporting. Catalog note: needs team seats (3 minimum) or a Studio plan.
+- **OB-052 (PRO; Plus):** Status page management with component states.
+- **OB-053 (PRO; Plus):** Customer updates drafted by AI for approval.
+- **OB-054 (PRO; Team, also Studio):** Incident roles: commander, scribe, comms. Catalog note: needs team seats (3 minimum) or a Studio plan.
+
+Per-feature status:
+- **OB-051 — BLOCKED / NOT IMPLEMENTED.** There are no on-call schedules, rotation records, shift handoffs, override history, acknowledgement/response activity or responder workload samples from which to calculate load and fatigue. A report without those underlying facts would be fabricated. This remains dependent on OB-049.
+- **OB-052 — IMPLEMENTED IN THE BACKEND.** Added an owner-scoped status-page model with unique slugs, draft/published lifecycle, component records, validated component states (operational, degraded, partial_outage, major_outage, maintenance), public read of published pages, and an append-only component-state change history carrying actor, previous/next state, reason and timestamp. Added SQLite and PostgreSQL migrations/stores, authenticated Plus-gated management routes, a public read route, and integration tests. Component-state changes and their history rows are written in one database transaction in both durable adapters. The repository is a backend service; a separately hosted status-page frontend/domain is outside this repository.
+- **OB-053 — PARTIAL ADJACENT AI CAPABILITY; CUSTOMER APPROVAL WORKFLOW MISSING.** AI-training and orchestrator capabilities exist, but there is no incident context source, customer-impact summary contract, audience/channel policy, generated update versioning, approval/rejection state or publication record. Generic text generation is not an incident customer-update workflow.
+- **OB-054 — BLOCKED / NOT IMPLEMENTED.** No incident entity or incident-scoped membership/role assignment exists. Live-testing collaboration roles are bound to test sessions, not incidents, and cannot be reused as incident commander/scribe/comms permissions. The Team three-seat/Studio entitlement is also not backed by a shared incident-team membership model.
+
+Files added: src/modules/status-pages/types.ts, store.ts, in-memory-store.ts, sqlite-store.ts, postgres-store.ts, migrations.ts, postgres-migrations.ts, status-page-service.ts, routes.ts, index.ts, and test/status-pages.test.ts.
+Files updated: src/app.ts, src/main.ts, src/modules/plans/engine/route-gates.ts, test/pg-helpers.ts, and this ledger.
+
+**Next batch in document order:** OB-055–OB-058. Verify the exact catalog rows and plan notes before assessment.
