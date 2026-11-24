@@ -392,3 +392,22 @@ Per-feature status:
 No functional code was changed in this batch. DP-061 needs approved region/provider and recovery policy; DP-062 needs infrastructure template schemas and a provisioner; DP-063 needs an authorized microVM runtime and isolation threat model; DP-064 needs a trusted runner execution contract and fleet host lifecycle. Existing pipeline templates were not duplicated or misrepresented as infrastructure templates.
 
 **Next batch in document order:** DP-065–DP-068. DP-065 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal and do not expose it as a customer feature. DP-066 is network egress policy per job, DP-067 is per-job resource/time limits, and DP-068 is shared build cache across runs. Verify DP-065's feature-gate treatment before adding any customer-facing route.
+
+
+### Seventeenth four-feature batch: DP-065–DP-068 — INTERNAL RUNNER FLAG PRESERVED; EGRESS/CACHE BLOCKED; TASK-BUDGET PRIMITIVES PARTIAL
+
+Exact catalog requirements (Part 02 PDF, page 8):
+- **DP-065 (FREE not sold; Internal):** Runner autoscaling down to zero. Catalog explicitly says **Not sold (internal)**.
+- **DP-066 (PRO; Pro):** Network egress policies per job.
+- **DP-067 (FREE; Free):** Resource and time limits per job.
+- **DP-068 (PRO; Plus):** Build cache shared across runs.
+
+Per-feature status:
+- **DP-065 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; RUNNER AUTOSCALING NOT IMPLEMENTED.** `src/modules/plans/engine/part02-feature-gates.ts` places DP-065 in the `internal` range. `feature-gates.ts` explicitly defines internal rows as Forge machinery that is never sold and never enforced as a customer plan gate. Preserve that treatment; do not expose a customer route or convert it into a Free customer entitlement. No runner fleet or zero-capacity autoscaler exists yet.
+- **DP-066 — BLOCKED / NOT IMPLEMENTED.** Neither the working branch nor the preserved Build & CI branch provides per-job network namespaces, egress allow/deny rules, DNS/IP/port policy enforcement, proxy controls, or runner-side policy verification. The Build & CI pipeline schema names task steps but has no egress policy contract, and its worker does not execute tasks. A route-level check cannot contain network access from a future job process.
+- **DP-067 — PARTIAL ADJACENT TASK BUDGETS; RUNTIME RESOURCE ENFORCEMENT MISSING.** `src/modules/ai-training/engine/task-budget-engine.ts` supports per-task `timeMs`, `costUsdMicros` and `toolCalls` limits, with named refusals and atomic budget arithmetic. `test/ai-training-engines.test.ts` covers definition, charge and budget breach; `test/ai-training.test.ts` covers the service lifecycle. This is an application-level task budget, not a runner-enforced job resource envelope: no CPU, memory, disk, process count, hard wall-clock termination or sandbox quota enforcement exists.
+- **DP-068 — BLOCKED / NOT IMPLEMENTED.** No shared build artifact/cache store, cross-run cache key contract, project/tenant namespace, immutable artifact manifest, integrity verification, eviction/retention policy or cache invalidation path exists. AI model-response/search caches are not build caches and were not counted as such.
+
+No functional code was changed in this batch. DP-065 remains internal-only as the catalog requires; DP-066/067/068 depend on an actual isolated runner execution boundary before network, resource and cache guarantees can be enforced. The divergent Build & CI branch is preserved and was not merged wholesale.
+
+**Next batch in document order:** DP-069–DP-072 (browser-based remote development environments, sandbox snapshots, internal-only untrusted-code isolation, and runner location choice). DP-071 is also explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal and do not expose it as a customer feature.
