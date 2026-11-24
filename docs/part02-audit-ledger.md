@@ -310,3 +310,24 @@ Per-feature status:
 No functional code was changed in this batch: DP-045/046 need a trusted executable job contract and careful selective integration of the divergent Build & CI work; DP-047 needs an authorized managed-database provider and replica policy; DP-048 needs a defined migration format and rollback/data-compatibility contract. These are recorded as specific blockers rather than falsely marked complete.
 
 **Next batch in document order:** DP-049–DP-052 (cache management, object storage/CDN management, DNS safe-change previews, and SSL certificate lifecycle). Inspect existing cache/R2/DNS/certificate code and preserved branches before deciding which portions are reusable.
+
+
+### Thirteenth four-feature batch: DP-049–DP-052 — SEARCH-CACHE / R2 BACKUP PARTIALS; DNS AND CERTIFICATE LIFECYCLE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, pages 6–7):
+- **DP-049 (PRO; Plus):** Cache management and invalidation tools.
+- **DP-050 (PRO; Plus):** Object storage and CDN management.
+- **DP-051 (FREE; Free):** DNS management with safe-change previews.
+- **DP-052 (FREE; Free):** SSL certificates: issue, renew, monitor.
+
+Cross-branch inspection: the current `forge-part02-audit` tree has a user-scoped search-integrity cache and a narrow Cloudflare R2 event-chain anchor adapter. The preserved `gpt-part2-build-ci` branch is divergent and contains no DNS, certificate, CDN or general object-storage module in its compared file set. The other preserved branch comparisons did not surface those infrastructure modules either. No DNS or ACME/certificate provider integration was found.
+
+Per-feature status:
+- **DP-049 — PARTIAL ADJACENT IMPLEMENTATION; GENERAL CACHE INVALIDATION MISSING.** `src/modules/search-integrity/engine/search-cache.ts` provides TTL state and rate-bucket calculations for AI-070. `SearchIntegrityService.putCacheEntry/getCacheEntry`, the SQLite/PostgreSQL stores and `/v1/search-integrity/cache` routes implement per-user search-payload upsert/read with TTL and hit counts. `test/search-integrity.test.ts` covers owner authentication, normalization, TTL, expiry, hit counts and upsert. There is no cache delete/invalidate/list API, shared cache namespace, distributed cache backend, CDN purge or infrastructure-wide invalidation. This search-result cache does not complete DP-049.
+- **DP-050 — PARTIAL ADJACENT OBJECT STORAGE; GENERAL STORAGE/CDN MANAGEMENT MISSING.** `src/kernel/anchor-r2.ts` implements a Cloudflare R2 S3-compatible SigV4 adapter for one fixed event-chain anchor object (GET/PUT). `src/kernel/backup-offsite.ts` builds and verifies off-site backup manifests and receipts; it is not a tenant object-storage product. There is no general object upload/download lifecycle, tenant bucket/object policy, retention/access control, CDN origin configuration, cache purge, custom-domain integration or distribution health management. A single audit-anchor key and backup manifest are not DP-050.
+- **DP-051 — BLOCKED / NOT IMPLEMENTED.** No DNS provider adapter, zone/record inventory, record validation model, safe-change preview/diff, apply/rollback workflow or workspace-scoped DNS authorization exists. No provider or domain ownership can be inferred, so no simulated DNS changes or fake preview results were added.
+- **DP-052 — BLOCKED / NOT IMPLEMENTED.** The repository enforces HTTPS origins in production and emits HSTS; PostgreSQL connections can require TLS. Those controls do not issue or renew public certificates. No ACME/provider integration, domain-control challenge flow, private-key custody, certificate inventory, renewal worker or expiry/health monitor exists. No certificate issuance or renewal behavior was fabricated.
+
+No functional code was changed in this batch. The cache and R2 components are real but materially narrower than the catalog features; expanding them into shared infrastructure requires an agreed cache/object ownership and lifecycle model. DNS and certificate automation require owner-authorized domains/provider credentials and a key-custody boundary. Those blockers are recorded rather than hidden behind placeholder APIs.
+
+**Next batch in document order:** DP-053–DP-056 (load balancing/traffic routing, private networking/service mesh, secrets management/rotation, and secret access audit/break-glass). Inspect the existing secret store and authorization/audit primitives; do not confuse them with cloud network or secret-manager provider integrations.
