@@ -530,4 +530,23 @@ Per-feature status:
 
 No functional code was changed in this batch. DP-090/091 remain internal-only; DP-089 needs a coordinated multi-store backup/restore design and PostgreSQL/object-storage support; DP-092 needs an actual plugin/agent packaging and version contract before a compatibility checker can be meaningful.
 
-**Next batch in document order:** DP-093–DP-096. DP-093 and DP-094 are explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve them as Forge-internal. Verify the remaining Part 02 rows and their plan assignments directly in the PDF before implementation.
+**Next batch in document order:** DP-093–DP-094 followed by OB-001–OB-002 (exactly four feature IDs across the DP→OB section boundary). DP-093 and DP-094 are explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve them as Forge-internal.
+
+
+### Twenty-fourth four-feature batch: DP-093, DP-094, OB-001, OB-002 — INTERNAL DOGFOODING/REHEARSAL MISSING; HEALTH AND CORRELATION PRIMITIVES PARTIAL
+
+Exact catalog requirements (Part 02 PDF, pages 10–11):
+- **DP-093 (FREE not sold; Internal):** Dogfooding dashboard: FORGE's own health, builds, and incidents. Catalog explicitly says **Not sold (internal)**.
+- **DP-094 (FREE not sold; Internal):** Disaster rehearsal: simulate a FORGE outage and test recovery. Catalog explicitly says **Not sold (internal)**.
+- **OB-001 (FREE; Free):** Application performance monitoring.
+- **OB-002 (FREE; Free):** Distributed tracing across services.
+
+Per-feature status:
+- **DP-093 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; DOGFOODING DASHBOARD MISSING.** DP-093 is in the internal gate range. The working branch has `/healthz` and `/readyz`, structured application logs, and external GitHub Actions build/test runs, but no consolidated FORGE-owned dashboard combining health, builds, deployment state, incidents, alerts and historical trends. Keep this internal-only; do not expose it as a customer plan feature.
+- **DP-094 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; DISASTER REHEARSAL MISSING.** DP-094 is in the internal gate range. SQLite backup creation and `verifyBackup` verify a backup file and event-chain integrity, but no controlled outage simulator, fault injection, failover/recovery drill, measured RTO/RPO, restore verification against a clean environment or rehearsal report exists. A backup verification test is not a disaster rehearsal.
+- **OB-001 — PARTIAL HEALTH/DOMAIN METRICS; APPLICATION PERFORMANCE MONITORING MISSING.** `src/kernel/health.ts` exposes liveness/readiness endpoints and an audit sequence head; it does not measure request latency distributions, throughput, error rates, resource utilization, saturation or dependency timings. AI model-serving code has domain-specific latency/usage metrics, but there is no general application APM instrumentation, metric aggregation/exporter, retention policy or performance dashboard.
+- **OB-002 — PARTIAL EVENT CORRELATION; DISTRIBUTED TRACING MISSING.** `src/kernel/events.ts` carries `correlationId` and `causationId` in event envelopes, providing useful audit/event linkage. The HTTP request context does not establish a trace/span context propagated across service boundaries, and there is no traceparent/W3C context propagation, span creation, parent/child timing, sampling, trace exporter or cross-service trace backend. Event correlation IDs alone are not distributed tracing.
+
+No functional code was changed in this batch. DP-093/094 remain internal-only. OB-001/002 have useful health/event correlation primitives, but the full monitoring and tracing data paths are absent; no fake metrics or spans were added.
+
+**Next batch in document order:** OB-003–OB-006 (log aggregation with fast search, auto-instrumentation and structured logging helpers, custom/infrastructure/business metrics, and dashboard builder with templates).
