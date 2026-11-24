@@ -587,4 +587,23 @@ Per-feature status:
 
 No functional code was changed in this batch. The existing request logs, test regression utilities and divergent pipeline version records are adjacent signals only; no error tracker or RUM endpoint was fabricated.
 
-**Next batch in document order:** OB-011–OB-014 (mobile crash and session replay, synthetic monitoring, uptime checks with SLA reports, and alert rules with routing/escalation). Verify the exact catalog page and distinguish synthetic tests from real-user telemetry.
+**Next batch in document order:** OB-011–OB-014 (mobile crash and not-responding reports; scripted/AI-driven synthetic monitoring; multi-region uptime monitoring; SLO/SLA tracking with error budgets).
+
+
+### Twenty-seventh four-feature batch: OB-011–OB-014 — LIVE-TESTING AND HEALTH PRIMITIVES PARTIAL; CRASH INGESTION, SYNTHETIC MONITORS, MULTI-REGION UPTIME AND SLOs MISSING
+
+Exact catalog requirements (Part 02 PDF, pages 11–12):
+- **OB-011 (FREE; Free):** Mobile crash and not-responding reports.
+- **OB-012 (PRO; Pro):** Synthetic monitoring: scripted and AI-driven user journeys.
+- **OB-013 (PRO; Plus):** Uptime monitoring from multiple regions.
+- **OB-014 (PRO; Pro):** SLO and SLA tracking with error budgets.
+
+Per-feature status:
+- **OB-011 — PARTIAL MOBILE TEST-SESSION SUPPORT; CRASH/ANR TELEMETRY MISSING.** The live-testing module supports web/mobile test-session workflows, step recording, lifecycle transitions and findings. It does not ingest crash dumps or application-not-responding reports from deployed mobile clients, normalize device/OS/app-version metadata, group crash fingerprints, correlate sessions/releases or provide crash-rate dashboards. Testing a mobile journey is not collecting real-user mobile crash telemetry.
+- **OB-012 — PARTIAL AGENT-DRIVEN TEST JOURNEYS; SYNTHETIC MONITORING SERVICE MISSING.** `src/modules/live-testing/live-testing-service.ts` creates and manages owner-scoped agent testing sessions, records steps/findings and builds replayable timelines. There is no scheduled monitor definition, multi-region probe fleet, synthetic identity/secret handling, recurring journey runner, expected-result assertion lifecycle, monitor availability series or alert integration. User-triggered live testing is not continuous synthetic monitoring.
+- **OB-013 — PARTIAL SINGLE-INSTANCE HEALTH PROBES; MULTI-REGION UPTIME MISSING.** `/healthz` and `/readyz` expose liveness/readiness for the current deployment. There are no geographically distributed probes, independent probe credentials, regional result aggregation, quorum/false-positive policy, outage timeline or uptime/SLA report.
+- **OB-014 — BLOCKED / NOT IMPLEMENTED.** Request duration is logged, but no SLO/SLA objective model, good-event/total-event counter, rolling error budget, burn-rate calculation, window policy, exclusion/maintenance handling or SLO report exists. A request log or test-quality threshold is not an operational error budget.
+
+No functional code was changed in this batch. The live-testing, health and request-log features are useful adjacent components, but they do not create production synthetic monitors or SLO accounting. No synthetic uptime or SLA values were invented.
+
+**Next batch in document order:** OB-015–OB-018 (burn-rate alerts; performance regression detection tied to commits/deploys; capacity planning/forecasting; and cost attribution by service, team and feature).
