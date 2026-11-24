@@ -512,3 +512,22 @@ Per-feature status:
 No functional code was changed in this batch. DP-085 needs an agreed supported deployment matrix; DP-086 needs a signed release/bundle format; DP-087 needs license issuance, binding and revocation policy; DP-088 needs a documented telemetry data contract and self-hosted privacy controls.
 
 **Next batch in document order:** DP-089–DP-092 (whole-install backup/restore, internal-only active-active multi-region FORGE, internal-only public FORGE status page, and plugin/agent upgrade compatibility checker). DP-090 is explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve it as Forge-internal.
+
+
+### Twenty-third four-feature batch: DP-089–DP-092 — SQLITE BACKUP PRIMITIVES PARTIAL; INTERNAL MULTI-REGION/STATUS; PLUGIN COMPATIBILITY MISSING
+
+Exact catalog requirements (Part 02 PDF, page 10):
+- **DP-089 (ENTERPRISE; Enterprise):** Backup and restore for the whole FORGE install.
+- **DP-090 (FREE not sold; Internal):** Multi-region active-active for FORGE itself.
+- **DP-091 (FREE not sold; Internal):** Public status page for FORGE.
+- **DP-092 (PRO; Pro):** Upgrade compatibility checker for plugins and agents.
+
+Per-feature status:
+- **DP-089 — PARTIAL SQLITE DATABASE BACKUP; WHOLE-INSTALL RESTORE MISSING.** `src/kernel/backup.ts` creates consistent SQLite snapshots, SHA-256 sidecars, verifies the event chain, prunes retained backups and can run a local schedule. `src/cli.ts` exposes `backup` and `verify`, but no restore command. The backup format covers the SQLite database only; it does not package PostgreSQL dumps, object storage, uploads/artifacts, installation configuration, secrets, deployment manifests or a coordinated version-compatible restore. The README explicitly notes that automated PostgreSQL backups are not yet implemented. `backup-offsite.ts` provides manifest/receipt integrity primitives, not a full off-site transfer-and-restore service. This does not satisfy whole-install backup and restore.
+- **DP-090 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; ACTIVE-ACTIVE NOT IMPLEMENTED.** `part02-feature-gates.ts` maps DP-090 to `internal`; keep it outside customer entitlements. No multi-region event-log replication, globally consistent sequence/ledger, conflict resolution, region routing, active-active database topology, health failover or failback exists. A single PostgreSQL pool and hash-chained local event store are not active-active multi-region.
+- **DP-091 — INTERNAL-ONLY / NOT CUSTOMER-SOLD; PUBLIC STATUS PAGE NOT IMPLEMENTED.** DP-091 is mapped to `internal`. The app exposes `/healthz` and `/readyz` for operational probes, but no public status-page service, component inventory, incident lifecycle, scheduled maintenance notice, uptime history, external monitor ingestion or public status domain exists. Internal health endpoints are not a public status page.
+- **DP-092 — BLOCKED / NOT IMPLEMENTED.** The orchestrator has a static agent/tool registry, and the divergent Build & CI branch has versioned pipeline/template definitions. Neither has a plugin/agent package manifest with supported FORGE API ranges, dependency constraints, permission/capability migrations, runtime compatibility matrix, upgrade dry-run, breaking-change report or rollback recommendation. Model-version promotion and pipeline-template diffs are different domains and were not counted as plugin compatibility checking.
+
+No functional code was changed in this batch. DP-090/091 remain internal-only; DP-089 needs a coordinated multi-store backup/restore design and PostgreSQL/object-storage support; DP-092 needs an actual plugin/agent packaging and version contract before a compatibility checker can be meaningful.
+
+**Next batch in document order:** DP-093–DP-096. DP-093 and DP-094 are explicitly **FREE (not sold), Internal, Not sold (internal)**; preserve them as Forge-internal. Verify the remaining Part 02 rows and their plan assignments directly in the PDF before implementation.
