@@ -626,3 +626,22 @@ Per-feature status:
 No functional code was changed in this batch. OB-016 can reuse the durable outbox only after an alert model and channel delivery contract exist; OB-015 depends on SLOs; OB-017 needs an ownership/on-call graph; OB-018 needs provider credentials, consent and channel adapters. No placeholder notification endpoints were added.
 
 **Next batch in document order:** OB-019–OB-022 (explainable metric anomaly detection, commit/deploy-linked performance regression detection, capacity planning/forecasting, and cost attribution by service/team/feature).
+
+
+### Twenty-ninth four-feature batch: OB-019–OB-022 — AI METRIC/TREND/COST PRIMITIVES PARTIAL; GENERAL ANOMALY, RELEASE REGRESSION, CAPACITY AND COST ALLOCATION MISSING
+
+Exact catalog requirements (Part 02 PDF, page 12):
+- **OB-019 (PRO; Pro):** Anomaly detection on any metric with explainable baselines.
+- **OB-020 (PRO; Pro):** Performance regression detection tied to commits and deploys.
+- **OB-021 (PRO; Pro):** Capacity planning and forecasting.
+- **OB-022 (PRO; Team, also Studio):** Cost attribution by service, team, and feature. Catalog note: needs team seats (3 minimum) or a Studio plan.
+
+Per-feature status:
+- **OB-019 — PARTIAL AI-SPECIFIC TRENDS/METRICS; GENERAL EXPLAINABLE ANOMALY DETECTION MISSING.** The AI training/model-serving area records domain-specific metrics and trend samples, but there is no arbitrary metric registry, baseline training/selection, seasonality handling, explainable anomaly score, alert lifecycle or cross-domain metric support. AI agent trend histories and serving percentiles do not satisfy anomaly detection on any metric.
+- **OB-020 — PARTIAL TEST REGRESSION AND COMMIT TRIGGERS; DEPLOY-LINKED PERFORMANCE REGRESSION MISSING.** Test-quality includes visual/test regression checks, and the divergent Build & CI pipeline schema can receive push/PR events with a commit SHA. The pipeline worker does not execute tasks or deploy releases, and no performance baseline is bound to commit/deploy IDs. There is no latency/throughput comparison, statistical regression threshold, release annotation or automated regression gate tied to a deployed version.
+- **OB-021 — PARTIAL MODEL-SERVING REPLICA PLANNING; INFRASTRUCTURE CAPACITY FORECASTING MISSING.** `planServingScale` estimates replicas from current request rate, average latency, replica concurrency, target utilization and GPU assignments. It is a point-in-time model-serving scale decision, not historical demand forecasting, scenario planning, cloud quota/capacity forecasting or multi-service resource planning.
+- **OB-022 — PARTIAL PER-RUN/PER-TASK AI COSTS; SERVICE/TEAM/FEATURE ATTRIBUTION MISSING.** The AI cost ledger and task-budget engine record training-run/task costs and enforce local budgets. They do not ingest cloud billing, allocate shared infrastructure costs by service/team/feature, map resources to an ownership graph, apply allocation rules or reconcile allocations to invoices. Workspace membership on divergent branches is not a cost-allocation graph; the Team/Studio gate does not create one.
+
+No functional code was changed in this batch. Existing AI-specific metric, trend, scale and cost primitives are useful but too narrow to represent general observability or cloud-finance capabilities. No synthetic baselines, forecasts, release-performance values or team cost allocations were invented.
+
+**Next batch in document order:** OB-023–OB-026. Read the exact next-page feature names and plan assignments before auditing.
