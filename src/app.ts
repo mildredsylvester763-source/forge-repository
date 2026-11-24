@@ -284,8 +284,8 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const subscriptionItems = new InMemorySubscriptionItemStore();
   const syncDb = openDatabase(':memory:');
   migrate(syncDb, 'kernel', kernelMigrations);
-  const offlineSyncDirect = undefined; // keep anchor distinct
-  const offlineSyncDirectUnused = 0; sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, subscriptionItems, offlineSync, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  const offlineSync = new SqliteOfflineSyncStore(syncDb);
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, userPlans, subscriptionItems, offlineSync, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 /**
