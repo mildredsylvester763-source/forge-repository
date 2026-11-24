@@ -244,3 +244,25 @@ The shared prerequisites are an IaC language/model decision, a frontend editor, 
 
 **Next batch in document order:** DP-037–DP-040. Inspect cloud provisioning and Kubernetes capabilities across preserved branches; continue without overwriting divergent work.
 
+
+
+### Tenth four-feature batch: DP-037–DP-040 — CLOUD / CLUSTER / KUBERNETES INFRASTRUCTURE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 5–6):
+- **DP-037 (Pro):** Multi-cloud provisioning: AWS, GCP, Azure.
+- **DP-038 (Pro):** Local and on-prem cluster support.
+- **DP-039 (Pro):** Kubernetes management: nodes, namespaces, workloads.
+- **DP-040 (Pro):** Kubernetes manifest generation and Helm packaging.
+
+Branch-preservation check: the latest inspected trees for `main`, `mistral`, `manus/part36-safety`, `gpt-part2-build-ci` and `forge-part02-audit` contain no cloud provisioning, cluster-agent, Kubernetes, Helm or IaC module paths. The existing Build & CI pipeline subsystem does not execute build/deploy tasks and has no cloud provider adapters.
+
+Per-feature status:
+- **DP-037 — BLOCKED.** No AWS/GCP/Azure provisioning adapters, workspace-scoped cloud credential vault, resource state store or provider operation authorization exists.
+- **DP-038 — BLOCKED.** No local/on-prem cluster agent, enrollment/mTLS identity, outbound control channel, cluster inventory or offline-safe job queue exists. A cloud-only adapter would not satisfy local/on-prem support.
+- **DP-039 — BLOCKED.** No Kubernetes API client, cluster credential boundary, node/namespace/workload store or reconciliation controller exists.
+- **DP-040 — BLOCKED.** No Kubernetes resource model, manifest validator, Helm chart renderer/package writer or OCI/chart artifact registry exists. Generating unvalidated YAML would not meet manifest generation and Helm packaging safely.
+
+The required prerequisites are owner-authorized cloud accounts/roles, a secret-management boundary, cluster-agent trust/enrollment, Kubernetes/Helm compatibility targets and durable state. DP-038 requires on-prem agent deployment and lifecycle controls; DP-040 requires a defined workload/resource schema and chart validation. No provider credentials, cluster targets or infrastructure resources were invented.
+
+**Next batch in document order:** DP-041–DP-044. Continue in order; reuse these recorded infrastructure prerequisites only where the next exact requirements depend on them.
+
