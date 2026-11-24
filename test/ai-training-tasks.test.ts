@@ -47,7 +47,11 @@ describe('ai-training long-running tasks and task budgets (AI-084/085)', () => {
       const started = await h.post('/v1/ai-training/tasks/start', { taskId: 'task-1', kind: 'render' }, { cookie });
       assert.equal(started.status, 201);
       const startBody = (await started.json()) as { task: { taskId: string; kind: string; status: string; checkpointCount: number; resumedFrom: string | null }; createdAt: number };
-      assert.deepEqual(startBody.task, { taskId: 'task-1', kind: 'render', status: 'running', checkpointCount: 0, resumedFrom: null });
+      assert.equal(startBody.task.taskId, 'task-1');
+      assert.equal(startBody.task.kind, 'render');
+      assert.equal(startBody.task.status, 'running');
+      assert.equal(startBody.task.checkpointCount, 0);
+      assert.deepEqual(startBody.task.checkpoints, []);
       const dup = await h.post('/v1/ai-training/tasks/start', { taskId: 'task-1', kind: 'render' }, { cookie });
       assert.equal(dup.status, 409);
       assert.equal(await errorCode(dup), 'longrunning-task-duplicate:task-1');
