@@ -195,3 +195,25 @@ The four features require owner-authorized build runners, artifact storage, plat
 
 **Next batch in document order:** DP-029–DP-032. Reuse this platform/artifact-infrastructure blocker; do not re-audit the same absent integration unless repository evidence changes.
 
+
+
+### Eighth four-feature batch: DP-029–DP-032 — RELEASE CHANNEL / ARTIFACT LIFECYCLE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, pages 4–5):
+- **DP-029 (Pro):** Staged store rollouts with a halt button.
+- **DP-030 (Plus):** Release channels: nightly, beta, stable.
+- **DP-031 (Plus):** Artifact retention and cleanup policies.
+- **DP-032 (Plus):** Vulnerability scan on artifacts before promotion.
+
+Existing Build & CI schedule dispatch is for pipeline trigger occurrences; it does not control app-store rollout percentages or release channels. The current branch still has no artifact store, artifact metadata, deployment promotion controller or package scanning pipeline. The preserved `gpt-part2-build-ci` branch remains a pipeline-definition/trigger subsystem and does not execute build or deployment steps.
+
+Per-feature status:
+- **DP-029 — BLOCKED.** No app-store provider, staged percentage rollout control, release-health feedback or independent halt actuator exists. A halt button without authority to stop an active store rollout would be unsafe.
+- **DP-030 — BLOCKED.** No immutable release artifacts or channel-aware promotion model exists. Pipeline schedule triggers are not nightly/beta/stable release channels.
+- **DP-031 — BLOCKED.** No durable artifact storage, retention metadata, legal-hold state or cleanup worker exists. Deleting source pipeline records would not implement artifact retention.
+- **DP-032 — BLOCKED.** No artifact ingestion/verification pipeline or vulnerability scanner is connected to a promotion gate. Scanning the repository's source dependency manifest alone would not establish that the promoted artifact was scanned.
+
+The shared prerequisites are a durable artifact registry, trusted build output, provider-backed promotion and an owner-approved retention policy. DP-029 additionally needs store rollout control and a halt signal; DP-032 needs a defined scanner/source database and severity policy. No channel labels, cleanup jobs or scan pass/fail placeholders were added.
+
+**Next batch in document order:** DP-033–DP-036 (Infrastructure). Before implementing, inspect existing cloud/IaC modules and any preserved branch work; do not assume the deployment blocker automatically applies to independent infrastructure-editor capabilities.
+
