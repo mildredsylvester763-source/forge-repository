@@ -135,6 +135,10 @@ import {
   buildUncertaintyReport as runBuildUncertaintyReport,
   type UncertaintyReport,
 } from './engine/uncertainty-report-engine.ts';
+import {
+  decideClarification as runDecideClarification,
+  type ClarificationDecision,
+} from './engine/clarifying-questions-engine.ts';
 import { DATASET_ITEM_KINDS } from './engine/dataset-snapshot.ts';
 import { AiTrainingEvents, AI_TRAINING_EVENT_VERSION } from './events.ts';
 import type {
@@ -267,6 +271,12 @@ interface StoredUncertaintyReport {
   createdAt: number;
 }
 
+/** AI-088 clarification decisions, session state per user. Ephemeral by design like streams. */
+interface StoredClarificationDecision {
+  decision: ClarificationDecision;
+  createdAt: number;
+}
+
 export class AiTrainingService {
   private readonly tuningPipelines = new Map<string, StoredTuningPipeline>();
   private readonly distillationPlans = new Map<string, StoredDistillationPlan>();
@@ -275,6 +285,7 @@ export class AiTrainingService {
   private readonly taskBudgets = new Map<string, StoredTaskBudget>();
   private readonly critiqueReports = new Map<string, StoredCritiqueReport>();
   private readonly uncertaintyReports = new Map<string, StoredUncertaintyReport>();
+  private readonly clarificationDecisions = new Map<string, StoredClarificationDecision>();
   private readonly store: AiTrainingStore;
   private readonly events: EventStore;
   private readonly clock: Clock;
@@ -2019,6 +2030,17 @@ export class AiTrainingService {
     const createdAt = this.clock();
     this.uncertaintyReports.set(userId + ':' + result.value.subjectId, { report: result.value, createdAt });
     return { report: result.value, createdAt };
+  }
+
+  // ---- AI-088 clarifying questions ----
+
+  async decideClarification(userId: string, body: unknown): Promise<{ decision: ClarificationDecision; createdAt: number }> {
+    const dto = (body ?? {}) as Record<string, unknown>;
+    const result = runDecideClarification({ intent: dto.intent, signals: dto.signals, questions: dto.questions });
+    if (!result.ok) throw refusal(result.reason);
+    const createdAt = this.clock();
+    this.clarificationDecisions.set(userId + ':' + result.value.fingerprint, { decision: result.value, createdAt });
+    return { decision: result.value, createdAt };
   }
 
   async verifyPackage(userId: string, body: unknown): Promise<{ accepted: boolean; fingerprint: string; modelId: string; versionId: number }> {
