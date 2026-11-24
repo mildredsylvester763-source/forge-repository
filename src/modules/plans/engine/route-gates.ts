@@ -303,6 +303,7 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/ai-training/critique/run': 'AI-086',
   '/v1/ai-training/uncertainty/report': 'AI-087',
   '/v1/ai-training/clarify/decide': 'AI-088',
+  '/v1/deployments/dependency-graph/plan': 'DP-015',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */

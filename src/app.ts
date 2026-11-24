@@ -152,6 +152,7 @@ import {
 } from './modules/plans/index.ts';
 
 import { offlineSyncRoutes } from './modules/offline-sync/index.ts';
+import { deploymentRoutes } from './modules/deployments/index.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -393,6 +394,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...identityRoutes(identity, config.cookie, clock),
     ...passkeyRoutes(passkeys, identity, config.cookie, clock),
     ...taskRuntimeRoutes(tasks, identity, config.cookie),
+    ...deploymentRoutes(identity, config.cookie),
     ...orchestratorRoutes(orchestrator, identity, config.cookie),
     ...testQualityRoutes(testQuality, identity, config.cookie),
     ...testGenerationRoutes(testGeneration, identity, config.cookie),

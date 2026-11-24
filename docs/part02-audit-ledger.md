@@ -7,7 +7,7 @@
 **Latest code commit:** `8c008ecdc518aaa9ea13be318f49c63932d3cde5`; this ledger update follows that code checkpoint.  
 **Latest verified code checkpoint:** `8c008ecdc518aaa9ea13be318f49c63932d3cde5`. GitHub Actions run [45134257552](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45134257552) passed typecheck and the full test job: 982 tests, 981 passed, 0 failed, 1 skipped.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
-**Audit date:** 2026-11-23.
+**Audit date:** 2026-11-24.
 
 ## Plan Hooks — prerequisite audit
 
@@ -53,7 +53,7 @@ Do not invent missing prices, algorithms, legal retention rules, admin identitie
 - **452** rows are tiered.
 - These seven rows are explicitly **Not tiered here** and must stay outside ordinary subscription gating: `SC-020`, `SC-021`, `SC-022`, `SC-023`, `SC-041`, `SC-062`, `SC-063`.
 - The 452-row Part 02 gate metadata is registered centrally; the seven SC rows remain excluded.
-- No Part 02 functional feature has been implemented yet; the 452-row central gate registry is metadata, not feature delivery. The first two catalogue batches are DP-001–DP-004 and DP-005–DP-008.
+- The 452-row central gate registry is metadata, not feature delivery. DP-015 now has a partial, Pro-gated dependency-planning endpoint; no other Part 02 feature is yet implemented end-to-end.
 
 ### First four-feature batch: DP-001–DP-004 — BLOCKED BEFORE IMPLEMENTATION
 
@@ -105,3 +105,24 @@ All four remain blocked on the deployment provider/target and its authorized int
 - The latest ledger-only commit will not change the verified code checkpoint above; any later code changes require their own CI run.
 
 `main` has not been modified. Divergent branches have not been merged or overwritten. Continue only on `forge-part02-audit`; preserve the seven SC exclusions in all subsequent gate and feature work.
+
+
+### Fourth four-feature batch: DP-013–DP-016 — ONE PARTIAL IMPLEMENTATION; THREE BLOCKED
+
+Exact catalog requirements (Part 02 PDF, page 3):
+- **DP-013 (PRO tag; Team, also Studio):** Release trains with scheduled cuts. Team requires at least three seats; Studio also qualifies.
+- **DP-014 (ENTERPRISE):** Deployment approvals tied to policy-as-code.
+- **DP-015 (PRO):** Deployment dependency graph so services ship in the right order.
+- **DP-016 (PRO):** Multi-service atomic releases.
+
+**DP-013 — BLOCKED BEFORE IMPLEMENTATION.** The backend has no release-train scheduler, durable release-train state, deployment provider or scheduled-cut executor. The existing Team minimum-seat setting is not a deployment team-membership/seat authority. A schedule that cannot safely execute or be cancelled against a real deployment target would be misleading, so no inert scheduling API was added.
+
+**DP-014 — BLOCKED BEFORE IMPLEMENTATION.** There is no policy-as-code evaluator or deployment approval state machine connected to release execution. The governing catalog names the capability but does not define a policy language, policy schema, approver quorum, expiry or override semantics. These must not be invented. Enterprise gate metadata already exists.
+
+**DP-015 — PARTIAL IMPLEMENTATION.** Added a deterministic dependency-graph planner and Pro-gated authenticated route at `POST /v1/deployments/dependency-graph/plan`. It validates bounded service DAGs, rejects unknown/self/duplicate dependencies and cycles, and returns stable dependency-first order plus parallelizable waves. It is a planning primitive only: service discovery/registry, persistence and provider-backed release execution are not present. See `src/modules/deployments/dependency-graph.ts`, `src/modules/deployments/routes.ts`, `src/modules/plans/engine/route-gates.ts`, `src/app.ts`, and `test/deployment-dependency-graph.test.ts`.
+
+**DP-016 — BLOCKED BEFORE IMPLEMENTATION.** Atomic multi-service releases require a deployment adapter with a prepare/activate/rollback or equivalent atomic-visibility contract across all participating targets. No provider or target has been authorized/configured, and no such capability exists in the current application. A fake in-memory deploy adapter would not establish production atomicity; no simulated release endpoint was added.
+
+**Verification:** code and ledger pushed together; CI result is pending at this checkpoint. The last completed run before this batch is [45134673746](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45134673746), successful for the prior ledger checkpoint.
+
+**Next batch in document order:** DP-017–DP-020. Continue only after this batch's code and audit ledger have a recorded CI result.
