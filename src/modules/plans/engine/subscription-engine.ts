@@ -32,6 +32,8 @@ export interface PaymentProduct {
 }
 
 export interface PaymentEvent {
+  /** Only canonical successful charges enter the subscription/credit pipeline. */
+  readonly status: 'succeeded';
   readonly eventId: string;
   readonly userId: string;
   readonly amountMinor: number;
@@ -46,6 +48,9 @@ export type PaymentParseResult = { ok: true; event: PaymentEvent } | { ok: false
 export function parsePaymentEvent(raw: unknown): PaymentParseResult {
   if (typeof raw !== 'object' || raw === null) return { ok: false, reason: 'bad_payload' };
   const r = raw as Record<string, unknown>;
+  if (r.status !== 'succeeded') {
+    return { ok: false, reason: r.status === 'failed' ? 'payment_not_successful' : 'unsupported_payment_status' };
+  }
   const eventId = r.eventId;
   if (typeof eventId !== 'string' || eventId.length === 0 || eventId.length > 128) return { ok: false, reason: 'bad_event_id' };
   const userId = r.userId;
@@ -85,7 +90,7 @@ export function parsePaymentEvent(raw: unknown): PaymentParseResult {
     }
     products.push({ itemType, itemCode, startsAt, endsAt });
   }
-  return { ok: true, event: { eventId, userId, amountMinor, currency, products, occurredAt } };
+  return { ok: true, event: { status: 'succeeded', eventId, userId, amountMinor, currency, products, occurredAt } };
 }
 
 export interface ApplyPaymentResult {
