@@ -130,8 +130,7 @@ Definitions and redemptions are persisted in SQLite/PostgreSQL. Redemption limit
 checked and the redemption plus credit-ledger grant commit in one storage transaction; PostgreSQL
 locks the promotion row and SQLite uses a write transaction. Credit benefits use the existing
 append-only ledger (`top_up` source). Time-based benefits are still refused as
-`promotion-days-unsupported` until the subscription lifecycle policy is defined. The promotion
-audit event is currently appended after the billing transaction, so the audit outbox remains open.
+`promotion-days-unsupported` until the subscription lifecycle policy is defined. The promotion audit event is now appended by the SQLite and PostgreSQL billing stores in the same transaction as redemption and ledger changes. The in-memory test adapter uses the service fallback and is not a durable production store.
 Routes: `POST /v1/promotions/define` (admin), `/v1/promotions/redeem`, `/v1/promotions/status`.
 
 **Hook 14 — rate limits at the gateway.** Pure engine `engine/rate-limit-engine.ts`:
@@ -159,14 +158,13 @@ The hooks have implementation foundations, but they are not all complete. The cu
 status and evidence are maintained in `docs/part02-audit-ledger.md`. The access decision no
 longer reads the legacy plan/pass mirror; migration v11 carries existing records into
 subscription items. Remaining work is recorded in the audit ledger.
-- Billing mutations and hash-chained audit events are not yet one transaction. A crash between
-  the billing commit and event append can leave an audit gap; add a transactional audit outbox.
+- Durable SQLite and PostgreSQL stores append hash-chained audit events in the same transaction as the implemented payment, credit-ledger, promotion and account-control mutations. The earlier audit-gap defect is closed for those paths; refund/reversal lifecycle still needs its own atomic accounting and audit implementation when provider semantics are defined.
 - The pass catalog still lacks per-window caps, regional minor-unit price rows and the
   ALG-43/52/56 inputs/formulas. Production correctly refuses `sellable: true` until those
   are implemented and supplied.
 - Country rows, verified tax rules, payment methods, admin allowlist and rate-limit values
   remain owner-configured and default empty/disabled.
-- Per-device rate limiting is not wired because no trusted device identity reaches the gateway.
+- Per-device identity and shared per-user/per-device counters are wired through the gateway. Production still requires owner-supplied user and device thresholds; missing rules fail closed at startup.
 - Promotion day-benefits, renewal/failure/refund test-mode lifecycle, complete account export
   and jurisdiction-approved hard deletion remain unfinished.
 - Access snapshots are signed and server-verified, but the client-side offline cache/refresh
