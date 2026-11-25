@@ -49,6 +49,7 @@ export interface NewKnowledgePack {
  */
 export interface SearchIntegrityStore {
   findCacheEntry(userId: string, cacheKey: string): Promise<SearchCacheEntryRecord | null>;
+  listCacheEntriesByUser(userId: string, take: number): Promise<SearchCacheEntryRecord[]>;
   createCacheEntry(entry: NewSearchCacheEntry): Promise<SearchCacheEntryRecord>;
   saveCacheEntry(entry: SearchCacheEntryRecord): Promise<SearchCacheEntryRecord>;
   createPack(pack: NewKnowledgePack): Promise<KnowledgePackRecord>;
@@ -80,6 +81,10 @@ export class InMemorySearchIntegrityStore implements SearchIntegrityStore {
     };
     this.cacheByUser.set(entry.userId, [record, ...(this.cacheByUser.get(entry.userId) ?? [])]);
     return record;
+  }
+
+  async listCacheEntriesByUser(userId: string, take: number): Promise<SearchCacheEntryRecord[]> {
+    return [...(this.cacheByUser.get(userId) ?? [])].sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)).slice(0, take);
   }
 
   async saveCacheEntry(entry: SearchCacheEntryRecord): Promise<SearchCacheEntryRecord> {

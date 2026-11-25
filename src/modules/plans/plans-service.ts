@@ -810,8 +810,6 @@ export class PlansService {
         complete: false,
         includedModules: Object.keys(modules).sort(),
         omitted: [
-          'Offline-sync entity snapshots, operation history and resolved conflicts are not enumerable through the current store contract.',
-          'Search-integrity cache entries are not enumerable; web-search domain rules are included only for the default and observed query workspaces.',
           'AI-training records that require parent identifiers are not all enumerable (including some evaluation, safety, experiment, model-version, model-card, promotion, pin, reservation, package and trend records).',
           'Binary assets and model artifacts stored outside the database are represented only by metadata; their file contents are not attached.',
           'Other participants’ identities and generated test-account passwords are intentionally excluded from this user export.',

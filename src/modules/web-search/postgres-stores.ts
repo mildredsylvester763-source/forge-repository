@@ -136,6 +136,14 @@ export class PostgresWebSearchStore implements WebSearchStore {
     return row ? toRuleRecord(row) : null;
   }
 
+  async listRulesByUser(userId: string, take: number): Promise<DomainRuleRecord[]> {
+    const result = await this.pool.query<RuleRow>(
+      'SELECT * FROM web_search_domain_rules WHERE user_id = $1 ORDER BY workspace, id LIMIT $2',
+      [userId, take],
+    );
+    return result.rows.map(toRuleRecord);
+  }
+
   async createRule(rule: NewDomainRule): Promise<DomainRuleRecord> {
     const id = randomUUID();
     await this.pool.query(

@@ -7,9 +7,10 @@ const input = (overrides: Record<string, unknown> = {}) => ({
   clientId: 'desktop', sequence: 1, entityType: 'workspace_file', entityId: 'file-1', baseVersion: 0,
   kind: 'put' as const, payload: { body: 'first' }, causalClock: { desktop: 1 }, ...overrides,
 });
-async function withService<T>(fn: (service: OfflineSyncService) => Promise<T>): Promise<T> {
+async function withService<T>(fn: (service: OfflineSyncService, store: PostgresOfflineSyncStore) => Promise<T>): Promise<T> {
   const test = await makeTestPool();
-  try { return await fn(new OfflineSyncService({ store: new PostgresOfflineSyncStore(test.pool), clock: () => Date.parse('2026-11-08T10:00:00.000Z') })); }
+  const store = new PostgresOfflineSyncStore(test.pool);
+  try { return await fn(new OfflineSyncService({ store, clock: () => Date.parse('2026-11-08T10:00:00.000Z') }), store); }
   finally { await test.pool.end(); await test.cleanup(); }
 }
 describe('CO-100 PostgreSQL offline synchronization', { skip: !REAL_POSTGRES_URL }, () => {
@@ -24,6 +25,22 @@ describe('CO-100 PostgreSQL offline synchronization', { skip: !REAL_POSTGRES_URL
     const accepted = await service.resolveConflict('user-1', conflict.conflict!.conflictId, 'accept_incoming', 'user-1');
     assert.equal(accepted.entity?.version, 2);
     assert.equal((accepted.entity?.value as { body: string }).body, 'second');
+  }));
+  it('exports complete owner-scoped history including resolved conflicts', () => withService(async (service, store) => {
+    await service.apply('user-1', input());
+    const conflict = await service.apply('user-1', input({ clientId: 'tablet', payload: { body: 'second' }, causalClock: { tablet: 1 } }));
+    await service.resolveConflict('user-1', conflict.conflict!.conflictId, 'keep_current', 'user-1');
+    await service.apply('user-2', input({ payload: { body: 'private-other-user' } }));
+    const operations = await store.listOperationsByOwner('user-1', 100);
+    const entities = await store.listEntitiesByOwner('user-1', 100);
+    const conflicts = await store.listConflictsByOwner('user-1', 100);
+    assert.equal(operations.length, 2);
+    assert.ok(operations.every((entry) => entry.ownerId === 'user-1'));
+    assert.equal(entities.length, 1);
+    assert.equal(entities[0]?.ownerId, 'user-1');
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0]?.status, 'resolved');
+    assert.equal(JSON.stringify(operations).includes('private-other-user'), false);
   }));
   it('serializes competing writers instead of silently overwriting one', () => withService(async (service) => {
     await service.apply('user-1', input());

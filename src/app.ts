@@ -321,7 +321,7 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     aiCapabilityMatrices, aiOutputSchemas, aiMetricsOps, aiShadowOps, aiRollbackOps,
     lakeItems, consentGrants, consentLedger, syntheticRecords, labelRecords,
     preferenceRecords, codeDataRecords, creativeWorks, tokenizerRecords,
-    offlineOpenConflicts
+    offlineOperations, offlineEntities, offlineConflicts, searchCacheEntries, domainRules
   ] = await Promise.all([
     storage.runs.listByUser(userId, take),
     storage.plans.listByUser(userId, take),
@@ -353,7 +353,11 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     storage.trainingData.listCodeDataRecords(userId, take),
     storage.trainingData.listCreativeWorks(userId, take),
     storage.trainingData.listTokenizerRecords(userId, take),
-    storage.offlineSync.listOpenConflicts(userId, take)
+    storage.offlineSync.listOperationsByOwner(userId, take),
+    storage.offlineSync.listEntitiesByOwner(userId, take),
+    storage.offlineSync.listConflictsByOwner(userId, take),
+    storage.searchIntegrity.listCacheEntriesByUser(userId, take),
+    storage.webSearch.listRulesByUser(userId, take)
   ]);
 
   const aiAssets = aiAssetsRaw.map((asset) => {
@@ -370,8 +374,7 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     return { providerId: provider.providerId, usage, logs, byokKey };
   }));
 
-  const observedWorkspaces = [...new Set(['default', ...webQueries.map((query) => query.workspace)])];
-  const domainRules = await Promise.all(observedWorkspaces.map((workspace) => storage.webSearch.findRule(userId, workspace)));
+  const offlineOpenConflicts = offlineConflicts.filter((conflict) => conflict.status === 'open');
 
   const liveSessionRows = await storage.liveTesting.listSessionsByUser(userId, take);
   const [liveSessions, livePersonas] = await Promise.all([
@@ -412,7 +415,8 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     liveTesting: { sessions: liveSessions, personas: livePersonas },
     webSearch: { queries: webQueries, pages: webPages, citations: webCitations, domainRules },
     workspaceRetrieval: { contentItems, researchReports },
-    searchIntegrity: { knowledgePacks, openOfflineSyncConflicts: offlineOpenConflicts },
+    searchIntegrity: { cacheEntries: searchCacheEntries, knowledgePacks, openOfflineSyncConflicts: offlineOpenConflicts },
+    offlineSync: { operations: offlineOperations, entities: offlineEntities, conflicts: offlineConflicts },
     aiTraining: {
       assets: aiAssets, datasets: aiDatasets, runs: aiRuns, agentEvents: aiAgentEvents,
       servingPlans: aiServingPlans, gatewayProviders: aiProviders, gatewayProviderData,

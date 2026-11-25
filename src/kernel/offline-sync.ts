@@ -41,6 +41,9 @@ export interface OfflineSyncStore {
   apply(operation: SyncOperation): Promise<SyncResult>;
   getEntity(ownerId: string, entityType: string, entityId: string): Promise<SyncEntity | null>;
   listOpenConflicts(ownerId: string, limit: number): Promise<SyncConflict[]>;
+  listOperationsByOwner(ownerId: string, limit: number): Promise<SyncOperation[]>;
+  listEntitiesByOwner(ownerId: string, limit: number): Promise<SyncEntity[]>;
+  listConflictsByOwner(ownerId: string, limit: number): Promise<SyncConflict[]>;
   resolveConflict(ownerId: string, conflictId: string, resolution: ConflictResolution, resolvedBy: string, at: string): Promise<SyncResolveResult>;
 }
 
@@ -174,6 +177,18 @@ export class SqliteOfflineSyncStore implements OfflineSyncStore {
     });
   }
   async getEntity(owner:string,type:string,id:string):Promise<SyncEntity|null>{ const r=this.db.prepare(SQ_ENTITY).get(owner,type,id) as unknown as EntityRow|undefined; return r?json(r.entity_json):null; }
+  async listOperationsByOwner(owner:string,limit:number):Promise<SyncOperation[]>{
+    const rows=this.db.prepare('SELECT operation_json FROM sync_operations WHERE owner_id=? ORDER BY client_id,client_sequence,operation_id LIMIT ?').all(owner,limit) as unknown as Array<{operation_json:string}>;
+    return rows.map((r)=>json<SyncOperation>(r.operation_json)).sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)||a.operationId.localeCompare(b.operationId));
+  }
+  async listEntitiesByOwner(owner:string,limit:number):Promise<SyncEntity[]>{
+    const rows=this.db.prepare('SELECT entity_json FROM sync_entities WHERE owner_id=? ORDER BY entity_type,entity_id LIMIT ?').all(owner,limit) as unknown as Array<{entity_json:string}>;
+    return rows.map((r)=>json<SyncEntity>(r.entity_json));
+  }
+  async listConflictsByOwner(owner:string,limit:number):Promise<SyncConflict[]>{
+    const rows=this.db.prepare('SELECT conflict_json,status,resolution,resolved_by,resolved_at FROM sync_conflicts WHERE owner_id=? ORDER BY created_at,conflict_id LIMIT ?').all(owner,limit) as unknown as ConflictRow[];
+    return rows.map((r)=>conflict(r) as SyncConflict);
+  }
   async listOpenConflicts(owner:string,limit:number):Promise<SyncConflict[]>{
     const rows=this.db.prepare("SELECT conflict_json,status,resolution,resolved_by,resolved_at FROM sync_conflicts WHERE owner_id=? AND status='open' ORDER BY created_at,conflict_id LIMIT ?").all(owner,limit) as unknown as ConflictRow[];
     return rows.map((r)=>conflict(r) as SyncConflict);
@@ -213,6 +228,18 @@ export class PostgresOfflineSyncStore implements OfflineSyncStore {
     return result(rec,'entity'in decision?decision.entity:current,'conflict'in decision?decision.conflict:null,false);
   });}
   async getEntity(owner:string,type:string,id:string):Promise<SyncEntity|null>{const r=(await this.pool.query<EntityRow>(PG_ENTITY,[owner,type,id])).rows[0];return r?json(r.entity_json):null;}
+  async listOperationsByOwner(owner:string,limit:number):Promise<SyncOperation[]>{
+    const rows=(await this.pool.query<{operation_json:string}>('SELECT operation_json FROM sync_operations WHERE owner_id=$1 ORDER BY client_id,client_sequence,operation_id LIMIT $2',[owner,limit])).rows;
+    return rows.map((r)=>json<SyncOperation>(r.operation_json)).sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)||a.operationId.localeCompare(b.operationId));
+  }
+  async listEntitiesByOwner(owner:string,limit:number):Promise<SyncEntity[]>{
+    const rows=(await this.pool.query<EntityRow>('SELECT entity_json FROM sync_entities WHERE owner_id=$1 ORDER BY entity_type,entity_id LIMIT $2',[owner,limit])).rows;
+    return rows.map((r)=>json<SyncEntity>(r.entity_json));
+  }
+  async listConflictsByOwner(owner:string,limit:number):Promise<SyncConflict[]>{
+    const rows=(await this.pool.query<ConflictRow>('SELECT conflict_json,status,resolution,resolved_by,resolved_at FROM sync_conflicts WHERE owner_id=$1 ORDER BY created_at,conflict_id LIMIT $2',[owner,limit])).rows;
+    return rows.map((r)=>conflict(r) as SyncConflict);
+  }
   async listOpenConflicts(owner:string,limit:number):Promise<SyncConflict[]>{const rows=(await this.pool.query<ConflictRow>("SELECT conflict_json,status,resolution,resolved_by,resolved_at FROM sync_conflicts WHERE owner_id=$1 AND status='open' ORDER BY created_at,conflict_id LIMIT $2",[owner,limit])).rows;return rows.map(r=>conflict(r) as SyncConflict);}
   async resolveConflict(owner:string,id:string,resolution:ConflictResolution,by:string,at:string):Promise<SyncResolveResult>{return withTransaction(this.pool,async(conn)=>{
     await conn.query('SELECT pg_advisory_xact_lock($1::bigint)',[PG_LOCK]);const c=conflict((await conn.query<ConflictRow>(PG_CONFLICT,[owner,id])).rows[0]);

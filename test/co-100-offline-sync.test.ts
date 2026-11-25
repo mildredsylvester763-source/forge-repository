@@ -16,7 +16,8 @@ const op = (overrides: Record<string, unknown> = {}) => ({
 });
 function sqliteService(path = ':memory:') {
   const db = openDatabase(path); const applied = migrate(db, 'kernel', kernelMigrations);
-  return { db, applied, service: new OfflineSyncService({ store: new SqliteOfflineSyncStore(db), clock: () => Date.parse('2026-11-08T10:00:00.000Z') }) };
+  const store = new SqliteOfflineSyncStore(db);
+  return { db, applied, store, service: new OfflineSyncService({ store, clock: () => Date.parse('2026-11-08T10:00:00.000Z') }) };
 }
 function sqliteBackedPool(): SqlPool {
   const db = openDatabase(':memory:'); migrate(db, 'kernel', kernelMigrations);
@@ -52,6 +53,25 @@ describe('CO-100 offline synchronization', () => {
     try { await service.apply('u1',op()); const conflict=await service.apply('u1',op({clientId:'tablet',payload:{title:'second'},causalClock:{tablet:1}})); assert.equal(conflict.status,'conflict'); assert.equal((conflict.conflict?.currentSnapshot?.value as {title:string}).title,'first'); assert.equal((conflict.conflict?.incomingOperation.payload as {title:string}).title,'second'); const resolved=await service.resolveConflict('u1',conflict.conflict!.conflictId,'accept_incoming','u1'); assert.equal(resolved.entity?.version,2); assert.equal((resolved.entity?.value as {title:string}).title,'second'); }
     finally { db.close(); }
   });
+  it('exports all owner-scoped sync operations, current entities and resolved conflicts', async () => {
+    const { db, service, store } = sqliteService();
+    try {
+      await service.apply('u1', op());
+      const conflict = await service.apply('u1', op({ clientId: 'tablet', payload: { title: 'second' }, causalClock: { tablet: 1 } }));
+      await service.resolveConflict('u1', conflict.conflict!.conflictId, 'keep_current', 'u1');
+      await service.apply('u2', op({ payload: { title: 'private-other-user' } }));
+      const operations = await store.listOperationsByOwner('u1', 100);
+      const entities = await store.listEntitiesByOwner('u1', 100);
+      const conflicts = await store.listConflictsByOwner('u1', 100);
+      assert.equal(operations.length, 2);
+      assert.ok(operations.every((entry) => entry.ownerId === 'u1'));
+      assert.equal(entities.length, 1);
+      assert.equal(entities[0]?.ownerId, 'u1');
+      assert.equal(conflicts.length, 1);
+      assert.equal(conflicts[0]?.status, 'resolved');
+      assert.equal(JSON.stringify(operations).includes('private-other-user'), false);
+    } finally { db.close(); }
+  });
   it('detects concurrent vector clocks even when base versions match', async () => {
     const {db,service}=sqliteService();
     try { await service.apply('u1',op()); const c=await service.apply('u1',op({clientId:'tablet',baseVersion:1,payload:{title:'concurrent'},causalClock:{tablet:1}})); assert.equal(c.conflict?.reason,'concurrent_causality'); const kept=await service.resolveConflict('u1',c.conflict!.conflictId,'keep_current','u1'); assert.equal((kept.entity?.value as {title:string}).title,'first'); }
@@ -73,8 +93,8 @@ describe('CO-100 offline synchronization', () => {
     finally { db.close(); }
   });
   it('exercises the PostgreSQL transaction adapter through the SQL stand-in', async () => {
-    const pool=sqliteBackedPool(); const service=new OfflineSyncService({store:new PostgresOfflineSyncStore(pool),clock:()=>Date.parse('2026-11-08T10:00:00.000Z')});
-    try { assert.equal((await service.apply('u1',op())).status,'applied'); assert.equal((await service.apply('u1',op())).duplicate,true); const c=await service.apply('u1',op({clientId:'tablet',payload:{title:'second'},causalClock:{tablet:1}})); assert.equal(c.status,'conflict'); const r=await service.resolveConflict('u1',c.conflict!.conflictId,'accept_incoming','u1'); assert.equal((r.entity?.value as {title:string}).title,'second'); }
+    const pool=sqliteBackedPool(); const store=new PostgresOfflineSyncStore(pool); const service=new OfflineSyncService({store,clock:()=>Date.parse('2026-11-08T10:00:00.000Z')});
+    try { assert.equal((await service.apply('u1',op())).status,'applied'); assert.equal((await service.apply('u1',op())).duplicate,true); const c=await service.apply('u1',op({clientId:'tablet',payload:{title:'second'},causalClock:{tablet:1}})); assert.equal(c.status,'conflict'); const r=await service.resolveConflict('u1',c.conflict!.conflictId,'accept_incoming','u1'); assert.equal((r.entity?.value as {title:string}).title,'second'); assert.equal((await store.listOperationsByOwner('u1',10)).length,2); assert.equal((await store.listEntitiesByOwner('u1',10)).length,1); assert.equal((await store.listConflictsByOwner('u1',10))[0]?.status,'resolved'); }
     finally { await pool.end(); }
   });
 });

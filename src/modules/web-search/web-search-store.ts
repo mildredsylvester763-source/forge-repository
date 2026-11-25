@@ -94,6 +94,7 @@ export interface WebSearchStore {
   createQuery(query: NewWebSearchQuery): Promise<WebSearchQueryRecord>;
   listQueriesByUser(userId: string, take: number): Promise<WebSearchQueryRecord[]>;
   findRule(userId: string, workspace: string): Promise<DomainRuleRecord | null>;
+  listRulesByUser(userId: string, take: number): Promise<DomainRuleRecord[]>;
   createRule(rule: NewDomainRule): Promise<DomainRuleRecord>;
   saveRule(rule: DomainRuleRecord): Promise<DomainRuleRecord>;
   findPage(userId: string, url: string): Promise<FetchedPageRecord | null>;
@@ -137,6 +138,10 @@ export class InMemoryWebSearchStore implements WebSearchStore {
   async findRule(userId: string, workspace: string): Promise<DomainRuleRecord | null> {
     const list = this.rulesByUser.get(userId) ?? [];
     return list.find((r) => r.workspace === workspace) ?? null;
+  }
+
+  async listRulesByUser(userId: string, take: number): Promise<DomainRuleRecord[]> {
+    return [...(this.rulesByUser.get(userId) ?? [])].sort((a, b) => a.workspace.localeCompare(b.workspace) || a.id.localeCompare(b.id)).slice(0, take);
   }
 
   async createRule(rule: NewDomainRule): Promise<DomainRuleRecord> {

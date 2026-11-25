@@ -69,6 +69,14 @@ export class PostgresSearchIntegrityStore implements SearchIntegrityStore {
     return row ? toCacheRecord(row) : null;
   }
 
+  async listCacheEntriesByUser(userId: string, take: number): Promise<SearchCacheEntryRecord[]> {
+    const result = await this.pool.query<CacheRow>(
+      'SELECT * FROM search_cache_entries WHERE user_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2',
+      [userId, take],
+    );
+    return result.rows.map(toCacheRecord);
+  }
+
   async createCacheEntry(entry: NewSearchCacheEntry): Promise<SearchCacheEntryRecord> {
     const id = randomUUID();
     await this.pool.query(

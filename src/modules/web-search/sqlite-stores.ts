@@ -109,6 +109,7 @@ export class SqliteWebSearchStore implements WebSearchStore {
   private readonly insertQuery;
   private readonly queriesByUser;
   private readonly findRuleStmt;
+  private readonly rulesByUser;
   private readonly insertRule;
   private readonly updateRule;
   private readonly findPageStmt;
@@ -124,6 +125,7 @@ export class SqliteWebSearchStore implements WebSearchStore {
     this.insertQuery = db.prepare('INSERT INTO web_search_queries (id, user_id, workspace, query, results, skipped, refused_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     this.queriesByUser = db.prepare('SELECT * FROM web_search_queries WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
     this.findRuleStmt = db.prepare('SELECT * FROM web_search_domain_rules WHERE user_id = ? AND workspace = ?');
+    this.rulesByUser = db.prepare('SELECT * FROM web_search_domain_rules WHERE user_id = ? ORDER BY workspace, id LIMIT ?');
     this.insertRule = db.prepare('INSERT INTO web_search_domain_rules (id, user_id, workspace, allow, deny, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.updateRule = db.prepare('UPDATE web_search_domain_rules SET allow = ?, deny = ?, updated_at = ? WHERE id = ?');
     this.findPageStmt = db.prepare('SELECT * FROM web_search_pages WHERE user_id = ? AND url = ?');
@@ -151,6 +153,11 @@ export class SqliteWebSearchStore implements WebSearchStore {
   async findRule(userId: string, workspace: string): Promise<DomainRuleRecord | null> {
     const row = this.findRuleStmt.get(userId, workspace) as unknown as RuleRow | undefined;
     return row ? toRuleRecord(row) : null;
+  }
+
+  async listRulesByUser(userId: string, take: number): Promise<DomainRuleRecord[]> {
+    const rows = this.rulesByUser.all(userId, take) as unknown as RuleRow[];
+    return rows.map(toRuleRecord);
   }
 
   async createRule(rule: NewDomainRule): Promise<DomainRuleRecord> {

@@ -57,6 +57,7 @@ const toPackRecord = (r: PackRow): KnowledgePackRecord => ({
 export class SqliteSearchIntegrityStore implements SearchIntegrityStore {
   private readonly db: Database;
   private readonly findCacheStmt;
+  private readonly cacheEntriesByUser;
   private readonly insertCache;
   private readonly updateCache;
   private readonly insertPack;
@@ -66,6 +67,7 @@ export class SqliteSearchIntegrityStore implements SearchIntegrityStore {
   constructor(db: Database) {
     this.db = db;
     this.findCacheStmt = db.prepare('SELECT * FROM search_cache_entries WHERE user_id = ? AND cache_key = ?');
+    this.cacheEntriesByUser = db.prepare('SELECT * FROM search_cache_entries WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?');
     this.insertCache = db.prepare('INSERT INTO search_cache_entries (id, user_id, cache_key, lane, payload, ttl_seconds, hit_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     this.updateCache = db.prepare('UPDATE search_cache_entries SET lane = ?, payload = ?, ttl_seconds = ?, hit_count = ?, updated_at = ? WHERE id = ?');
     this.insertPack = db.prepare('INSERT INTO knowledge_packs (id, user_id, name, topics, size_kb, checksum, articles, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -76,6 +78,11 @@ export class SqliteSearchIntegrityStore implements SearchIntegrityStore {
   async findCacheEntry(userId: string, cacheKey: string): Promise<SearchCacheEntryRecord | null> {
     const row = this.findCacheStmt.get(userId, cacheKey) as unknown as CacheRow | undefined;
     return row ? toCacheRecord(row) : null;
+  }
+
+  async listCacheEntriesByUser(userId: string, take: number): Promise<SearchCacheEntryRecord[]> {
+    const rows = this.cacheEntriesByUser.all(userId, take) as unknown as CacheRow[];
+    return rows.map(toCacheRecord);
   }
 
   async createCacheEntry(entry: NewSearchCacheEntry): Promise<SearchCacheEntryRecord> {

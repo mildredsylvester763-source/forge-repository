@@ -896,6 +896,12 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export', steps: [{ action: 'search' }, { action: 'write', file: 'owner.md' }] });
       await h.app.testQuality.writeGolden(owner.id, 'owner-golden', { expected: 'owner-value' });
       await h.app.statusPages.createPage(owner.id, { name: 'Owner Status', slug: 'owner-status-export' });
+      await h.app.offlineSync.apply(owner.id, { clientId: 'export-phone', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline content' }, causalClock: { 'export-phone': 1 } });
+      const offlineConflict = await h.app.offlineSync.apply(owner.id, { clientId: 'export-tablet', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline conflict' }, causalClock: { 'export-tablet': 1 } });
+      await h.app.offlineSync.resolveConflict(owner.id, offlineConflict.conflict!.conflictId, 'keep_current', owner.id);
+      await h.app.offlineSync.apply(other.id, { clientId: 'other-phone', sequence: 1, entityType: 'document', entityId: 'other-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'other-account-offline-secret' }, causalClock: { 'other-phone': 1 } });
+      await h.app.searchIntegrity.putCacheEntry(owner.id, { key: 'account-export-cache', lane: 'web', payload: { query: 'owner cache payload' } });
+      await h.app.webSearch.setDomainRules(owner.id, { workspace: 'unqueried-workspace', allow: ['example.com'], deny: [] });
 
       const response = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
       assert.equal(response.status, 200);
@@ -906,6 +912,13 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
           testQuality: { goldens: Array<{ userId: string; name: string }> };
           statusPages: { pages: Array<{ page: { ownerId: string; slug: string } }> };
           liveTesting: { sessions: Array<{ testAccounts: Array<Record<string, unknown>> }> };
+          webSearch: { domainRules: Array<{ userId: string; workspace: string; allow: string[] }> };
+          searchIntegrity: { cacheEntries: Array<{ userId: string; cacheKey: string; payload: unknown }> };
+          offlineSync: {
+            operations: Array<{ ownerId: string; operationId: string; payload: unknown }>;
+            entities: Array<{ ownerId: string; entityId: string }>;
+            conflicts: Array<{ ownerId: string; status: string }>;
+          };
         };
         exportCoverage: { complete: boolean; includedModules: string[]; omitted: string[] };
       };
@@ -918,10 +931,24 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(bundle.modules.testQuality.goldens[0]?.name, 'owner-golden');
       assert.equal(bundle.modules.statusPages.pages.length, 1);
       assert.equal(bundle.modules.statusPages.pages[0]?.page.slug, 'owner-status-export');
+      assert.equal(bundle.modules.offlineSync.operations.length, 2);
+      assert.ok(bundle.modules.offlineSync.operations.every((entry) => entry.ownerId === owner.id));
+      assert.equal(bundle.modules.offlineSync.entities.length, 1);
+      assert.equal(bundle.modules.offlineSync.entities[0]?.entityId, 'owner-offline-doc');
+      assert.equal(bundle.modules.offlineSync.conflicts.length, 1);
+      assert.equal(bundle.modules.offlineSync.conflicts[0]?.status, 'resolved');
+      assert.equal(bundle.modules.searchIntegrity.cacheEntries.length, 1);
+      assert.equal(bundle.modules.searchIntegrity.cacheEntries[0]?.cacheKey, 'account-export-cache');
+      assert.equal(bundle.modules.webSearch.domainRules.length, 1);
+      assert.equal(bundle.modules.webSearch.domainRules[0]?.workspace, 'unqueried-workspace');
       assert.equal(bundle.exportCoverage.complete, false);
       assert.ok(bundle.exportCoverage.omitted.length > 0);
       assert.ok(bundle.exportCoverage.includedModules.includes('trainingData'));
+      assert.ok(bundle.exportCoverage.includedModules.includes('offlineSync'));
+      assert.equal(bundle.exportCoverage.omitted.some((item) => item.toLowerCase().includes('offline-sync')), false);
+      assert.equal(bundle.exportCoverage.omitted.some((item) => item.toLowerCase().includes('cache entr')), false);
       assert.equal(JSON.stringify(bundle.modules).includes('Other account task must not export'), false);
+      assert.equal(JSON.stringify(bundle.modules).includes('other-account-offline-secret'), false);
       for (const session of bundle.modules.liveTesting.sessions) {
         for (const account of session.testAccounts) assert.equal(Object.hasOwn(account, 'password'), false);
       }
