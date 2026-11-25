@@ -887,7 +887,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
   });
 
   it('exports owner-scoped module records without leaking another account or generated passwords (Hook 16)', async () => {
-    const h = await startHarness();
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const owner = await freeUser(h, 'export-modules-owner@forge.test');
       const other = await freeUser(h, 'export-modules-other@forge.test');
