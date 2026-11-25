@@ -16,6 +16,7 @@ import { consumeRateLimit, type RateLimitRule, type RateLimitState } from './eng
 import type { SharedRateLimiter } from '../../kernel/rate-limit-store.ts';
 import { accountRetention, buildAccountExport, validateDeletionRequest } from './engine/account-data-engine.ts';
 import { signPaymentPayload } from './payment-provider.ts';
+import { signAccessSnapshot } from './access-snapshot-signature.ts';
 import type { BillingStore } from './billing-store.ts';
 import type { PlanStore } from './plans-store.ts';
 import { PLANS_EVENT_VERSION, PlansEvents } from './events.ts';
@@ -523,7 +524,7 @@ export class PlansService {
   }
 
   /** Hook 9 - a signed copy of what the user may use, valid for a few hours offline. */
-  async buildAccessSnapshot(userId: string): Promise<{ snapshot: AccessSnapshot; signature: string }> {
+  async buildAccessSnapshot(userId: string): Promise<{ snapshot: AccessSnapshot; signature: string; publicKey: string; publicSignature: string }> {
     const now = this.clock();
     const accountState = await this.billing.getAccountState(userId);
     if (accountState.paused || accountState.deletionQueuedAt !== null) {
@@ -549,7 +550,7 @@ export class PlansService {
       ttlMs: this.accessSnapshotTtlHours * 3_600_000,
     });
     if (!assembled.ok) throw new AppError(400, assembled.reason, 'The access snapshot is invalid.', { details: { reason: assembled.reason } });
-    return { snapshot: assembled.value, signature: signPaymentPayload(this.accessSecret, assembled.value) };
+    return { snapshot: assembled.value, signature: signPaymentPayload(this.accessSecret, assembled.value), ...signAccessSnapshot(this.accessSecret, assembled.value) };
   }
 
   async verifyAccessSnapshot(userId: string, body: unknown): Promise<{ valid: true; remainingMs: number; serverState: { plan: PlanId; passes: readonly string[] } }> {
