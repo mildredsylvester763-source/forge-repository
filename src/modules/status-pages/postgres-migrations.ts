@@ -25,9 +25,9 @@ export const pgStatusPageMigrations: readonly Migration[] = [{
       reason TEXT NOT NULL, created_at BIGINT NOT NULL
     );
     CREATE INDEX status_component_changes_page_idx ON status_component_changes(page_id, created_at, id);
-    CREATE FUNCTION status_component_changes_block_update() RETURNS trigger LANGUAGE plpgsql AS $
+    CREATE FUNCTION status_component_changes_block_update() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN RAISE EXCEPTION 'status component changes are append-only'; END;
-    $;
+    $$;
     CREATE TRIGGER status_component_changes_no_update BEFORE UPDATE ON status_component_changes
       FOR EACH ROW EXECUTE FUNCTION status_component_changes_block_update();
   `
