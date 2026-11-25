@@ -159,10 +159,13 @@ offline-sync operations, current entity snapshots and open/resolved conflicts, e
 search-integrity cache entry, and all web-search domain rules (including unqueried workspaces).
 It redacts generated test-account passwords, other participants' identity rows and internal
 storage keys. The Hook 16 follow-up adds direct owner-scoped enumeration for every database-backed
-AI-training record and the authenticated user's workspace memberships. `exportCoverage.complete`
-remains deliberately `false` for external binary/model artifacts whose bytes are not available
-through a storage-provider export contract. `POST /v1/account/export` remains a no-store JSON
-attachment. `POST /v1/account/delete` (confirm: true) pauses and queues
+AI-training record and the authenticated user's workspace memberships. The server-side
+`AccountArtifactExportProvider` contract now receives owner-scoped references for external
+training assets, model weights and on-prem packages. Exported bytes are included only after
+canonical-base64, byte-length and SHA-256 verification; storage locators are never returned.
+A deployment without an adapter explicitly reports unresolved artifact references. The
+`exportCoverage.complete` field is true only when all referenced external artifacts are included.
+`POST /v1/account/export` remains a no-store JSON attachment. `POST /v1/account/delete` (confirm: true) pauses and queues
 the account; it does not hard-purge. The owner must verify the full data inventory and applicable
 retention requirements (including Nigeria NDPR) before destructive deletion is enabled.
 
