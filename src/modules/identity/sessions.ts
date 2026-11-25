@@ -1,0 +1,203 @@
+import { createHash, randomBytes } from 'node:crypto';
+import type { Clock } from '../../kernel/clock.ts';
+
+export interface SessionRecord {
+  /** SHA-256 of the bearer token. The token itself is never stored. */
+  readonly idHash: string;
+  readonly userId: string;
+  readonly createdAt: number;
+  readonly lastSeenAt: number;
+  readonly expiresAt: number;
+  readonly ip: string;
+  readonly userAgent: string;
+  readonly revokedAt: number | null;
+  readonly revokedReason: string | null;
+}
+
+export interface SessionStore {
+  insert(record: SessionRecord): Promise<void>;
+  findByHash(idHash: string): Promise<SessionRecord | null>;
+  touch(idHash: string, now: number): Promise<SessionRecord | null>;
+  revoke(idHash: string, reason: string, now: number): Promise<void>;
+  revokeAllForUser(userId: string, reason: string, now: number): Promise<number>;
+  listActiveByUser(userId: string, now: number): Promise<SessionRecord[]>;
+}
+
+export class InMemorySessionStore implements SessionStore {
+  private readonly records = new Map<string, SessionRecord>();
+  private readonly byUser = new Map<string, Set<string>>();
+
+  async insert(record: SessionRecord): Promise<void> {
+    this.records.set(record.idHash, record);
+    const set = this.byUser.get(record.userId) ?? new Set<string>();
+    set.add(record.idHash);
+    this.byUser.set(record.userId, set);
+  }
+
+  /** Used only to roll back a sign-in whose audit event failed. */
+  remove(idHash: string): void {
+    const record = this.records.get(idHash);
+    if (!record) return;
+    this.records.delete(idHash);
+    this.byUser.get(record.userId)?.delete(idHash);
+  }
+
+  async findByHash(idHash: string): Promise<SessionRecord | null> {
+    return this.records.get(idHash) ?? null;
+  }
+
+  async touch(idHash: string, now: number): Promise<SessionRecord | null> {
+    const current = this.records.get(idHash);
+    if (!current || current.revokedAt !== null || current.expiresAt <= now) return null;
+    const next = { ...current, lastSeenAt: now };
+    this.records.set(idHash, next);
+    return next;
+  }
+
+  async revoke(idHash: string, reason: string, now: number): Promise<void> {
+    const current = this.records.get(idHash);
+    if (current && current.revokedAt === null) {
+      this.records.set(idHash, { ...current, revokedAt: now, revokedReason: reason });
+    }
+  }
+
+  async revokeAllForUser(userId: string, reason: string, now: number): Promise<number> {
+    const idHashes = this.byUser.get(userId);
+    if (!idHashes) return 0;
+    let count = 0;
+    for (const idHash of [...idHashes]) {
+      const rec = this.records.get(idHash);
+      if (rec && rec.revokedAt === null) {
+        this.records.set(idHash, { ...rec, revokedAt: now, revokedReason: reason });
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async listActiveByUser(userId: string, now: number): Promise<SessionRecord[]> {
+    const active: SessionRecord[] = [];
+    const set = this.byUser.get(userId);
+    if (!set) return active;
+    for (const idHash of [...set]) {
+      const rec = this.records.get(idHash);
+      if (!rec) {
+        set.delete(idHash);
+      } else if (rec.expiresAt < now - 24 * 3600_000) {
+        // Long-dead records are dropped so the maps cannot grow without bound.
+        this.records.delete(idHash);
+        set.delete(idHash);
+      } else if (rec.revokedAt === null && rec.expiresAt > now) {
+        active.push(rec);
+      }
+    }
+    return active;
+  }
+}
+
+export interface SessionConfig {
+  idleTimeoutMs: number;
+  absoluteTimeoutMs: number;
+  maxPerUser: number;
+}
+
+const TOKEN_FORMAT = /^[A-Za-z0-9_-]{43}$/;
+const TOUCH_INTERVAL_MS = 60_000;
+
+export const hashSessionToken = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** Opaque 256-bit bearer tokens, idle and absolute expiry, per-user cap, instant revocation. */
+export class SessionService {
+  private readonly store: SessionStore;
+  private readonly clock: Clock;
+  private readonly config: SessionConfig;
+
+  constructor(options: { store: SessionStore; clock: Clock; config: SessionConfig }) {
+    this.store = options.store;
+    this.clock = options.clock;
+    this.config = options.config;
+  }
+
+  /**
+   * Builds a new session and passes the configured cap to the identity unit of work.
+   * Nothing is saved or counted here: active-session selection and retirement happen inside
+   * the same transaction that persists the session and its audit event.
+   */
+  async prepare(
+    userId: string,
+    meta: { ip: string; userAgent: string },
+  ): Promise<{ token: string; session: SessionRecord; maxPerUser: number }> {
+    const now = this.clock();
+    // The unit of work enforces the cap inside the same transaction as session and event creation.
+    // Reading the active-session list here would be stale under concurrent sign-ins.
+    const token = randomBytes(32).toString('base64url');
+    const session: SessionRecord = {
+      idHash: hashSessionToken(token),
+      userId,
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + this.config.absoluteTimeoutMs,
+      ip: meta.ip,
+      userAgent: meta.userAgent || 'unknown',
+      revokedAt: null,
+      revokedReason: null,
+    };
+    return { token, session, maxPerUser: this.config.maxPerUser };
+  }
+
+  async validate(token: string | undefined): Promise<SessionRecord | null> {
+    if (!token || !TOKEN_FORMAT.test(token)) return null;
+    const idHash = hashSessionToken(token);
+    let record = await this.store.findByHash(idHash);
+    if (!record) return null;
+    const now = this.clock();
+    if (record.revokedAt !== null) return null;
+    if (now >= record.expiresAt) return null;
+    if (record.lastSeenAt > now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
+    if (now - record.lastSeenAt > TOUCH_INTERVAL_MS) {
+      const touched = await this.store.touch(idHash, now);
+      // A null touch means the record was concurrently revoked, expired or removed.
+      // Never fall back to the stale pre-touch record: that would resurrect its authority.
+      if (!touched || touched.revokedAt !== null || touched.expiresAt <= now) return null;
+      record = touched;
+    }
+    return record;
+  }
+
+  /** List only sessions that are active under both absolute and idle expiry rules. */
+  async listActiveForUser(userId: string): Promise<SessionRecord[]> {
+    const now = this.clock();
+    const records = await this.store.listActiveByUser(userId, now);
+    return records
+      .filter((record) => record.revokedAt === null && record.expiresAt > now && record.lastSeenAt <= now && now - record.lastSeenAt < this.config.idleTimeoutMs)
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt || b.createdAt - a.createdAt || a.idHash.localeCompare(b.idHash));
+  }
+
+  /** Look up an active session only when it belongs to the authenticated account. */
+  async findActiveForUser(userId: string, idHash: string): Promise<SessionRecord | null> {
+    const record = await this.store.findByHash(idHash);
+    if (!record || record.userId !== userId || record.revokedAt !== null) return null;
+    const now = this.clock();
+    if (record.expiresAt <= now || record.lastSeenAt > now || now - record.lastSeenAt >= this.config.idleTimeoutMs) return null;
+    return record;
+  }
+
+  /** Validate token shape and derive its storage key without mutating session state. */
+  prepareRevoke(token: string | undefined): { idHash: string; now: number } | null {
+    if (!token || !TOKEN_FORMAT.test(token)) return null;
+    return { idHash: hashSessionToken(token), now: this.clock() };
+  }
+
+  async revoke(token: string | undefined, reason: string): Promise<SessionRecord | null> {
+    const prepared = this.prepareRevoke(token);
+    if (!prepared) return null;
+    const record = await this.store.findByHash(prepared.idHash);
+    if (!record) return null;
+    await this.store.revoke(prepared.idHash, reason, prepared.now);
+    return record;
+  }
+
+  async revokeAllForUser(userId: string, reason: string): Promise<number> {
+    return this.store.revokeAllForUser(userId, reason, this.clock());
+  }
+}

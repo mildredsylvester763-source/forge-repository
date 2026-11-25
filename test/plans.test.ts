@@ -1,0 +1,1148 @@
+import { describe, it } from 'node:test';
+import { strict as assert } from 'node:assert';
+import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
+import { InMemoryBillingStore, InMemoryPlanStore, PlansService, signPaymentPayload, verifyAccessSnapshotSignature, type PlanId } from '../src/modules/plans/index.ts';
+import { systemClock } from '../src/kernel/clock.ts';
+import { SqliteWorkspaceStore } from '../src/modules/workspaces/index.ts';
+
+const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
+
+const PAYMENT_CATALOG = JSON.stringify([
+  { productCode: 'pro_plan', type: 'base_plan', planCode: 'pro', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'plus_plan', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'team_plan', type: 'base_plan', planCode: 'team', enginesIncluded: [], creditsIncluded: 0, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'annual_plus_2026', type: 'base_plan', planCode: 'plus', enginesIncluded: [], creditsIncluded: 3000, billingPeriod: 'yearly', sellable: true },
+  { productCode: 'music_pass', type: 'engine_pass', enginesIncluded: ['music'], creditsIncluded: 100, billingPeriod: 'monthly', sellable: true },
+  { productCode: 'music_painting_pass', type: 'engine_pass', enginesIncluded: ['music', 'painting'], creditsIncluded: 100, creditsByEngine: { music: 60, painting: 40 }, billingPeriod: 'monthly', sellable: true },
+]);
+
+interface TestUser {
+  cookie: string;
+  id: string;
+}
+
+async function registerAndSetPlan(h: Harness, email: string, plan: PlanId, enginePasses: readonly string[] = []): Promise<TestUser> {
+  const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'Plans Tester' });
+  assert.equal(register.status, 201);
+  const registered = (await register.json()) as { user: { id: string } };
+  await h.app.plans.setPlan(registered.user.id, plan, enginePasses);
+  const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
+  assert.equal(signIn.status, 200);
+  return { cookie: sessionCookie(signIn), id: registered.user.id };
+}
+
+async function freeUser(h: Harness, email: string): Promise<TestUser> {
+  const register = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'Plans Tester' });
+  assert.equal(register.status, 201);
+  const registered = (await register.json()) as { user: { id: string } };
+  const signIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
+  assert.equal(signIn.status, 200);
+  return { cookie: sessionCookie(signIn), id: registered.user.id };
+}
+
+describe('plans (PLAN GATE LAW)', () => {
+  it('requires sign-in on the plans routes', async () => {
+    const h = await startHarness();
+    try {
+      const me = await h.get('/v1/plans/me');
+      assert.equal(me.status, 401);
+      const check = await h.post('/v1/plans/check', { featureId: 'CO-001' });
+      assert.equal(check.status, 401);
+      const credits = await h.get('/v1/credits/me');
+      assert.equal(credits.status, 401);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('serves the default free plan with the configured prices', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-free-default@forge.test');
+      const res = await h.get('/v1/plans/me', { cookie: user.cookie });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { plan: string; enginePasses: string[]; prices: Record<string, number> };
+      assert.equal(body.plan, 'free');
+      assert.deepEqual(body.enginePasses, []);
+      assert.deepEqual(body.prices, {
+        plusUsdPerMonth: 9.99,
+        proUsdPerMonth: 24.99,
+        studioUsdPerMonth: 59.99,
+        teamUsdPerSeatPerMonth: 39,
+        teamMinSeats: 3,
+        enterpriseFromUsdPerMonth: 1000,
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('answers plan checks from the catalog', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-check@forge.test');
+      const denied = await h.post('/v1/plans/check', { featureId: 'AI-050' }, { cookie: user.cookie });
+      assert.equal(denied.status, 200);
+      assert.deepEqual((await denied.json()) as unknown, {
+        decision: { allowed: false, feature: 'AI-050', gate: 'plus', plan: 'free', passes: [], engine: null, engineLevels: null, level: null, reason: 'plan_too_low', limits: null },
+      });
+      const allowed = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
+      assert.equal(allowed.status, 200);
+      assert.deepEqual((await allowed.json()) as unknown, {
+        decision: { allowed: true, feature: 'CO-001', gate: 'free', plan: 'free', passes: [], engine: null, engineLevels: null, level: null, reason: 'unlocked', limits: null },
+      });
+      const unknown = await h.post('/v1/plans/check', { featureId: 'XX-999' }, { cookie: user.cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'plan_feature_unknown');
+      const extra = await h.post('/v1/plans/check', { featureId: 'CO-001', extra: 1 }, { cookie: user.cookie });
+      assert.equal(extra.status, 400);
+      assert.equal(await errorCode(extra), 'invalid_request');
+      const missing = await h.post('/v1/plans/check', {}, { cookie: user.cookie });
+      assert.equal(missing.status, 400);
+      const empty = await h.post('/v1/plans/check', { featureId: '' }, { cookie: user.cookie });
+      assert.equal(empty.status, 400);
+      const notString = await h.post('/v1/plans/check', { featureId: 42 }, { cookie: user.cookie });
+      assert.equal(notString.status, 400);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces the gate on a wired route: byok is Plus (AI-050)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-byok@forge.test');
+      const denied = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      assert.equal(denied.status, 402);
+      const body = (await denied.json()) as { error: { code: string; details: Record<string, string> } };
+      assert.equal(body.error.code, 'plan_required');
+      assert.deepEqual(body.error.details, { feature: 'AI-050', gate: 'plus', plan: 'free', reason: 'plan_too_low' });
+      await h.app.plans.setPlan(user.id, 'plus');
+      const allowed = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      assert.notEqual(allowed.status, 402);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('walks the Team ladder on domain-rules (AI-061): Studio passes, Pro does not', async () => {
+    const h = await startHarness();
+    try {
+      for (const plan of ['free', 'plus', 'pro'] as const) {
+        const user = await registerAndSetPlan(h, 'plans-ladder-' + plan + '@forge.test', plan);
+        const res = await h.post('/v1/web-search/domain-rules/get', { workspace: 'w' }, { cookie: user.cookie });
+        assert.equal(res.status, 402, plan);
+      }
+      for (const plan of ['studio', 'team', 'enterprise'] as const) {
+        const user = await registerAndSetPlan(h, 'plans-ladder-' + plan + '@forge.test', plan);
+        const res = await h.post('/v1/web-search/domain-rules/get', { workspace: 'w' }, { cookie: user.cookie });
+        assert.notEqual(res.status, 402, plan);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('keeps Enterprise-gated routes above Team: gateway policy (AI-051)', async () => {
+    const h = await startHarness();
+    try {
+      const teamUser = await registerAndSetPlan(h, 'plans-ent-team@forge.test', 'team');
+      const denied = await h.post('/v1/ai-training/gateway/policy', {}, { cookie: teamUser.cookie });
+      assert.equal(denied.status, 402);
+      const entUser = await registerAndSetPlan(h, 'plans-ent-pass@forge.test', 'enterprise');
+      const allowed = await h.post('/v1/ai-training/gateway/policy', {}, { cookie: entUser.cookie });
+      assert.notEqual(allowed.status, 402);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('never locks engine rows: creative sessions run at free level without a pass (TQ-027)', async () => {
+    const h = await startHarness();
+    try {
+      const noPass = await registerAndSetPlan(h, 'plans-engine-nopass@forge.test', 'pro');
+      const allowed = await h.post('/v1/live-testing/sessions/creative', {}, { cookie: noPass.cookie });
+      assert.notEqual(allowed.status, 402);
+      const verdict = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: noPass.cookie });
+      assert.equal(verdict.status, 200);
+      const body = (await verdict.json()) as { decision: Record<string, unknown> };
+      assert.equal(body.decision.allowed, true);
+      assert.equal(body.decision.level, 'free');
+      assert.deepEqual((body.decision as { limits: Record<string, number> }).limits, {
+        windowCredits: 40,
+        windowHours: 5,
+        monthlyCeiling: 600,
+      });
+      const withPass = await registerAndSetPlan(h, 'plans-engine-pass@forge.test', 'pro', ['music']);
+      const paid = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: withPass.cookie });
+      assert.equal(paid.status, 200);
+      const paidBody = (await paid.json()) as { decision: Record<string, unknown> };
+      assert.equal(paidBody.decision.allowed, true);
+      assert.equal(paidBody.decision.level, 'free');
+      assert.deepEqual(paidBody.decision.engineLevels, { manhwa: 'free', '3d': 'free', music: 'paid' });
+      const allPasses = await registerAndSetPlan(h, 'plans-engine-all-passes@forge.test', 'pro', ['music', 'manhwa', '3d']);
+      const fullyPaid = await h.post('/v1/plans/check', { featureId: 'TQ-027' }, { cookie: allPasses.cookie });
+      const fullyPaidBody = (await fullyPaid.json()) as { decision: Record<string, unknown> };
+      assert.equal(fullyPaidBody.decision.level, 'paid');
+      assert.deepEqual(fullyPaidBody.decision.engineLevels, { manhwa: 'paid', '3d': 'paid', music: 'paid' });
+    } finally {
+      await h.close();
+    }
+  });
+
+
+  it('processes signed payment events exactly once and grants tagged credits (Hooks 1, 3, 6)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-pay@forge.test');
+      const empty = await h.get('/v1/credits/me', { cookie: user.cookie });
+      assert.equal(empty.status, 200);
+      const emptyBody = (await empty.json()) as { balances: { general: number; engines: unknown[] } };
+      assert.equal(emptyBody.balances.general, 0);
+      assert.deepEqual(emptyBody.balances.engines, []);
+      const now = h.clock.now;
+      const payload = {
+        status: 'succeeded' as const,
+        eventId: 'evt_plans_1',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [
+          { itemType: 'base_plan', itemCode: 'pro_plan', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+          { itemType: 'engine_pass', itemCode: 'music_pass', startsAt: now - 1000, endsAt: now + 2_678_400_000 },
+        ],
+      };
+      const bad = await h.post('/v1/payments/event', { payload, signature: 'deadbeef' });
+      assert.equal(bad.status, 400);
+      assert.equal(await errorCode(bad), 'payment_event_rejected');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const res = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { processed: boolean; duplicate: boolean; grantedItems: string[] };
+      assert.equal(body.processed, true);
+      assert.equal(body.duplicate, false);
+      assert.equal(body.grantedItems.length, 2);
+      const me = await h.get('/v1/plans/me', { cookie: user.cookie });
+      const meBody = (await me.json()) as { plan: string; enginePasses: string[] };
+      assert.equal(meBody.plan, 'pro');
+      assert.deepEqual(meBody.enginePasses, ['music']);
+      const check = await h.post('/v1/plans/check', { featureId: 'AI-045' }, { cookie: user.cookie });
+      const checkBody = (await check.json()) as { decision: { allowed: boolean; plan: string } };
+      assert.equal(checkBody.decision.allowed, true);
+      assert.equal(checkBody.decision.plan, 'pro');
+      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
+      assert.equal(credits.balances.general, 7500);
+      assert.deepEqual(credits.balances.engines, [{ engine: 'music', balance: 100 }]);
+      const replay = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      const replayBody = (await replay.json()) as { processed: boolean; duplicate: boolean };
+      assert.equal(replayBody.processed, false);
+      assert.equal(replayBody.duplicate, true);
+      const afterReplay = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number } };
+      assert.equal(afterReplay.balances.general, 7500);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('rejects failed and refunded provider notifications without granting subscriptions or credits (Hook 15)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-non-success-payment@forge.test');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const now = h.clock.now;
+      for (const [index, status] of (['failed', 'refunded'] as const).entries()) {
+        const payload = {
+          status, eventId: 'evt_non_success_' + index, userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
+          products: [{ itemType: 'base_plan', itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+        };
+        const response = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+        assert.equal(response.status, 400);
+        assert.equal(await errorCode(response), 'payment_event_rejected');
+      }
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'free');
+      assert.deepEqual(state.passes, []);
+      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: unknown[] } };
+      assert.equal(credits.balances.general, 0);
+      assert.deepEqual(credits.balances.engines, []);
+    } finally { await h.close(); }
+  });
+
+  it('uses the fake clock and signed test payments to exercise renewal and upgrade transitions (Hook 15)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-renewal-upgrade@forge.test');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const day = 86_400_000;
+      const send = async (eventId: string, productCode: string, startsAt: number, endsAt: number): Promise<Response> => {
+        const payload = { status: 'succeeded' as const, eventId, userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: h.clock.now,
+          products: [{ itemType: 'base_plan', itemCode: productCode, startsAt, endsAt }] };
+        return h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      };
+      const firstStart = h.clock.now;
+      const firstEnd = firstStart + 30 * day;
+      assert.equal((await send('evt_plus_initial', 'plus_plan', firstStart, firstEnd)).status, 200);
+      h.clock.now = firstEnd;
+      const renewalStart = h.clock.now;
+      const renewalEnd = renewalStart + 30 * day;
+      assert.equal((await send('evt_plus_renewal', 'plus_plan', renewalStart, renewalEnd)).status, 200);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'plus');
+      h.clock.now = renewalStart + 5 * day;
+      const upgradeStart = h.clock.now;
+      const upgradeEnd = upgradeStart + 30 * day;
+      assert.equal((await send('evt_plus_to_pro_upgrade', 'pro_plan', upgradeStart, upgradeEnd)).status, 200);
+      const upgraded = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(upgraded.plan, 'pro');
+      const liveBasePlans = upgraded.items.filter((item) => item.itemType === 'base_plan' && item.status === 'active' && item.startsAt <= h.clock.now && h.clock.now < item.endsAt);
+      assert.equal(liveBasePlans.length, 1);
+      assert.equal(liveBasePlans[0]?.itemCode, 'pro');
+    } finally { await h.close(); }
+  });
+  it('resolves arbitrary base-plan product codes through explicit catalog mapping (Hook 4)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-custom-product-code@forge.test');
+      const now = h.clock.now;
+      const payload = {
+        status: 'succeeded' as const,
+        eventId: 'evt_custom_base_product',
+        userId: user.id,
+        amountMinor: 999,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan', itemCode: 'annual_plus_2026', startsAt: now, endsAt: now + 365 * 86_400_000 }],
+      };
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const response = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      assert.equal(response.status, 200);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'plus');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('expires paid base plans and engine passes without resurrecting legacy plan fields (Hook 1)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-subscription-expiry@forge.test');
+      const now = h.clock.now, endsAt = now + 86_400_000;
+      const event = { status: 'succeeded' as const, eventId: 'evt_subscription_expiry', userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
+        products: [
+          { itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt },
+          { itemType: 'engine_pass' as const, itemCode: 'music_pass', startsAt: now, endsAt },
+        ],
+      };
+      await h.app.plans.processPaymentEvent(event);
+      const live = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(live.plan, 'plus'); assert.deepEqual(live.passes, ['music']);
+      h.clock.now = endsAt;
+      const expired = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(expired.plan, 'free'); assert.deepEqual(expired.passes, []);
+    } finally { await h.close(); }
+  });
+
+  it('rolls back payment, subscription and credits when the transactional audit append fails (Hook 10)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-payment-audit-rollback@forge.test');
+      const now = h.clock.now;
+      const event = {
+        status: 'succeeded' as const,
+        eventId: 'evt_audit_rollback',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan' as const, itemCode: 'pro_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const eventStore = h.app.events as unknown as { appendSync: (...args: unknown[]) => unknown };
+      const original = eventStore.appendSync.bind(eventStore);
+      eventStore.appendSync = () => { throw new Error('audit-write-failed'); };
+      try {
+        await assert.rejects(() => h.app.plans.processPaymentEvent(event), /audit-write-failed/);
+      } finally {
+        eventStore.appendSync = original;
+      }
+
+      const rolledBack = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(rolledBack.items.length, 0);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 0);
+
+      const retry = await h.app.plans.processPaymentEvent(event);
+      assert.equal(retry.duplicate, false);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'pro');
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 7500);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('claims payment ids and commits subscription/credit effects atomically under concurrent retries (Hook 6)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-atomic-payment@forge.test');
+      const now = h.clock.now;
+      const event = {
+        status: 'succeeded' as const,
+        eventId: 'evt_atomic_same',
+        userId: user.id,
+        amountMinor: 2499,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'base_plan' as const, itemCode: 'pro_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const duplicates = await Promise.all([
+        h.app.plans.processPaymentEvent(event),
+        h.app.plans.processPaymentEvent(event),
+      ]);
+      assert.deepEqual(duplicates.map((result) => result.duplicate).sort(), [false, true]);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 7500);
+
+      const second = {
+        ...event,
+        status: 'succeeded' as const,
+        eventId: 'evt_atomic_second',
+        products: [{ itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const third = {
+        ...event,
+        status: 'succeeded' as const,
+        eventId: 'evt_atomic_third',
+        products: [{ itemType: 'base_plan' as const, itemCode: 'team_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      await Promise.all([
+        h.app.plans.processPaymentEvent(second),
+        h.app.plans.processPaymentEvent(third),
+      ]);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      const liveBasePlans = state.items.filter((item) =>
+        item.itemType === 'base_plan' &&
+        (item.status === 'active' || item.status === 'grace') &&
+        item.startsAt <= h.clock.now &&
+        h.clock.now < item.endsAt,
+      );
+      assert.equal(liveBasePlans.length, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('maps a multi-engine product to separate tagged passes and credit grants (Hook 4)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-multi-engine-pass@forge.test');
+      const now = h.clock.now;
+      const event = {
+        status: 'succeeded' as const,
+        eventId: 'evt_multi_engine_pass',
+        userId: user.id,
+        amountMinor: 1999,
+        currency: 'USD',
+        occurredAt: now,
+        products: [{ itemType: 'engine_pass' as const, itemCode: 'music_painting_pass', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+      };
+      const result = await h.app.plans.processPaymentEvent(event);
+      assert.equal(result.duplicate, false);
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.deepEqual(state.passes, ['music', 'painting']);
+      const balances = await h.app.plans.creditBalances(user.id);
+      assert.deepEqual(balances.engines, [
+        { engine: 'music', balance: 60 },
+        { engine: 'painting', balance: 40 },
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('serializes concurrent ledger spends so a credit grant cannot be spent twice (Hook 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-atomic-spend@forge.test');
+      await h.app.plans.setPlan(user.id, 'plus');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 10, expiresAt: null, jobId: null });
+      const outcomes = await Promise.allSettled([
+        h.app.plans.spendCredits(user.id, { engine: '', amount: 7, jobId: 'job_atomic_a', costUsdMicros: 100 }),
+        h.app.plans.spendCredits(user.id, { engine: '', amount: 7, jobId: 'job_atomic_b', costUsdMicros: 100 }),
+      ]);
+      assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+      assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 3);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces the shared UTC free-credit window and monthly ceiling across engine pools (Hook 2b)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-free-window@forge.test');
+      const fiveHours = 5 * 60 * 60 * 1000;
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 25, jobId: 'free-window-music', costUsdMicros: 1_000 });
+      await h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 15, jobId: 'free-window-painting', costUsdMicros: 1_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'voice', amount: 1, jobId: 'free-window-over', costUsdMicros: 1_000 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'insufficient_credits',
+      );
+
+      h.clock.now += fiveHours;
+      await h.app.plans.spendCredits(user.id, { engine: 'voice', amount: 40, jobId: 'free-window-next', costUsdMicros: 1_000 });
+      for (let index = 0; index < 13; index += 1) {
+        h.clock.now += fiveHours;
+        await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 40, jobId: 'free-month-' + index, costUsdMicros: 1_000 });
+      }
+      h.clock.now += fiveHours;
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-month-exhausted', costUsdMicros: 1_000 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'insufficient_credits',
+      );
+
+      const current = new Date(h.clock.now);
+      const nextMonth = Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1);
+      h.clock.now = Math.ceil(nextMonth / fiveHours) * fiveHours;
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-next-month', costUsdMicros: 1_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('caps free-level unpaid-engine cost at $0.20 per free account per UTC month (Hook 2b)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-free-cost-cap@forge.test');
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'free-cost-cap-max', costUsdMicros: 200_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 1, jobId: 'free-cost-cap-over', costUsdMicros: 1 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'free_engine_cost_cap_reached',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('keeps unpaid engines at Free cost limits even when the account has a paid base plan (Hook 2b)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await registerAndSetPlan(h, 'plans-paid-base-unpaid-engine@forge.test', 'plus');
+      const decision = await h.app.plans.canUse(user.id, 'TQ-027');
+      assert.equal(decision.allowed, true);
+      assert.equal(decision.level, 'free');
+      await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 1, jobId: 'paid-base-free-engine-max', costUsdMicros: 200_000 });
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 1, jobId: 'paid-base-free-engine-over', costUsdMicros: 1 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'free_engine_cost_cap_reached',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('never spends one engine pass credit on a different unpaid engine (Hooks 2b, 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-pass-engine-isolation@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: 'music', source: 'pass', amount: 10, expiresAt: null, jobId: null });
+      await h.app.plans.spendCredits(user.id, { engine: 'painting', amount: 1, jobId: 'painting-free-credit', costUsdMicros: 0 });
+      const balances = await h.app.plans.creditBalances(user.id);
+      assert.equal(balances.general, 0);
+      assert.deepEqual(balances.engines, [
+        { engine: 'music', balance: 10 },
+        { engine: 'painting', balance: 0 },
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('treats repeated credit spends with the same job id as idempotent (Hook 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-spend-retry@forge.test');
+      await h.app.plans.setPlan(user.id, 'plus');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 10, expiresAt: null, jobId: null });
+      const input = { engine: '', amount: 5, jobId: 'job-retry-unique', costUsdMicros: 123 };
+      const [first, retry] = await Promise.all([
+        h.app.plans.spendCredits(user.id, input),
+        h.app.plans.spendCredits(user.id, input),
+      ]);
+      assert.deepEqual(retry, first);
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 5, 'concurrent retries must append one charge only');
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { ...input, amount: 6 }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'credit_job_conflict',
+      );
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 5);
+    } finally { await h.close(); }
+  });
+
+  it('rejects reusing one job id for a different engine even when amount and cost match (Hook 3)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const user = await freeUser(h, 'plans-spend-cross-engine@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 20, expiresAt: null, jobId: null });
+      const first = { engine: 'music', amount: 5, jobId: 'job-cross-engine-unique', costUsdMicros: 17 };
+      await h.app.plans.spendCredits(user.id, first);
+      await assert.rejects(() => h.app.plans.spendCredits(user.id, { ...first, engine: 'painting' }),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'credit_job_conflict');
+      assert.equal((await h.app.plans.creditBalances(user.id)).general, 15);
+    } finally { await h.close(); }
+  });
+
+  it('answers credit balances and spends from the ledger, never a stored number (Hook 3)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-ledger@forge.test');
+      await h.app.plans.grantCredits(user.id, { engine: 'music', source: 'pass', amount: 10, expiresAt: null, jobId: null });
+      await h.app.plans.grantCredits(user.id, { engine: '', source: 'top_up', amount: 5, expiresAt: null, jobId: null });
+      const res = await h.get('/v1/credits/me', { cookie: user.cookie });
+      const body = (await res.json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
+      assert.equal(body.balances.general, 5);
+      assert.deepEqual(body.balances.engines, [{ engine: 'music', balance: 10 }]);
+      const spend = await h.app.plans.spendCredits(user.id, { engine: 'music', amount: 12, jobId: 'job_plans_1', costUsdMicros: 30000 });
+      assert.equal(spend.spent, 12);
+      assert.equal(spend.from.length, 2);
+      const after = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: Array<{ engine: string; balance: number }> } };
+      assert.equal(after.balances.general, 3);
+      assert.deepEqual(after.balances.engines, [{ engine: 'music', balance: 0 }]);
+      await assert.rejects(
+        () => h.app.plans.spendCredits(user.id, { engine: 'music', amount: 99, jobId: 'job_plans_2', costUsdMicros: 0 }),
+        (err: unknown) =>
+          err instanceof Error &&
+          ((err as { code?: unknown }).code === 'insufficient_credits' || /Not enough credits/.test(err.message)),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('leaves free and internal rows untouched by the plan of record', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-untouched@forge.test');
+      const me = await h.get('/v1/auth/me', { cookie: user.cookie });
+      assert.equal(me.status, 200);
+      const intents = await h.post('/v1/orchestrator/intents', {}, { cookie: user.cookie });
+      assert.notEqual(intents.status, 402);
+      const admit = await h.post('/v1/training-data/lake/admit', {}, { cookie: user.cookie });
+      assert.notEqual(admit.status, 402);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('isolates plans per user', async () => {
+    const h = await startHarness();
+    try {
+      const plus = await registerAndSetPlan(h, 'plans-iso-plus@forge.test', 'plus');
+      const free = await freeUser(h, 'plans-iso-free@forge.test');
+      const allowed = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: plus.cookie });
+      assert.notEqual(allowed.status, 402);
+      const denied = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: free.cookie });
+      assert.equal(denied.status, 402);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('rejects unknown plan ids and records every change as an event', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-event@forge.test');
+      await assert.rejects(h.app.plans.setPlan(user.id, 'diamond' as PlanId));
+      await h.app.plans.setPlan(user.id, 'enterprise');
+      const record = await h.app.plans.getPlan(user.id);
+      assert.equal(record.plan, 'enterprise');
+      const events = await h.app.events.readFrom(0, 500);
+      const changed = events.find((e) => e.type === 'plans.plan.changed' && e.subject.id === user.id);
+      assert.ok(changed);
+      assert.equal((changed.payload as Record<string, unknown>).plan, 'enterprise');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** Batch B hooks (9, 11, 12, 14, 16) — end to end through the routes and the service. */
+describe('plan hooks batch B (country table, snapshots, admin console, promotions, rate limits, account data)', () => {
+  it('serves the country table and refuses unknown or disabled rows (Hook 8)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-countries@forge.test');
+      const list = await h.get('/v1/plans/countries', { cookie: user.cookie });
+      assert.equal(list.status, 200);
+      assert.deepEqual(((await list.json()) as { countries: unknown[] }).countries, []);
+      const unknown = await h.post('/v1/plans/countries/get', { code: 'NG' }, { cookie: user.cookie });
+      assert.equal(unknown.status, 404);
+      assert.equal(await errorCode(unknown), 'country-unknown:NG');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('builds and verifies a signed access snapshot and refuses tampering (Hook 9)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-snapshot@forge.test');
+      const built = await h.post('/v1/plans/access-snapshot', {}, { cookie: user.cookie });
+      assert.equal(built.status, 200);
+      const body = (await built.json()) as { snapshot: { userId: string; plan: string; passes: string[]; planExpiresAt: number | null; passExpiresAt: Record<string, number | null>; issuedAt: number; expiresAt: number }; signature: string; publicKey: string; publicSignature: string };
+      assert.equal(body.snapshot.plan, 'free');
+      assert.ok(body.signature.length > 0);
+      assert.ok(body.publicKey.length > 0);
+      assert.ok(body.publicSignature.length > 0);
+      assert.equal(verifyAccessSnapshotSignature(body.snapshot, body.publicKey, body.publicSignature), true);
+      const other = await freeUser(h, 'batchb-snapshot-other@forge.test');
+      const crossAccount = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: other.cookie });
+      assert.equal(crossAccount.status, 403);
+      assert.equal(await errorCode(crossAccount), 'snapshot-user-mismatch');
+      const verified = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: user.cookie });
+      assert.equal(verified.status, 200);
+      const verifiedBody = (await verified.json()) as { valid: boolean; remainingMs: number };
+      assert.equal(verifiedBody.valid, true);
+      assert.ok(verifiedBody.remainingMs > 0);
+      const tampered = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: 'deadbeef' }, { cookie: user.cookie });
+      assert.equal(tampered.status, 400);
+      assert.equal(await errorCode(tampered), 'snapshot-signature-invalid');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('refuses admin actions while the allowlist is empty and serves them to the named admin (Hook 11)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-admin@forge.test');
+      const denied = await h.post('/v1/admin/credits/grant', { userId: user.id, amount: 10, reason: 'test' }, { cookie: user.cookie });
+      assert.equal(denied.status, 403);
+      assert.equal(await errorCode(denied), 'admin_forbidden');
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      await svc.adminGrantCredits('u_admin', { userId: user.id, amount: 10, reason: 'goodwill' });
+      const adminAudit = await h.app.events.readFrom(0, 500);
+      const grantAudit = adminAudit.find((event) => event.type === 'plans.admin.action' && (event.payload as Record<string, unknown>).action === 'grant_credits');
+      assert.ok(grantAudit);
+      assert.deepEqual(grantAudit.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((grantAudit.payload as Record<string, unknown>).reason, 'goodwill');
+      const entry = await svc.adminGrantCredits('u_admin', { userId: user.id, engine: 'music', amount: 5, reason: 'promo support' });
+      assert.equal(entry.amount, 5);
+      const ledger = await svc.adminLedger('u_admin', { userId: user.id, reason: 'audit' });
+      assert.equal(ledger.ledger.length, 2);
+      assert.ok(ledger.balances.general >= 10);
+      const comped = await svc.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'comp' });
+      assert.equal(comped.plan, 'pro');
+      await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'abuse', pause: true });
+      await assert.rejects(
+        () => svc.canUse(user.id, 'CO-001'),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'account_paused' || /paused/.test(err.message)),
+      );
+      await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'resolved', pause: false });
+      const resumed = await svc.canUse(user.id, 'CO-001');
+      assert.equal(resumed.allowed, true);
+      for (const bad of [
+        ['u_admin', { userId: user.id, amount: 0, reason: 'r' }, 'admin-grant-amount-invalid'],
+        ['u_admin', { userId: user.id, amount: 5 }, 'admin-reason-required'],
+        ['u_other', { userId: user.id, amount: 5, reason: 'r' }, 'admin_forbidden'],
+      ] as const) {
+        await assert.rejects(
+          () => svc.adminGrantCredits(bad[0], bad[1]),
+          (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === bad[2] || String(err).includes(bad[2])),
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('commits an admin comp, its subscription override and both audit events atomically (Hooks 1, 10, 11)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:', FORGE_ADMIN_USERS: 'u_admin' });
+    try {
+      const user = await freeUser(h, 'plans-admin-comp-atomic@forge.test');
+      const before = await h.app.events.head();
+      const eventStore = h.app.events as unknown as { appendSync: (...args: unknown[]) => unknown };
+      const original = eventStore.appendSync.bind(eventStore); let calls = 0;
+      eventStore.appendSync = (...args: unknown[]) => { calls += 1; if (calls === 2) throw new Error('audit-write-failed'); return original(...args); };
+      try { await assert.rejects(() => h.app.plans.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'support compensation' }), /audit-write-failed/); }
+      finally { eventStore.appendSync = original; }
+      assert.deepEqual(await h.app.events.head(), before);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'free');
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).items.length, 0);
+      const record = await h.app.plans.adminCompPlan('u_admin', { userId: user.id, plan: 'pro', reason: 'support compensation' });
+      assert.equal(record.plan, 'pro');
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'pro');
+      assert.equal(state.items.filter((item) => item.itemType === 'base_plan' && item.status === 'active').length, 1);
+      assert.equal(state.items.find((item) => item.itemType === 'base_plan')?.source, 'admin_comp:u_admin');
+      const after = await h.app.events.readFrom(before.seq + 1, 10);
+      const planChange = after.find((event) => event.type === 'plans.plan.changed');
+      const adminAction = after.find((event) => event.type === 'plans.admin.action');
+      assert.deepEqual(planChange?.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((planChange?.payload as Record<string, unknown>).reason, 'support compensation');
+      assert.deepEqual(adminAction?.actor, { kind: 'user', id: 'u_admin' });
+      assert.equal((adminAction?.payload as Record<string, unknown>).reason, 'support compensation');
+    } finally { await h.close(); }
+  });
+
+  it('defines, redeems and refuses promotions (Hook 12)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-promo@forge.test');
+      const denied = await h.post('/v1/promotions/define', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000 }, { cookie: user.cookie });
+      assert.equal(denied.status, 403);
+      assert.equal(await errorCode(denied), 'admin_forbidden');
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      await svc.definePromotion('u_admin', { code: 'launch', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'private beta launch offer' });
+      await svc.definePromotion('u_admin', { code: 'ONESHOT', kind: 'referral', creditAmount: 5, days: 0, maxRedemptions: 1, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'single-use referral test' });
+      const oneShot = await Promise.allSettled([
+        svc.redeemPromotion('u_first', { code: 'ONESHOT' }),
+        svc.redeemPromotion('u_second', { code: 'ONESHOT' }),
+      ]);
+      assert.equal(oneShot.filter((item) => item.status === 'fulfilled').length, 1);
+      assert.equal(oneShot.filter((item) => item.status === 'rejected').length, 1);
+      assert.equal((await svc.promotionStatus({ code: 'ONESHOT' })).redemptions, 1);
+      await assert.rejects(
+        () => svc.definePromotion('u_admin', { code: 'LAUNCH', kind: 'coupon', creditAmount: 25, days: 0, maxRedemptions: 2, perUserLimit: true, expiresAt: h.clock.now + 86_400_000, reason: 'duplicate definition test' }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-duplicate:LAUNCH' || String(err).includes('promotion-duplicate:LAUNCH')),
+      );
+      await assert.rejects(
+        () => svc.redeemPromotion(user.id, { code: 'MISSING' }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-not-found:MISSING' || String(err).includes('promotion-not-found:MISSING')),
+      );
+      const redeemed = await svc.redeemPromotion(user.id, { code: 'launch' });
+      assert.deepEqual({ code: redeemed.code, creditAmount: redeemed.creditAmount, redemptionCount: redeemed.redemptionCount }, { code: 'LAUNCH', creditAmount: 25, redemptionCount: 1 });
+      const balances = await svc.creditBalances(user.id);
+      assert.equal(balances.general, 25);
+      await assert.rejects(
+        () => svc.redeemPromotion(user.id, { code: 'launch' }),
+        (err: unknown) => err instanceof Error && ((err as { code?: unknown }).code === 'promotion-already-redeemed:LAUNCH' || String(err).includes('promotion-already-redeemed:LAUNCH')),
+      );
+      const status = await svc.promotionStatus({ code: 'launch' });
+      assert.equal(status.redemptions, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces the per-user gateway rate limit only when it is configured (Hook 14)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-rate@forge.test');
+      const unlimited = await h.post('/v1/web-search/domain-rules/get', { workspace: 'w' }, { cookie: user.cookie });
+      assert.notEqual(unlimited.status, 429);
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing: new InMemoryBillingStore(),
+        events: h.app.events,
+        clock: systemClock,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: [],
+        countryCatalog: [],
+        rateLimits: { user: { limit: 2, windowMs: 60_000 }, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      assert.deepEqual(await svc.enforceUserRateLimit('u_dev'), { ok: true });
+      assert.deepEqual(await svc.enforceUserRateLimit('u_dev'), { ok: true });
+      const refused = await svc.enforceUserRateLimit('u_dev');
+      assert.ok(!refused.ok);
+      if (!refused.ok) assert.ok(refused.retryAfterMs > 0 && refused.retryAfterMs <= 60_000);
+      assert.deepEqual(await svc.enforceUserRateLimit('u_other'), { ok: true });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('keeps a deletion-queued account blocked even if an admin attempts to resume it (Hook 16)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'plans-delete-resume@forge.test');
+      const billing = new InMemoryBillingStore();
+      await billing.setAccountState(user.id, { paused: true, deletionQueuedAt: h.clock.now, updatedAt: h.clock.now });
+      const svc = new PlansService({
+        store: new InMemoryPlanStore(),
+        billing,
+        events: h.app.events,
+        clock: () => h.clock.now,
+        access: { gatesEnabled: true, featureSwitches: {}, engineBundlePlans: [], freeEngineLimits: { windowCredits: 40, windowHours: 5, monthlyCeiling: 600 } },
+        monthlyCredits: { plus: 3000, pro: 7500, studio: 18000, team: 11800 },
+        passCatalog: [],
+        adminUsers: ['u_admin'],
+        countryCatalog: [],
+        rateLimits: { user: null, device: null },
+        accessSnapshotTtlHours: 6,
+        accessSecret: Buffer.from('forge-access-snapshot-test-secret', 'utf8'),
+      });
+      const resumed = await svc.adminPauseAccount('u_admin', { userId: user.id, reason: 'deletion request remains active', pause: false });
+      assert.equal(resumed.paused, false);
+      assert.equal(resumed.queuedForDeletion, true);
+      await assert.rejects(
+        () => svc.canUse(user.id, 'CO-001'),
+        (err: unknown) => err instanceof Error && (err as { code?: unknown }).code === 'account_paused',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('exports the signed-in user\'s data and queues a confirmed deletion (Hook 16)', async () => {
+    const h = await startHarness();
+    try {
+      const user = await freeUser(h, 'batchb-data@forge.test');
+      const unconfirmed = await h.post('/v1/account/delete', {}, { cookie: user.cookie });
+      assert.equal(unconfirmed.status, 400);
+      assert.equal(await errorCode(unconfirmed), 'account-delete-unconfirmed');
+      const exported = await h.post('/v1/account/export', {}, { cookie: user.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = (await exported.json()) as {
+        userId: string;
+        plan: string;
+        profile: { id: string; email: string; displayName: string };
+        security: { sessions: unknown[]; trustedDevices: unknown[] | null };
+        retention: { keep: string[]; erase: string[]; verify: string[] };
+      };
+      assert.equal(bundle.userId, user.id);
+      assert.equal(bundle.plan, 'free');
+      assert.equal(bundle.profile.id, user.id);
+      assert.equal(bundle.profile.email, 'batchb-data@forge.test');
+      assert.equal(Object.hasOwn(bundle.profile, 'passwordHash'), false);
+      assert.ok(Array.isArray(bundle.security.sessions));
+      assert.ok(bundle.security.sessions.length >= 1);
+      assert.ok(bundle.security.trustedDevices === null || Array.isArray(bundle.security.trustedDevices));
+      assert.match(exported.headers.get('content-disposition') ?? '', /attachment; filename="forge-account-export\.json"/);
+      assert.equal(exported.headers.get('cache-control'), 'no-store');
+      assert.deepEqual(bundle.retention.keep, ['invoices']);
+      const deleted = await h.post('/v1/account/delete', { confirm: true }, { cookie: user.cookie });
+      assert.equal(deleted.status, 200);
+      const deletedBody = (await deleted.json()) as { queued: boolean };
+      assert.equal(deletedBody.queued, true);
+      const paused = await h.post('/v1/plans/check', { featureId: 'CO-001' }, { cookie: user.cookie });
+      assert.equal(paused.status, 403);
+      assert.equal(await errorCode(paused), 'account_paused');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('exports owner-scoped module records without leaking another account or generated passwords (Hook 16)', async () => {
+    const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const owner = await freeUser(h, 'export-modules-owner@forge.test');
+      const other = await freeUser(h, 'export-modules-other@forge.test');
+      await h.app.tasks.createTask(owner.id, 'Owner task export');
+      await h.app.tasks.createTask(other.id, 'Other account task must not export');
+      await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export', steps: [{ action: 'search' }, { action: 'write', file: 'owner.md' }] });
+      await h.app.testQuality.writeGolden(owner.id, 'owner-golden', { expected: 'owner-value' });
+      await h.app.statusPages.createPage(owner.id, { name: 'Owner Status', slug: 'owner-status-export' });
+      const workspaceStore = new SqliteWorkspaceStore(h.app.db!);
+      await workspaceStore.create({ id: 'owner-export-workspace', slug: 'owner-export-workspace', name: 'Owner Workspace', description: null, createdAt: 1_800_000_000_000, updatedAt: 1_800_000_000_000, ownerId: owner.id });
+      await workspaceStore.create({ id: 'other-export-workspace', slug: 'other-export-workspace', name: 'Other Workspace', description: null, createdAt: 1_800_000_000_000, updatedAt: 1_800_000_000_000, ownerId: other.id });
+      await h.app.offlineSync.apply(owner.id, { clientId: 'export-phone', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline content' }, causalClock: { 'export-phone': 1 } });
+      const offlineConflict = await h.app.offlineSync.apply(owner.id, { clientId: 'export-tablet', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline conflict' }, causalClock: { 'export-tablet': 1 } });
+      await h.app.offlineSync.resolveConflict(owner.id, offlineConflict.conflict!.conflictId, 'keep_current', owner.id);
+      await h.app.offlineSync.apply(other.id, { clientId: 'other-phone', sequence: 1, entityType: 'document', entityId: 'other-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'other-account-offline-secret' }, causalClock: { 'other-phone': 1 } });
+      await h.app.searchIntegrity.putCacheEntry(owner.id, { key: 'account-export-cache', lane: 'web', payload: { query: 'owner cache payload' } });
+      await h.app.webSearch.setDomainRules(owner.id, { workspace: 'unqueried-workspace', allow: ['example.com'], deny: [] });
+
+      const response = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const bundle = await response.json() as {
+        modules: {
+          taskRuntime: { runs: Array<{ userId: string; goal: string }> };
+          orchestrator: { plans: Array<{ userId: string; goal: string }> };
+          testQuality: { goldens: Array<{ userId: string; name: string }> };
+          statusPages: { pages: Array<{ page: { ownerId: string; slug: string } }> };
+          workspaces: { memberships: Array<{ workspace: { ownerId: string; slug: string }; role: string }> };
+          liveTesting: { sessions: Array<{ testAccounts: Array<Record<string, unknown>> }> };
+          webSearch: { domainRules: Array<{ userId: string; workspace: string; allow: string[] }> };
+          searchIntegrity: { cacheEntries: Array<{ userId: string; cacheKey: string; payload: unknown }> };
+          offlineSync: {
+            operations: Array<{ ownerId: string; operationId: string; payload: unknown }>;
+            entities: Array<{ ownerId: string; entityId: string }>;
+            conflicts: Array<{ ownerId: string; status: string }>;
+          };
+        };
+        exportCoverage: { complete: boolean; includedModules: string[]; omitted: string[] };
+      };
+      assert.equal(bundle.modules.taskRuntime.runs.length, 1);
+      assert.equal(bundle.modules.taskRuntime.runs[0]?.userId, owner.id);
+      assert.equal(bundle.modules.taskRuntime.runs[0]?.goal, 'Owner task export');
+      assert.equal(bundle.modules.orchestrator.plans.length, 1);
+      assert.equal(bundle.modules.orchestrator.plans[0]?.goal, 'Owner plan export');
+      assert.equal(bundle.modules.testQuality.goldens.length, 1);
+      assert.equal(bundle.modules.testQuality.goldens[0]?.name, 'owner-golden');
+      assert.equal(bundle.modules.statusPages.pages.length, 1);
+      assert.equal(bundle.modules.statusPages.pages[0]?.page.slug, 'owner-status-export');
+      assert.equal(bundle.modules.workspaces.memberships.length, 1);
+      assert.equal(bundle.modules.workspaces.memberships[0]?.workspace.slug, 'owner-export-workspace');
+      assert.equal(bundle.modules.workspaces.memberships[0]?.role, 'owner');
+      assert.equal(bundle.modules.offlineSync.operations.length, 2);
+      assert.ok(bundle.modules.offlineSync.operations.every((entry) => entry.ownerId === owner.id));
+      assert.equal(bundle.modules.offlineSync.entities.length, 1);
+      assert.equal(bundle.modules.offlineSync.entities[0]?.entityId, 'owner-offline-doc');
+      assert.equal(bundle.modules.offlineSync.conflicts.length, 1);
+      assert.equal(bundle.modules.offlineSync.conflicts[0]?.status, 'resolved');
+      assert.equal(bundle.modules.searchIntegrity.cacheEntries.length, 1);
+      assert.equal(bundle.modules.searchIntegrity.cacheEntries[0]?.cacheKey, 'account-export-cache');
+      assert.equal(bundle.modules.webSearch.domainRules.length, 1);
+      assert.equal(bundle.modules.webSearch.domainRules[0]?.workspace, 'unqueried-workspace');
+      assert.equal(bundle.exportCoverage.complete, true);
+      assert.ok(bundle.exportCoverage.omitted.length > 0);
+      assert.ok(bundle.exportCoverage.includedModules.includes('trainingData'));
+      assert.ok(bundle.exportCoverage.includedModules.includes('offlineSync'));
+      assert.equal(bundle.exportCoverage.omitted.some((item) => item.toLowerCase().includes('offline-sync')), false);
+      assert.equal(bundle.exportCoverage.omitted.some((item) => item.toLowerCase().includes('cache entr')), false);
+      assert.equal(JSON.stringify(bundle.modules).includes('Other account task must not export'), false);
+      assert.equal(JSON.stringify(bundle.modules).includes('other-account-offline-secret'), false);
+      assert.equal(JSON.stringify(bundle.modules).includes('other-export-workspace'), false);
+      for (const session of bundle.modules.liveTesting.sessions) {
+        for (const account of session.testAccounts) assert.equal(Object.hasOwn(account, 'password'), false);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+
+describe('Plan Hooks free/internal route enforcement', () => {
+  it('applies feature switches to a Free AI route (Hook 5)', async () => {
+    const h = await startHarness({ FORGE_FEATURE_SWITCHES: 'AI-057:false' });
+    try {
+      const user = await freeUser(h, 'free-ai-switch@forge.test');
+      const response = await h.post('/v1/web-search/search', { query: 'FORGE feature switch test' }, { cookie: user.cookie });
+      assert.equal(response.status, 503);
+      assert.equal(await errorCode(response), 'feature_off');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('blocks a paused Free account before a Free AI route handler (Hooks 2 and 11)', async () => {
+    const h = await startHarness({ FORGE_ADMIN_USERS: 'u_admin' });
+    try {
+      const user = await freeUser(h, 'free-ai-paused@forge.test');
+      await h.app.plans.adminPauseAccount('u_admin', {
+        userId: user.id,
+        reason: 'verify paused-account enforcement on Free routes',
+        pause: true,
+      });
+      const response = await h.post('/v1/web-search/search', { query: 'paused account test' }, { cookie: user.cookie });
+      assert.equal(response.status, 403);
+      assert.equal(await errorCode(response), 'account_paused');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces per-device limits on a Free AI route before handler work (Hook 14)', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({
+        user: { limit: 20, windowMs: 60_000 },
+        device: { limit: 1, windowMs: 60_000 },
+      }),
+    });
+    try {
+      const user = await freeUser(h, 'free-ai-device-limit@forge.test');
+      const first = await h.post('/v1/web-search/search', { query: 'device rate test' }, { cookie: user.cookie });
+      assert.notEqual(first.status, 429);
+      const issued = first.headers.getSetCookie().find((value) => value.startsWith('forge_device='));
+      assert.ok(issued, 'Free AI route must issue a signed device cookie');
+      const deviceCookie = issued.split(';')[0] ?? '';
+      const second = await h.post('/v1/web-search/search', { query: 'device rate test' }, { cookie: user.cookie + '; ' + deviceCookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'device');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('enforces per-user limits on a Free AI route before handler work (Hook 14)', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({
+        user: { limit: 1, windowMs: 60_000 },
+        device: { limit: 20, windowMs: 60_000 },
+      }),
+    });
+    try {
+      const user = await freeUser(h, 'free-ai-user-limit@forge.test');
+      const first = await h.post('/v1/web-search/search', { query: 'user rate test' }, { cookie: user.cookie });
+      assert.notEqual(first.status, 429);
+      const second = await h.post('/v1/web-search/search', { query: 'user rate test' }, { cookie: user.cookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'user');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('applies feature switches to public identity routes without requiring a session', async () => {
+    const h = await startHarness({ FORGE_FEATURE_SWITCHES: 'CO-001:false' });
+    try {
+      const response = await h.post('/v1/auth/register', {
+        email: 'identity-switch@forge.test',
+        password: GOOD_PASSWORD,
+        displayName: 'Identity Switch',
+      });
+      assert.equal(response.status, 503);
+      assert.equal(await errorCode(response), 'feature_off');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+
+describe('Plan Hooks per-device gateway rate limit', () => {
+  it('uses a signed HttpOnly server-issued device cookie before gated handler work', async () => {
+    const h = await startHarness({
+      FORGE_RATE_LIMITS: JSON.stringify({ device: { limit: 1, windowMs: 60_000 } }),
+    });
+    try {
+      const user = await registerAndSetPlan(h, 'device-rate-limit@forge.test', 'plus');
+      const first = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      const issued = first.headers.getSetCookie().find((value) => value.startsWith('forge_device='));
+      assert.ok(issued, 'first gated request must receive a server-signed device cookie');
+      assert.match(issued, /HttpOnly/);
+      assert.match(issued, /SameSite=Strict/);
+      const deviceCookie = issued.split(';')[0] ?? '';
+      const second = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie + '; ' + deviceCookie });
+      assert.equal(second.status, 429);
+      const denied = (await second.json()) as { error: { details: { scope: string } } };
+      assert.equal(denied.error.details.scope, 'device');
+      const otherDevice = await h.post('/v1/ai-training/gateway/byok', {}, { cookie: user.cookie });
+      assert.notEqual(otherDevice.status, 429, 'a different device identity has its own device bucket');
+    } finally {
+      await h.close();
+    }
+  });
+});

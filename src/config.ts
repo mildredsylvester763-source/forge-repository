@@ -1,0 +1,501 @@
+import { randomBytes } from 'node:crypto';
+import type { LogLevel } from './kernel/logger.ts';
+import { validateWebAuthnConfig, WebAuthnError } from './modules/identity/webauthn.ts';
+import type { DatabaseSsl } from './kernel/postgres.ts';
+import type { ScryptParams } from './modules/identity/password-hasher.ts';
+import { isEngineCode, isPlanId } from './modules/plans/index.ts';
+import type { CountryRow, FreeEngineLimits, PassCatalogEntry, PlanId, RateLimitRule } from './modules/plans/index.ts';
+import { validateCountryRow, validateRateLimitRule } from './modules/plans/index.ts';
+
+export type Environment = 'development' | 'test' | 'production';
+
+export interface ForgeConfig {
+  env: Environment;
+  host: string;
+  port: number;
+  logLevel: LogLevel;
+  allowedOrigins: readonly string[];
+  trustProxyHops: number;
+  cookie: { name: string; secure: boolean };
+  session: { idleTimeoutMs: number; absoluteTimeoutMs: number; maxPerUser: number };
+  password: {
+    params: ScryptParams;
+    peppers: ReadonlyMap<number, Buffer>;
+    currentPepperVersion: number;
+    hashConcurrency: number;
+    hashQueue: number;
+  };
+  breach: { mode: 'fail-closed' | 'fail-open'; baseUrl: string; timeoutMs: number; checkOnSignIn: boolean };
+  passkeys: { rpId: string | null; origins: readonly string[]; rpName: string };
+  plans: {
+    plusUsdPerMonth: number;
+    proUsdPerMonth: number;
+    studioUsdPerMonth: number;
+    teamUsdPerSeatPerMonth: number;
+    teamMinSeats: number;
+    enterpriseFromUsdPerMonth: number;
+    /** Hook 5: master gate flag. When false, canUse allows everyone (development convenience only). */
+    gatesEnabled: boolean;
+    /** Hook 5: per-feature on/off switches, flippable without a release. */
+    featureSwitches: Readonly<Record<string, boolean>>;
+    /** Base plans that include every engine at paid level. Empty until the owner names the all-round plans. */
+    engineBundlePlans: readonly PlanId[];
+    /** Hook 2b: the free level every unpaid engine runs at. */
+    freeEngineLimits: FreeEngineLimits;
+    /** The monthly credit pool per paid plan (Numbers Plan, 2 Nov 2026). Free draws the window instead. */
+    monthlyCredits: Readonly<Record<'plus' | 'pro' | 'studio' | 'team', number>>;
+    /** Hook 4: the pass catalog. Empty until the owner sets prices; never hardcoded. */
+    passCatalog: readonly PassCatalogEntry[];
+    /** Hook 6: the HMAC secret payment events are signed with. Required in production. */
+    paymentWebhookSecret: Buffer;
+    /** Hook 11: the admin allowlist. Empty until the owner names the admins. */
+    adminUsers: readonly string[];
+    /** Hook 8: the country table. Empty until the owner supplies country data. */
+    countryCatalog: readonly CountryRow[];
+    /** Hook 14: per-user and per-device gateway limits. null = disabled. */
+    rateLimits: { user: RateLimitRule | null; device: RateLimitRule | null };
+    /** Hook 9: how many hours a signed access snapshot stays valid. */
+    accessSnapshotTtlHours: number;
+    /** Hook 9: server HMAC and domain-separated Ed25519 signing secret for access snapshots. */
+    accessSecret: Buffer;
+  };
+  safety: {
+    /** TS-793: owner-configured wrongful-block rate threshold; null keeps automatic tasking disabled until decided. */
+    maxWrongfulBlockRate: number | null;
+  };
+  storage: {
+    /** PostgreSQL connection string. This is the production database. */
+    databaseUrl: string | null;
+    databaseSsl: DatabaseSsl;
+    databasePoolMax: number;
+    /** SQLite file. Development, tests and single-server use only. */
+    databasePath: string | null;
+    backupDir: string | null;
+    backupIntervalHours: number;
+    backupKeep: number;
+  };
+  auditKey: Buffer;
+  /** Non-fatal notices (for example, ephemeral development secrets). */
+  warnings: string[];
+}
+
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(`Invalid configuration: ${message}`);
+    this.name = 'ConfigError';
+  }
+}
+
+const HOUR = 3_600_000;
+
+function int(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number, max: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) throw new ConfigError(`${name} must be an integer between ${min} and ${max}`);
+  return n;
+}
+
+function money(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new ConfigError(`${name} must be a number between 0 and 1000000`);
+  return n;
+}
+
+function optionalUnitRate(env: NodeJS.ProcessEnv, name: string): number | null {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1) throw new ConfigError(`${name} must be a number between 0 and 1`);
+  return value;
+}
+
+function secret(raw: string, name: string): Buffer {
+  const buf = Buffer.from(raw, 'base64');
+  if (buf.length < 32) throw new ConfigError(`${name} must be at least 32 random bytes, base64 encoded`);
+  return buf;
+}
+
+function parsePeppers(raw: string): Map<number, Buffer> {
+  const peppers = new Map<number, Buffer>();
+  for (const entry of raw.split(',')) {
+    const [version, value] = entry.trim().split(':');
+    const v = Number(version);
+    if (!Number.isInteger(v) || v < 1 || v > 99_999 || !value) throw new ConfigError('FORGE_PASSWORD_PEPPERS entries must look like 1:<base64>');
+    if (peppers.has(v)) throw new ConfigError(`duplicate pepper version ${v}`);
+    peppers.set(v, secret(value, `pepper ${v}`));
+  }
+  if (peppers.size === 0) throw new ConfigError('FORGE_PASSWORD_PEPPERS is empty');
+  return peppers;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
+  const mode = env.FORGE_ENV ?? 'development';
+  if (mode !== 'development' && mode !== 'test' && mode !== 'production') {
+    throw new ConfigError('FORGE_ENV must be development, test, or production');
+  }
+  const production = mode === 'production';
+  const warnings: string[] = [];
+
+  let peppers: Map<number, Buffer>;
+  if (env.FORGE_PASSWORD_PEPPERS) {
+    peppers = parsePeppers(env.FORGE_PASSWORD_PEPPERS);
+  } else if (production) {
+    throw new ConfigError('FORGE_PASSWORD_PEPPERS is required in production');
+  } else {
+    peppers = new Map([[1, randomBytes(32)]]);
+    warnings.push('FORGE_PASSWORD_PEPPERS not set: using an ephemeral pepper. Every password hash is invalid after a restart.');
+  }
+
+  let auditKey: Buffer;
+  if (env.FORGE_AUDIT_KEY) {
+    auditKey = secret(env.FORGE_AUDIT_KEY, 'FORGE_AUDIT_KEY');
+  } else if (production) {
+    throw new ConfigError('FORGE_AUDIT_KEY is required in production');
+  } else {
+    auditKey = randomBytes(32);
+    warnings.push('FORGE_AUDIT_KEY not set: using an ephemeral key.');
+  }
+
+  const allowedOrigins = (env.FORGE_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0);
+  for (const origin of allowedOrigins) {
+    let normalized: string;
+    try {
+      normalized = new URL(origin).origin;
+    } catch {
+      throw new ConfigError(`FORGE_ALLOWED_ORIGINS contains an invalid origin: ${origin}`);
+    }
+    if (normalized !== origin) throw new ConfigError(`origin must be exact (scheme://host[:port]): ${origin}`);
+    if (production && !origin.startsWith('https://')) throw new ConfigError(`production origins must use https: ${origin}`);
+  }
+
+  // WebAuthn is optional until deployment supplies its relying-party hostname and exact browser origins.
+  // Keep the backend implementation available in every environment without inventing production values.
+  const webAuthnRpId = env.FORGE_WEBAUTHN_RP_ID?.trim() || null;
+  const webAuthnOrigins = (env.FORGE_WEBAUTHN_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  const webAuthnRpName = env.FORGE_WEBAUTHN_RP_NAME?.trim() || 'FORGE';
+  if ((webAuthnRpId === null) !== (webAuthnOrigins.length === 0)) {
+    throw new ConfigError('FORGE_WEBAUTHN_RP_ID and FORGE_WEBAUTHN_ORIGINS must be configured together');
+  }
+  if (webAuthnRpId !== null) {
+    try {
+      validateWebAuthnConfig({ rpId: webAuthnRpId, origins: webAuthnOrigins, rpName: webAuthnRpName });
+    } catch (error) {
+      const reason = error instanceof WebAuthnError ? error.code : 'invalid_configuration';
+      throw new ConfigError(`WebAuthn relying-party configuration is invalid: ${reason}`);
+    }
+  }
+
+  const logN = int(env, 'FORGE_SCRYPT_LOG_N', 17, 10, 22);
+  if (production && logN < 17) throw new ConfigError('FORGE_SCRYPT_LOG_N must be at least 17 in production');
+
+  const breachMode = env.FORGE_BREACH_MODE ?? 'fail-closed';
+  if (breachMode !== 'fail-closed' && breachMode !== 'fail-open') throw new ConfigError('FORGE_BREACH_MODE must be fail-closed or fail-open');
+
+  const databaseUrl = env.FORGE_DATABASE_URL ? env.FORGE_DATABASE_URL : null;
+  const databasePath = env.FORGE_DATABASE_PATH ? env.FORGE_DATABASE_PATH : null;
+  if (databaseUrl !== null && databasePath !== null) {
+    throw new ConfigError('set either FORGE_DATABASE_URL (PostgreSQL) or FORGE_DATABASE_PATH (SQLite), not both');
+  }
+  if (databaseUrl !== null && !/^postgres(ql)?:\/\//.test(databaseUrl)) {
+    throw new ConfigError('FORGE_DATABASE_URL must start with postgresql://');
+  }
+  if (production && databaseUrl === null) {
+    throw new ConfigError('FORGE_DATABASE_URL (PostgreSQL) is required in production; SQLite is for development and tests only');
+  }
+  const sslSetting = env.FORGE_DATABASE_SSL ?? (production ? 'verify' : 'off');
+  if (sslSetting !== 'verify' && sslSetting !== 'no-verify' && sslSetting !== 'off') {
+    throw new ConfigError('FORGE_DATABASE_SSL must be verify, no-verify, or off');
+  }
+  if (production && sslSetting === 'off') throw new ConfigError('production database connections must use TLS (FORGE_DATABASE_SSL=verify)');
+  if (sslSetting === 'no-verify') warnings.push('FORGE_DATABASE_SSL=no-verify: the connection is encrypted but the server is not authenticated.');
+  if (databaseUrl === null && databasePath === null) warnings.push('No database configured: using in-memory storage. All data is lost on restart.');
+  const backupDir = env.FORGE_BACKUP_DIR ? env.FORGE_BACKUP_DIR : null;
+  if (backupDir !== null && (databasePath === null || databasePath === ':memory:')) {
+    throw new ConfigError('FORGE_BACKUP_DIR only works with a SQLite file (FORGE_DATABASE_PATH). PostgreSQL backups are separate.');
+  }
+  if (production) warnings.push('PostgreSQL backups are not automated yet: rely on your database host\'s backups until the nightly dump is added.');
+
+  // Plan hooks (10 Nov 2026): switches, bundle plans, free-engine limits, monthly credits, pass catalog, webhook secret.
+  const rawGatesEnabled = env.FORGE_GATES_ENABLED ?? 'true';
+  if (rawGatesEnabled !== 'true' && rawGatesEnabled !== 'false') {
+    throw new ConfigError('FORGE_GATES_ENABLED must be true or false');
+  }
+  const gatesEnabled = rawGatesEnabled === 'true';
+  if (production && !gatesEnabled) {
+    throw new ConfigError('FORGE_GATES_ENABLED cannot be false in production');
+  }
+  const featureSwitches: Record<string, boolean> = {};
+  for (const part of (env.FORGE_FEATURE_SWITCHES ?? '').split(',')) {
+    const entry = part.trim();
+    if (entry === '') continue;
+    const [name, value] = entry.split(':');
+    if (!name || (value !== 'true' && value !== 'false')) {
+      throw new ConfigError('FORGE_FEATURE_SWITCHES entries must look like FEATURE:true or FEATURE:false');
+    }
+    featureSwitches[name] = value === 'true';
+  }
+  const engineBundlePlans: PlanId[] = [];
+  for (const part of (env.FORGE_ENGINE_BUNDLE_PLANS ?? '').split(',')) {
+    const code = part.trim();
+    if (code === '') continue;
+    if (!isPlanId(code)) throw new ConfigError('FORGE_ENGINE_BUNDLE_PLANS entries must be plan ids (free, plus, pro, studio, team, enterprise)');
+    engineBundlePlans.push(code);
+  }
+  const freeEngineLimits: FreeEngineLimits = {
+    windowCredits: int(env, 'FORGE_FREE_WINDOW_CREDITS', 40, 0, 1_000_000),
+    windowHours: int(env, 'FORGE_FREE_WINDOW_HOURS', 5, 1, 720),
+    monthlyCeiling: int(env, 'FORGE_FREE_MONTHLY_CEILING', 600, 0, 1_000_000),
+  };
+  const monthlyCredits: Readonly<Record<'plus' | 'pro' | 'studio' | 'team', number>> = {
+    plus: int(env, 'FORGE_PLUS_MONTHLY_CREDITS', 3000, 0, 1_000_000),
+    pro: int(env, 'FORGE_PRO_MONTHLY_CREDITS', 7500, 0, 1_000_000),
+    studio: int(env, 'FORGE_STUDIO_MONTHLY_CREDITS', 18000, 0, 1_000_000),
+    team: int(env, 'FORGE_TEAM_MONTHLY_CREDITS', 11800, 0, 1_000_000),
+  };
+  let passCatalog: readonly PassCatalogEntry[] = [];
+  if (env.FORGE_PASS_CATALOG !== undefined && env.FORGE_PASS_CATALOG !== '') {
+    let parsedCatalog: unknown;
+    try {
+      parsedCatalog = JSON.parse(env.FORGE_PASS_CATALOG);
+    } catch {
+      throw new ConfigError('FORGE_PASS_CATALOG must be a JSON array of pass catalog entries');
+    }
+    if (!Array.isArray(parsedCatalog)) throw new ConfigError('FORGE_PASS_CATALOG must be a JSON array');
+    const entries: PassCatalogEntry[] = [];
+    const seenProductCodes = new Set<string>();
+    for (const raw of parsedCatalog) {
+      if (typeof raw !== 'object' || raw === null) throw new ConfigError('FORGE_PASS_CATALOG entries must be objects');
+      const r = raw as Record<string, unknown>;
+      const productCode = r.productCode;
+      const type = r.type;
+      const planCodeRaw = r.planCode;
+      const enginesIncluded = r.enginesIncluded;
+      const creditsIncluded = r.creditsIncluded;
+      const creditsByEngineRaw = r.creditsByEngine;
+      const billingPeriod = r.billingPeriod;
+      const sellable = r.sellable;
+      if (typeof productCode !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(productCode)) {
+        throw new ConfigError('FORGE_PASS_CATALOG productCode must be a lowercase identifier of 1 to 64 characters');
+      }
+      if (seenProductCodes.has(productCode)) throw new ConfigError('FORGE_PASS_CATALOG productCode values must be unique');
+      seenProductCodes.add(productCode);
+      if (type !== 'base_plan' && type !== 'engine_pass') throw new ConfigError('FORGE_PASS_CATALOG type must be base_plan or engine_pass');
+      if (!Array.isArray(enginesIncluded) || enginesIncluded.some((engine) => typeof engine !== 'string')) {
+        throw new ConfigError('FORGE_PASS_CATALOG enginesIncluded must be an array of engine codes');
+      }
+      const engines = enginesIncluded as string[];
+      if (new Set(engines).size !== engines.length) throw new ConfigError('FORGE_PASS_CATALOG enginesIncluded must not contain duplicates');
+      if (type === 'engine_pass' && (engines.length === 0 || engines.some((engine) => !isEngineCode(engine)))) {
+        throw new ConfigError('FORGE_PASS_CATALOG engine_pass entries must name one or more known engine codes');
+      }
+      if (type === 'base_plan') {
+        if (!isPlanId(planCodeRaw) || planCodeRaw === 'free' || engines.length !== 0) {
+          throw new ConfigError('FORGE_PASS_CATALOG base_plan entries require an explicit paid planCode and no engines');
+        }
+      } else if (planCodeRaw !== undefined && planCodeRaw !== null) {
+        throw new ConfigError('FORGE_PASS_CATALOG engine_pass entries must not set planCode');
+      }
+      if (typeof creditsIncluded !== 'number' || !Number.isInteger(creditsIncluded) || creditsIncluded < 0) {
+        throw new ConfigError('FORGE_PASS_CATALOG creditsIncluded must be a whole number');
+      }
+      if (type === 'engine_pass' && sellable === true && creditsIncluded < 1) {
+        throw new ConfigError('FORGE_PASS_CATALOG sellable engine passes must include at least one credit per engine');
+      }
+      if (billingPeriod !== 'monthly' && billingPeriod !== 'yearly') throw new ConfigError('FORGE_PASS_CATALOG billingPeriod must be monthly or yearly');
+      if (typeof sellable !== 'boolean') throw new ConfigError('FORGE_PASS_CATALOG sellable must be true or false');
+      let creditsByEngine: Readonly<Record<string, number>> | undefined;
+      if (creditsByEngineRaw !== undefined) {
+        if (typeof creditsByEngineRaw !== 'object' || creditsByEngineRaw === null || Array.isArray(creditsByEngineRaw)) {
+          throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must be an object keyed by engine code');
+        }
+        const allocation: Record<string, number> = {};
+        for (const [engine, amount] of Object.entries(creditsByEngineRaw)) {
+          if (!engines.includes(engine) || typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0) {
+            throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must contain non-negative whole credits for included engines only');
+          }
+          allocation[engine] = amount;
+        }
+        if (
+          type !== 'engine_pass' ||
+          Object.keys(allocation).length !== engines.length ||
+          Object.values(allocation).reduce((total, amount) => total + amount, 0) !== creditsIncluded
+        ) {
+          throw new ConfigError('FORGE_PASS_CATALOG creditsByEngine must cover every included engine and sum to creditsIncluded');
+        }
+        creditsByEngine = allocation;
+      }
+      if (type === 'engine_pass' && sellable && engines.length > 1 && creditsByEngine === undefined) {
+        throw new ConfigError('FORGE_PASS_CATALOG sellable multi-engine passes require an explicit creditsByEngine allocation');
+      }
+      if (production && sellable) {
+        throw new ConfigError('FORGE_PASS_CATALOG cannot enable sellable products until regional minor-unit prices, per-window caps and the ALG-43/52/56 margin guard are implemented and configured');
+      }
+      entries.push({
+        productCode, type, planCode: type === 'base_plan' ? planCodeRaw as PlanId : null,
+        enginesIncluded: engines, creditsIncluded,
+        ...(creditsByEngine === undefined ? {} : { creditsByEngine }),
+        billingPeriod, sellable,
+      });
+    }
+    passCatalog = entries;
+  }
+  let paymentWebhookSecret: Buffer;
+  if (env.FORGE_PAYMENT_WEBHOOK_SECRET !== undefined && env.FORGE_PAYMENT_WEBHOOK_SECRET !== '') {
+    paymentWebhookSecret = Buffer.from(env.FORGE_PAYMENT_WEBHOOK_SECRET, 'utf8');
+  } else if (production) {
+    throw new ConfigError('FORGE_PAYMENT_WEBHOOK_SECRET is required in production');
+  } else {
+    paymentWebhookSecret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+    warnings.push('FORGE_PAYMENT_WEBHOOK_SECRET not set: using the insecure development webhook secret. Never use this in production.');
+  }
+
+  // Plan hooks batch B (11 Nov 2026): country table, admin allowlist, gateway rate limits, access snapshots.
+  const adminUsers: string[] = [];
+  for (const part of (env.FORGE_ADMIN_USERS ?? '').split(',')) {
+    const id = part.trim();
+    if (id === '') continue;
+    if (id.length > 64) throw new ConfigError('FORGE_ADMIN_USERS entries must be 1 to 64 characters');
+    adminUsers.push(id);
+  }
+  let countryCatalog: readonly CountryRow[] = [];
+  if (env.FORGE_COUNTRY_CATALOG !== undefined && env.FORGE_COUNTRY_CATALOG !== '') {
+    let parsedCountries: unknown;
+    try {
+      parsedCountries = JSON.parse(env.FORGE_COUNTRY_CATALOG);
+    } catch {
+      throw new ConfigError('FORGE_COUNTRY_CATALOG must be a JSON array of country rows');
+    }
+    if (!Array.isArray(parsedCountries)) throw new ConfigError('FORGE_COUNTRY_CATALOG must be a JSON array');
+    const rows: CountryRow[] = [];
+    for (const raw of parsedCountries) {
+      if (typeof raw !== 'object' || raw === null) throw new ConfigError('FORGE_COUNTRY_CATALOG entries must be objects');
+      const r = raw as Record<string, unknown>;
+      const checked = validateCountryRow({
+        code: typeof r.code === 'string' ? r.code : '',
+        currency: typeof r.currency === 'string' ? r.currency : '',
+        regionBand: typeof r.regionBand === 'string' ? r.regionBand : '',
+        taxRule: typeof r.taxRule === 'string' ? r.taxRule : '',
+        taxCheckedAt: typeof r.taxCheckedAt === 'number' ? r.taxCheckedAt : Number.NaN,
+        paymentMethods: Array.isArray(r.paymentMethods) ? (r.paymentMethods.filter((m) => typeof m === 'string') as string[]) : [],
+        enabled: r.enabled === true,
+        minimumPayoutMinor: typeof r.minimumPayoutMinor === 'number' ? r.minimumPayoutMinor : Number.NaN,
+      });
+      if (!checked.ok) throw new ConfigError('FORGE_COUNTRY_CATALOG: ' + checked.reason);
+      rows.push(checked.value);
+    }
+    countryCatalog = rows;
+  }
+  const parseLimitRule = (rawRule: unknown, name: string): RateLimitRule | null => {
+    if (rawRule === undefined || rawRule === null) return null;
+    if (typeof rawRule !== 'object' || Array.isArray(rawRule)) throw new ConfigError(name + ' must be an object with limit and windowMs');
+    const r = rawRule as Record<string, unknown>;
+    const checked = validateRateLimitRule({ limit: typeof r.limit === 'number' ? r.limit : Number.NaN, windowMs: typeof r.windowMs === 'number' ? r.windowMs : Number.NaN });
+    if (!checked.ok) throw new ConfigError(name + ': ' + checked.reason);
+    return checked.value;
+  };
+  let rateLimits: { user: RateLimitRule | null; device: RateLimitRule | null } = { user: null, device: null };
+  if (env.FORGE_RATE_LIMITS !== undefined && env.FORGE_RATE_LIMITS !== '') {
+    let parsedLimits: unknown;
+    try {
+      parsedLimits = JSON.parse(env.FORGE_RATE_LIMITS);
+    } catch {
+      throw new ConfigError('FORGE_RATE_LIMITS must be a JSON object');
+    }
+    if (typeof parsedLimits !== 'object' || parsedLimits === null || Array.isArray(parsedLimits)) {
+      throw new ConfigError('FORGE_RATE_LIMITS must be a JSON object');
+    }
+    const r = parsedLimits as Record<string, unknown>;
+    rateLimits = { user: parseLimitRule(r.user, 'FORGE_RATE_LIMITS.user'), device: parseLimitRule(r.device, 'FORGE_RATE_LIMITS.device') };
+  }
+  // Hook 14 is mandatory at the production gateway. Do not silently deploy with either
+  // per-user or per-device protection disabled; the owner must choose the actual limits.
+  if (production && (rateLimits.user === null || rateLimits.device === null)) {
+    throw new ConfigError('FORGE_RATE_LIMITS must configure both user and device limits in production');
+  }
+  const accessSnapshotTtlHours = int(env, 'FORGE_ACCESS_SNAPSHOT_TTL_HOURS', 6, 1, 72);
+  let accessSecret: Buffer;
+  if (env.FORGE_ACCESS_SNAPSHOT_SECRET !== undefined && env.FORGE_ACCESS_SNAPSHOT_SECRET !== '') {
+    accessSecret = Buffer.from(env.FORGE_ACCESS_SNAPSHOT_SECRET, 'utf8');
+  } else {
+    accessSecret = paymentWebhookSecret;
+    if (production) warnings.push('FORGE_ACCESS_SNAPSHOT_SECRET not set: reusing the payment webhook secret for access snapshots. Set a dedicated secret.');
+  }
+  if (accessSecret.length < 32) throw new ConfigError('FORGE_ACCESS_SNAPSHOT_SECRET must contain at least 32 UTF-8 bytes');
+
+  const currentPepperVersion = Math.max(...peppers.keys());
+  const maxWrongfulBlockRate = optionalUnitRate(env, 'FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE');
+
+  return {
+    env: mode,
+    host: env.FORGE_HOST ?? '127.0.0.1',
+    port: int(env, 'FORGE_PORT', 8080, 0, 65_535),
+    logLevel: (env.FORGE_LOG_LEVEL as LogLevel | undefined) ?? (mode === 'test' ? 'error' : 'info'),
+    allowedOrigins,
+    trustProxyHops: int(env, 'FORGE_TRUST_PROXY_HOPS', 0, 0, 10),
+    cookie: { name: production ? '__Host-forge_session' : 'forge_session', secure: production },
+    session: {
+      idleTimeoutMs: int(env, 'FORGE_SESSION_IDLE_HOURS', 24, 1, 720) * HOUR,
+      absoluteTimeoutMs: int(env, 'FORGE_SESSION_MAX_HOURS', 168, 1, 8760) * HOUR,
+      maxPerUser: int(env, 'FORGE_SESSION_MAX_PER_USER', 10, 1, 100),
+    },
+    password: {
+      params: { logN, r: 8, p: 1 },
+      peppers,
+      currentPepperVersion,
+      hashConcurrency: int(env, 'FORGE_HASH_CONCURRENCY', 4, 1, 64),
+      hashQueue: int(env, 'FORGE_HASH_QUEUE', 64, 1, 10_000),
+    },
+    breach: {
+      mode: breachMode,
+      baseUrl: env.FORGE_BREACH_URL ?? 'https://api.pwnedpasswords.com',
+      timeoutMs: int(env, 'FORGE_BREACH_TIMEOUT_MS', 3000, 100, 30_000),
+      checkOnSignIn: env.FORGE_BREACH_ON_SIGN_IN !== 'false',
+    },
+    passkeys: {
+      rpId: webAuthnRpId,
+      origins: webAuthnOrigins,
+      rpName: webAuthnRpName,
+    },
+    plans: {
+      plusUsdPerMonth: money(env, 'FORGE_PLUS_USD_PER_MONTH', 9.99),
+      proUsdPerMonth: money(env, 'FORGE_PRO_USD_PER_MONTH', 24.99),
+      studioUsdPerMonth: money(env, 'FORGE_STUDIO_USD_PER_MONTH', 59.99),
+      teamUsdPerSeatPerMonth: money(env, 'FORGE_TEAM_USD_PER_SEAT_PER_MONTH', 39),
+      teamMinSeats: int(env, 'FORGE_TEAM_MIN_SEATS', 3, 1, 10_000),
+      enterpriseFromUsdPerMonth: money(env, 'FORGE_ENTERPRISE_FROM_USD_PER_MONTH', 1000),
+      gatesEnabled,
+      featureSwitches,
+      engineBundlePlans,
+      freeEngineLimits,
+      monthlyCredits,
+      passCatalog,
+      paymentWebhookSecret,
+      adminUsers,
+      countryCatalog,
+      rateLimits,
+      accessSnapshotTtlHours,
+      accessSecret,
+    },
+    safety: { maxWrongfulBlockRate },
+    storage: {
+      databaseUrl,
+      databaseSsl: sslSetting,
+      databasePoolMax: int(env, 'FORGE_DATABASE_POOL_MAX', 10, 1, 100),
+      databasePath,
+      backupDir,
+      backupIntervalHours: int(env, 'FORGE_BACKUP_INTERVAL_HOURS', 6, 1, 168),
+      backupKeep: int(env, 'FORGE_BACKUP_KEEP', 28, 1, 1000),
+    },
+    auditKey,
+    warnings,
+  };
+}
