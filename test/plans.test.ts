@@ -893,7 +893,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       const other = await freeUser(h, 'export-modules-other@forge.test');
       await h.app.tasks.createTask(owner.id, 'Owner task export');
       await h.app.tasks.createTask(other.id, 'Other account task must not export');
-      await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export' });
+      await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export', steps: [{ action: 'search' }, { action: 'write', file: 'owner.md' }] });
       await h.app.testQuality.writeGolden(owner.id, 'owner-golden', { expected: 'owner-value' });
       await h.app.statusPages.createPage(owner.id, { name: 'Owner Status', slug: 'owner-status-export' });
 
