@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
 import { InMemoryBillingStore, InMemoryPlanStore, PlansService, signPaymentPayload, type PlanId } from '../src/modules/plans/index.ts';
 import { systemClock } from '../src/kernel/clock.ts';
+import { SqliteWorkspaceStore } from '../src/modules/workspaces/index.ts';
 
 const errorCode = async (res: Response): Promise<string> => ((await res.json()) as { error: { code: string } }).error.code;
 
@@ -896,6 +897,9 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export', steps: [{ action: 'search' }, { action: 'write', file: 'owner.md' }] });
       await h.app.testQuality.writeGolden(owner.id, 'owner-golden', { expected: 'owner-value' });
       await h.app.statusPages.createPage(owner.id, { name: 'Owner Status', slug: 'owner-status-export' });
+      const workspaceStore = new SqliteWorkspaceStore(h.app.db!);
+      await workspaceStore.create({ id: 'owner-export-workspace', slug: 'owner-export-workspace', name: 'Owner Workspace', description: null, createdAt: 1_800_000_000_000, updatedAt: 1_800_000_000_000, ownerId: owner.id });
+      await workspaceStore.create({ id: 'other-export-workspace', slug: 'other-export-workspace', name: 'Other Workspace', description: null, createdAt: 1_800_000_000_000, updatedAt: 1_800_000_000_000, ownerId: other.id });
       await h.app.offlineSync.apply(owner.id, { clientId: 'export-phone', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline content' }, causalClock: { 'export-phone': 1 } });
       const offlineConflict = await h.app.offlineSync.apply(owner.id, { clientId: 'export-tablet', sequence: 1, entityType: 'document', entityId: 'owner-offline-doc', baseVersion: 0, kind: 'put', payload: { body: 'owner offline conflict' }, causalClock: { 'export-tablet': 1 } });
       await h.app.offlineSync.resolveConflict(owner.id, offlineConflict.conflict!.conflictId, 'keep_current', owner.id);
@@ -911,6 +915,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
           orchestrator: { plans: Array<{ userId: string; goal: string }> };
           testQuality: { goldens: Array<{ userId: string; name: string }> };
           statusPages: { pages: Array<{ page: { ownerId: string; slug: string } }> };
+          workspaces: { memberships: Array<{ workspace: { ownerId: string; slug: string }; role: string }> };
           liveTesting: { sessions: Array<{ testAccounts: Array<Record<string, unknown>> }> };
           webSearch: { domainRules: Array<{ userId: string; workspace: string; allow: string[] }> };
           searchIntegrity: { cacheEntries: Array<{ userId: string; cacheKey: string; payload: unknown }> };
@@ -931,6 +936,9 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(bundle.modules.testQuality.goldens[0]?.name, 'owner-golden');
       assert.equal(bundle.modules.statusPages.pages.length, 1);
       assert.equal(bundle.modules.statusPages.pages[0]?.page.slug, 'owner-status-export');
+      assert.equal(bundle.modules.workspaces.memberships.length, 1);
+      assert.equal(bundle.modules.workspaces.memberships[0]?.workspace.slug, 'owner-export-workspace');
+      assert.equal(bundle.modules.workspaces.memberships[0]?.role, 'owner');
       assert.equal(bundle.modules.offlineSync.operations.length, 2);
       assert.ok(bundle.modules.offlineSync.operations.every((entry) => entry.ownerId === owner.id));
       assert.equal(bundle.modules.offlineSync.entities.length, 1);
@@ -949,6 +957,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(bundle.exportCoverage.omitted.some((item) => item.toLowerCase().includes('cache entr')), false);
       assert.equal(JSON.stringify(bundle.modules).includes('Other account task must not export'), false);
       assert.equal(JSON.stringify(bundle.modules).includes('other-account-offline-secret'), false);
+      assert.equal(JSON.stringify(bundle.modules).includes('other-export-workspace'), false);
       for (const session of bundle.modules.liveTesting.sessions) {
         for (const account of session.testAccounts) assert.equal(Object.hasOwn(account, 'password'), false);
       }
