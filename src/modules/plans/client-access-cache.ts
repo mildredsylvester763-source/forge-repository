@@ -99,14 +99,18 @@ export class ClientAccessSnapshotCache {
     this.assertUserId(userId);
     const cached = await this.store.get(userId);
     if (cached === null) throw new AccessSnapshotUnavailableError();
-    if (cached.userId !== userId || cached.snapshot.userId !== userId || !Number.isSafeInteger(cached.lastLocalNow) || !Number.isSafeInteger(cached.serverTimeOffsetMs)) {
+    if (cached.userId !== userId || cached.snapshot.userId !== userId) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Cached snapshot belongs to a different account');
+    }
+    if (!Number.isSafeInteger(cached.lastLocalNow) || !Number.isSafeInteger(cached.serverTimeOffsetMs)) {
+      await this.store.clear(userId);
+      throw new AccessSnapshotInvalidError('Cached time metadata is invalid');
     }
     const now = this.clock.now();
     if (!Number.isSafeInteger(now) || now < cached.lastLocalNow) {
       await this.store.clear(userId);
-      throw new AccessSnapshotInvalidError('Local clock moved backwards or cached time metadata is invalid');
+      throw new AccessSnapshotInvalidError('Local clock moved backwards');
     }
     let signatureValid = false;
     try { signatureValid = await this.verifier.verify(cached.snapshot, cached.publicSignature, cached.publicKey); } catch { signatureValid = false; }
