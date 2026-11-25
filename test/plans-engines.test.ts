@@ -231,6 +231,7 @@ describe('plans hooks: subscription engine', () => {
     ...over,
   });
   const event = (products: unknown, over: Record<string, unknown> = {}): unknown => ({
+    status: 'succeeded',
     eventId: 'evt_9',
     userId: 'u',
     amountMinor: 999,
@@ -248,6 +249,8 @@ describe('plans hooks: subscription engine', () => {
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }], { amountMinor: 1.5 }), 'bad_amount'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }], { currency: 'usd' }), 'bad_currency'],
       [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }], { occurredAt: 'x' }), 'bad_occurred_at'],
+      [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }], { status: 'failed' }), 'payment_not_successful'],
+      [event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }], { status: 'refunded' }), 'unsupported_payment_status'],
       [event([]), 'bad_products'],
       [event([{ itemType: 'mega_pass', itemCode: 'plus', startsAt: 0, endsAt: 2000 }]), 'bad_product_type'],
       [event([{ itemType: 'base_plan', itemCode: '', startsAt: 0, endsAt: 2000 }]), 'bad_item_code'],
@@ -266,6 +269,7 @@ describe('plans hooks: subscription engine', () => {
     const result = parsePaymentEvent(event([{ itemType: 'base_plan', itemCode: 'plus', startsAt: 0, endsAt: 2000 }]));
     assert.equal(result.ok, true);
     if (result.ok) {
+      assert.equal(result.event.status, 'succeeded');
       assert.equal(result.event.eventId, 'evt_9');
       assert.equal(result.event.amountMinor, 999);
       assert.equal(result.event.currency, 'USD');
