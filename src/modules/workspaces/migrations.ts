@@ -3,7 +3,7 @@
  * Fix 7: Add foreign keys to migrations
  */
 
-import type { Migration } from '../../kernel/sqlite.ts';
+import type { Migration } from '../../kernel/migration-types.ts';
 
 // SQLite migrations
 export const workspaceMigrations: Migration[] = [
@@ -41,10 +41,10 @@ export const workspaceMigrations: Migration[] = [
 ];
 
 // PostgreSQL migrations
-export const pgWorkspaceMigrations: { version: number; description: string; sql: string }[] = [
+export const pgWorkspaceMigrations: Migration[] = [
   {
     version: 1,
-    description: 'Create workspaces and workspace_members tables',
+    name: 'workspaces_core',
     sql: `
       CREATE TABLE IF NOT EXISTS workspaces (
         id TEXT PRIMARY KEY,
