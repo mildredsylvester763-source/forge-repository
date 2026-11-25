@@ -309,8 +309,127 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
+const ACCOUNT_EXPORT_TAKE = Number.MAX_SAFE_INTEGER;
+
+/** Collect only records owned by the authenticated account. Secrets and other users' data are redacted. */
+async function collectAccountModuleData(storage: Storage, userId: string): Promise<Record<string, unknown>> {
+  const take = ACCOUNT_EXPORT_TAKE;
+  const [
+    taskRuns, orchestratorPlans, goldens, generatedSuites,
+    webQueries, webPages, webCitations, contentItems, researchReports, knowledgePacks,
+    aiAssetsRaw, aiDatasets, aiRuns, aiAgentEvents, aiServingPlans, aiProviders,
+    aiCapabilityMatrices, aiOutputSchemas, aiMetricsOps, aiShadowOps, aiRollbackOps,
+    lakeItems, consentGrants, consentLedger, syntheticRecords, labelRecords,
+    preferenceRecords, codeDataRecords, creativeWorks, tokenizerRecords,
+    offlineOpenConflicts
+  ] = await Promise.all([
+    storage.runs.listByUser(userId, take),
+    storage.plans.listByUser(userId, take),
+    storage.goldens.listByUser(userId, take),
+    storage.suites.listByUser(userId, take),
+    storage.webSearch.listQueriesByUser(userId, take),
+    storage.webSearch.listPagesByUser(userId, take),
+    storage.webSearch.listCitationsByUser(userId, take),
+    storage.workspaceRetrieval.listItemsByUser(userId, take),
+    storage.workspaceRetrieval.listReportsByUser(userId, take),
+    storage.searchIntegrity.listPacksByUser(userId, take),
+    storage.aiTraining.listAssetsByUser(userId, take),
+    storage.aiTraining.listDatasetsByUser(userId, take),
+    storage.aiTraining.listRunsByUser(userId, take),
+    storage.aiTraining.listAgentEvents(userId, take),
+    storage.aiTraining.listServingPlans(userId, take),
+    storage.aiTraining.listGatewayProviders(userId, take),
+    storage.aiTraining.listCapabilityMatrices(userId, take),
+    storage.aiTraining.listOutputSchemas(userId, take),
+    storage.aiTraining.listModelOpsRecords(userId, 'metrics', take),
+    storage.aiTraining.listModelOpsRecords(userId, 'shadow', take),
+    storage.aiTraining.listModelOpsRecords(userId, 'rollback', take),
+    storage.trainingData.listLakeItems(userId, take),
+    storage.trainingData.listConsentGrants(userId, take),
+    storage.trainingData.listConsentLedger(userId, take),
+    storage.trainingData.listSyntheticRecords(userId, take),
+    storage.trainingData.listLabelRecords(userId, take),
+    storage.trainingData.listPreferenceRecords(userId, take),
+    storage.trainingData.listCodeDataRecords(userId, take),
+    storage.trainingData.listCreativeWorks(userId, take),
+    storage.trainingData.listTokenizerRecords(userId, take),
+    storage.offlineSync.listOpenConflicts(userId, take)
+  ]);
+
+  const aiAssets = aiAssetsRaw.map((asset) => {
+    const { storageKey: _storageKey, ...safeAsset } = asset;
+    void _storageKey;
+    return safeAsset;
+  });
+  const gatewayProviderData = await Promise.all(aiProviders.map(async (provider) => {
+    const [usage, logs, byokKey] = await Promise.all([
+      storage.aiTraining.listGatewayUsage(userId, provider.providerId, take),
+      storage.aiTraining.listGatewayLogs(userId, provider.providerId, take),
+      storage.aiTraining.findByokKey(userId, provider.providerId)
+    ]);
+    return { providerId: provider.providerId, usage, logs, byokKey };
+  }));
+
+  const observedWorkspaces = [...new Set(['default', ...webQueries.map((query) => query.workspace)])];
+  const domainRules = await Promise.all(observedWorkspaces.map((workspace) => storage.webSearch.findRule(userId, workspace)));
+
+  const liveSessionRows = await storage.liveTesting.listSessionsByUser(userId, take);
+  const [liveSessions, livePersonas] = await Promise.all([
+    Promise.all(liveSessionRows.map(async (session) => {
+      const [steps, messages, findings, participants, testAccounts] = await Promise.all([
+        storage.liveTesting.listStepsBySession(session.id),
+        storage.liveTesting.listMessagesBySession(session.id),
+        storage.liveTesting.listFindingsBySession(session.id),
+        storage.liveTesting.listParticipantsBySession(session.id),
+        storage.liveTesting.listTestAccountsBySession(session.id)
+      ]);
+      const safeTestAccounts = testAccounts.map((account) => {
+        const { password: _password, ...safeAccount } = account;
+        void _password;
+        return safeAccount;
+      });
+      return {
+        session, steps, messages, findings,
+        participants: participants.filter((participant) => participant.userId === userId),
+        testAccounts: safeTestAccounts
+      };
+    })),
+    storage.liveTesting.listPersonas(userId, null)
+  ]);
+
+  const ownedStatusPages = await storage.statusPages.listPages(userId);
+  const statusPages = await Promise.all(ownedStatusPages.map(async (page) => ({
+    page,
+    components: await storage.statusPages.listComponents(page.id),
+    history: await storage.statusPages.listHistory(page.id)
+  })));
+
+  return {
+    taskRuntime: { runs: taskRuns },
+    orchestrator: { plans: orchestratorPlans },
+    testQuality: { goldens },
+    testGeneration: { suites: generatedSuites },
+    liveTesting: { sessions: liveSessions, personas: livePersonas },
+    webSearch: { queries: webQueries, pages: webPages, citations: webCitations, domainRules },
+    workspaceRetrieval: { contentItems, researchReports },
+    searchIntegrity: { knowledgePacks, openOfflineSyncConflicts: offlineOpenConflicts },
+    aiTraining: {
+      assets: aiAssets, datasets: aiDatasets, runs: aiRuns, agentEvents: aiAgentEvents,
+      servingPlans: aiServingPlans, gatewayProviders: aiProviders, gatewayProviderData,
+      capabilityMatrices: aiCapabilityMatrices, outputSchemas: aiOutputSchemas,
+      modelOps: { metrics: aiMetricsOps, shadow: aiShadowOps, rollback: aiRollbackOps }
+    },
+    trainingData: {
+      lakeItems, consentGrants, consentLedger, syntheticRecords, labels: labelRecords,
+      preferences: preferenceRecords, codeData: codeDataRecords, creativeWorks, tokenizers: tokenizerRecords
+    },
+    statusPages: { pages: statusPages }
+  };
+}
+
 /**
  * Composition root: the one place where modules are wired together.
+
  * Adding a module means adding its routes here and (if it reacts to others) subscribing to events.
  */
 export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): ForgeApp {
@@ -394,6 +513,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     accessSecret: config.plans.accessSecret,
     allowTestPlanWrites: config.env === 'test',
     rateLimitStore: storage.rateLimitStore,
+    accountDataExport: (userId) => collectAccountModuleData(storage, userId),
   });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
 

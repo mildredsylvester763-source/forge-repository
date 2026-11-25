@@ -885,6 +885,50 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       await h.close();
     }
   });
+
+  it('exports owner-scoped module records without leaking another account or generated passwords (Hook 16)', async () => {
+    const h = await startHarness();
+    try {
+      const owner = await freeUser(h, 'export-modules-owner@forge.test');
+      const other = await freeUser(h, 'export-modules-other@forge.test');
+      await h.app.tasks.createTask(owner.id, 'Owner task export');
+      await h.app.tasks.createTask(other.id, 'Other account task must not export');
+      await h.app.orchestrator.createPlan(owner.id, { goal: 'Owner plan export' });
+      await h.app.testQuality.writeGolden(owner.id, 'owner-golden', { expected: 'owner-value' });
+      await h.app.statusPages.createPage(owner.id, { name: 'Owner Status', slug: 'owner-status-export' });
+
+      const response = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const bundle = await response.json() as {
+        modules: {
+          taskRuntime: { runs: Array<{ userId: string; goal: string }> };
+          orchestrator: { plans: Array<{ userId: string; goal: string }> };
+          testQuality: { goldens: Array<{ userId: string; name: string }> };
+          statusPages: { pages: Array<{ page: { ownerId: string; slug: string } }> };
+          liveTesting: { sessions: Array<{ testAccounts: Array<Record<string, unknown>> }> };
+        };
+        exportCoverage: { complete: boolean; includedModules: string[]; omitted: string[] };
+      };
+      assert.equal(bundle.modules.taskRuntime.runs.length, 1);
+      assert.equal(bundle.modules.taskRuntime.runs[0]?.userId, owner.id);
+      assert.equal(bundle.modules.taskRuntime.runs[0]?.goal, 'Owner task export');
+      assert.equal(bundle.modules.orchestrator.plans.length, 1);
+      assert.equal(bundle.modules.orchestrator.plans[0]?.goal, 'Owner plan export');
+      assert.equal(bundle.modules.testQuality.goldens.length, 1);
+      assert.equal(bundle.modules.testQuality.goldens[0]?.name, 'owner-golden');
+      assert.equal(bundle.modules.statusPages.pages.length, 1);
+      assert.equal(bundle.modules.statusPages.pages[0]?.page.slug, 'owner-status-export');
+      assert.equal(bundle.exportCoverage.complete, false);
+      assert.ok(bundle.exportCoverage.omitted.length > 0);
+      assert.ok(bundle.exportCoverage.includedModules.includes('trainingData'));
+      assert.equal(JSON.stringify(bundle.modules).includes('Other account task must not export'), false);
+      for (const session of bundle.modules.liveTesting.sessions) {
+        for (const account of session.testAccounts) assert.equal(Object.hasOwn(account, 'password'), false);
+      }
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 

@@ -53,6 +53,8 @@ export interface MonthlyCredits {
   readonly team: number;
 }
 
+export type AccountDataExportProvider = (userId: string) => Promise<Record<string, unknown>>;
+
 export interface PlansDeps {
   store: PlanStore;
   billing: BillingStore;
@@ -76,6 +78,8 @@ export interface PlansDeps {
   readonly accessSecret: Buffer;
   /** Test-only entitlement seeding. Production must use verified payment events or audited admin comp. */
   readonly allowTestPlanWrites?: boolean;
+  /** Hook 16: owner-scoped module data included in the account export. */
+  readonly accountDataExport?: AccountDataExportProvider;
 }
 
 export interface ProcessedPaymentResult {
@@ -105,6 +109,7 @@ export class PlansService {
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
   private readonly allowTestPlanWrites: boolean;
+  private readonly accountDataExport: AccountDataExportProvider | null;
   /** Hook 14: the fixed-window counter buckets the gateway drains. */
   private readonly rateBuckets = new Map<string, RateLimitState>();
 
@@ -123,6 +128,7 @@ export class PlansService {
     this.accessSnapshotTtlHours = deps.accessSnapshotTtlHours;
     this.accessSecret = deps.accessSecret;
     this.allowTestPlanWrites = deps.allowTestPlanWrites ?? false;
+    this.accountDataExport = deps.accountDataExport ?? null;
   }
 
   private async appendAuditFallback(drafts: readonly EventDraft[]): Promise<void> {
@@ -796,7 +802,23 @@ export class PlansService {
     const ledger = await this.billing.listLedger(userId);
     const bundle = buildAccountExport({ userId, plan: state.plan, passes: state.passes, items: items as unknown as readonly Record<string, unknown>[], ledger: ledger as unknown as readonly Record<string, unknown>[], now: this.clock() });
     if (!bundle.ok) throw new AppError(400, bundle.reason, 'The export is invalid.', { details: { reason: bundle.reason } });
-    return bundle.value as unknown as Record<string, unknown>;
+    const modules = this.accountDataExport === null ? {} : await this.accountDataExport(userId);
+    return {
+      ...(bundle.value as unknown as Record<string, unknown>),
+      modules,
+      exportCoverage: {
+        complete: false,
+        includedModules: Object.keys(modules).sort(),
+        omitted: [
+          'Offline-sync entity snapshots, operation history and resolved conflicts are not enumerable through the current store contract.',
+          'Search-integrity cache entries are not enumerable; web-search domain rules are included only for the default and observed query workspaces.',
+          'AI-training records that require parent identifiers are not all enumerable (including some evaluation, safety, experiment, model-version, model-card, promotion, pin, reservation, package and trend records).',
+          'Binary assets and model artifacts stored outside the database are represented only by metadata; their file contents are not attached.',
+          'Other participants’ identities and generated test-account passwords are intentionally excluded from this user export.',
+          'The workspaces module is not currently composed into the application runtime.'
+        ]
+      }
+    };
   }
 
   async requestAccountDeletion(userId: string, body: unknown): Promise<{ queued: boolean; retention: Record<string, readonly string[]> }> {
