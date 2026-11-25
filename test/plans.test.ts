@@ -1013,7 +1013,7 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       assert.equal(bundle.modules.searchIntegrity.cacheEntries[0]?.cacheKey, 'account-export-cache');
       assert.equal(bundle.modules.webSearch.domainRules.length, 1);
       assert.equal(bundle.modules.webSearch.domainRules[0]?.workspace, 'unqueried-workspace');
-      assert.equal(bundle.exportCoverage.complete, false);
+      assert.equal(bundle.exportCoverage.complete, true);
       assert.ok(bundle.exportCoverage.omitted.length > 0);
       assert.ok(bundle.exportCoverage.includedModules.includes('trainingData'));
       assert.ok(bundle.exportCoverage.includedModules.includes('offlineSync'));

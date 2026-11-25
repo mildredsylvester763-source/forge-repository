@@ -155,6 +155,7 @@ import { StatusPageService, InMemoryStatusPageStore, PostgresStatusPageStore, Sq
 import { offlineSyncRoutes } from './modules/offline-sync/index.ts';
 import { InMemoryWorkspaceStore, PostgresWorkspaceStore, SqliteWorkspaceStore, workspaceMigrations, type WorkspaceStore } from './modules/workspaces/index.ts';
 import { deploymentRoutes } from './modules/deployments/index.ts';
+import { exportAccountArtifacts, type AccountArtifactExportProvider } from './modules/plans/account-artifact-export.ts';
 
 export interface AppOverrides {
   clock?: Clock;
@@ -164,6 +165,8 @@ export interface AppOverrides {
   throttle?: Partial<ThrottleConfig>;
   /** A connected, already-migrated PostgreSQL pool. When given, it is the storage. */
   postgres?: SqlPool;
+  /** Hook 16: server-side adapter for binary training/model artifacts stored outside the database. */
+  accountArtifactExport?: AccountArtifactExportProvider;
 }
 
 export interface ForgeApp {
@@ -318,7 +321,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
 const ACCOUNT_EXPORT_TAKE = Number.MAX_SAFE_INTEGER;
 
 /** Collect only records owned by the authenticated account. Secrets and other users' data are redacted. */
-async function collectAccountModuleData(storage: Storage, userId: string): Promise<Record<string, unknown>> {
+async function collectAccountModuleData(storage: Storage, userId: string, artifactProvider?: AccountArtifactExportProvider): Promise<Record<string, unknown>> {
   const take = ACCOUNT_EXPORT_TAKE;
   const [
     taskRuns, orchestratorPlans, goldens, generatedSuites,
@@ -365,6 +368,18 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     void _storageKey;
     return safeAsset;
   });
+  const artifactReferences = [
+    ...aiTrainingRecords.assets
+      .filter((asset) => asset.userId === userId && asset.storageKey !== null && asset.deletedAt === null)
+      .map((asset) => ({ id: asset.id, ownerId: asset.userId, kind: 'training_asset' as const, locator: { storageKey: asset.storageKey! } })),
+    ...aiTrainingRecords.modelVersions
+      .filter((model) => model.userId === userId)
+      .map((model) => ({ id: model.id, ownerId: model.userId, kind: 'model_weights' as const, locator: { modelId: model.modelId, version: model.version, fingerprint: model.weightsFingerprint } })),
+    ...aiTrainingRecords.onPremPackages
+      .filter((pkg) => pkg.userId === userId)
+      .map((pkg) => ({ id: pkg.id, ownerId: pkg.userId, kind: 'on_prem_package' as const, locator: { modelId: pkg.modelId, version: pkg.version, fingerprint: pkg.fingerprint, format: pkg.format } })),
+  ];
+  const accountArtifacts = await exportAccountArtifacts(userId, artifactReferences, artifactProvider ?? null);
   const gatewayProviderData = aiProviders.map((provider) => ({
     providerId: provider.providerId,
     usage: aiTrainingRecords.gatewayUsage.filter((entry) => entry.providerId === provider.providerId),
@@ -516,7 +531,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     accessSecret: config.plans.accessSecret,
     allowTestPlanWrites: config.env === 'test',
     rateLimitStore: storage.rateLimitStore,
-    accountDataExport: (userId) => collectAccountModuleData(storage, userId),
+    accountDataExport: (userId) => collectAccountModuleData(storage, userId, overrides.accountArtifactExport),
   });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
 

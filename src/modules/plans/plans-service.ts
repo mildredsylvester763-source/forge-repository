@@ -803,15 +803,28 @@ export class PlansService {
     const ledger = await this.billing.listLedger(userId);
     const bundle = buildAccountExport({ userId, plan: state.plan, passes: state.passes, items: items as unknown as readonly Record<string, unknown>[], ledger: ledger as unknown as readonly Record<string, unknown>[], now: this.clock() });
     if (!bundle.ok) throw new AppError(400, bundle.reason, 'The export is invalid.', { details: { reason: bundle.reason } });
-    const modules = this.accountDataExport === null ? {} : await this.accountDataExport(userId);
+    const collected = this.accountDataExport === null ? {} : await this.accountDataExport(userId);
+    const artifactExport = collected.accountArtifacts as {
+      artifacts?: unknown[];
+      omittedArtifactIds?: unknown[];
+      complete?: boolean;
+    } | undefined;
+    const modules = { ...collected };
+    delete modules.accountArtifacts;
+    const artifacts = Array.isArray(artifactExport?.artifacts) ? artifactExport.artifacts : [];
+    const omittedArtifactIds = Array.isArray(artifactExport?.omittedArtifactIds) ? artifactExport.omittedArtifactIds : [];
+    const artifactsComplete = artifactExport?.complete === true;
     return {
       ...(bundle.value as unknown as Record<string, unknown>),
       modules,
+      artifacts,
       exportCoverage: {
-        complete: false,
+        complete: artifactsComplete,
         includedModules: Object.keys(modules).sort(),
         omitted: [
-          'Binary training assets and model artifacts stored outside the database are represented by metadata only; their file contents are not attached because no storage-provider export contract is configured.',
+          ...(artifactsComplete ? [] : [
+            `External training/model artifact bytes are not fully exported; ${omittedArtifactIds.length} referenced artifact(s) were unavailable from the configured storage provider.`
+          ]),
           'Other participants’ identities and generated test-account passwords are intentionally excluded from this user export to protect third-party data and credentials.'
         ]
       }

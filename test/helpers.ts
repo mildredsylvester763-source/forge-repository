@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { buildApp, type ForgeApp } from '../src/app.ts';
+import { buildApp, type AppOverrides, type ForgeApp } from '../src/app.ts';
 import { loadConfig, type ForgeConfig } from '../src/config.ts';
 import { silentLogger } from '../src/kernel/logger.ts';
 import { makeTestPool, type TestPool } from './pg-helpers.ts';
@@ -33,6 +33,7 @@ export interface Harness {
 export async function startHarness(
   envOverrides: Record<string, string> = {},
   throttle: Partial<ThrottleConfig> = { signInPerMinute: 100_000, registerPerMinute: 100_000 },
+  appOverrides: Partial<AppOverrides> = {},
 ): Promise<Harness> {
   const config = loadConfig({
     FORGE_ENV: 'test',
@@ -46,7 +47,7 @@ export async function startHarness(
   // FORGE_TEST_STORAGE=postgres runs against PostgreSQL (real if FORGE_TEST_POSTGRES_URL is set, else the stand-in).
   const testPool: TestPool | undefined = process.env.FORGE_TEST_STORAGE === 'postgres' ? await makeTestPool() : undefined;
   const clock = { now: 1_800_000_000_000 };
-  const app = buildApp(config, { breach, logger: silentLogger, clock: () => clock.now, throttle, ...(testPool ? { postgres: testPool.pool } : {}) });
+  const app = buildApp(config, { ...appOverrides, breach, logger: silentLogger, clock: () => clock.now, throttle, ...(testPool ? { postgres: testPool.pool } : {}) });
   const server: Server = createServer((req, res) => void app.handler(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

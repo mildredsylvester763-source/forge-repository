@@ -859,3 +859,13 @@ OB-052 follow-up verification: commit 88df054 passed TypeScript typecheck. Its f
 - Added a 32-byte minimum for the access-snapshot signing secret so a weak configured value fails at startup rather than failing when a snapshot is issued.
 - Added signature and client lifecycle tests for canonical tamper detection, online refresh, offline fallback, expiry, clock rollback, bad signatures, server rejection and missing cache.
 - Verification: CI initially exposed a verifier argument-order mismatch in the client adapter; that was corrected in commit `c68438d`. Full CI workflow `45576079054` on implementation commit `157c47f4f5820b7193142b8fb821629da5440a98` passed `npm run typecheck` and the full test suite. The subsequent documentation/checkpoint commit `23756d0f5b627c2e03ae81a43d9e4c7c031449ce` also passed workflow `45576135014`.
+
+
+### Hook 16 external artifact export contract (2026-11-25)
+
+- Added the server-side `AccountArtifactExportProvider` contract for external training assets, model weights and on-prem packages. The composition root passes only authenticated-owner references to the adapter; raw storage locators are never returned in the JSON export.
+- The core validates provider output: every requested artifact must be either exported or explicitly omitted; foreign, duplicate or unrequested IDs are rejected. Base64 must be canonical, byte length must match decoded bytes, filenames and media types are validated, and SHA-256 is recomputed before content is included.
+- The account export now includes verified artifact bytes and reports incomplete coverage when a referenced object cannot be retrieved or no provider is configured. When no external artifact references exist, binary-artifact coverage is complete. Third-party identities and generated test-account passwords remain intentionally excluded.
+- Added a harness injection point and integration coverage for owner-scoped training-asset, model-weight and on-prem-package exports, integrity checks and storage-key redaction.
+- Remaining deployment work: provide and test the actual storage adapter against the production object/model stores. This repository has no configured external storage provider or credentials, so no production adapter was fabricated.
+- Verification pending: GitHub Actions on the implementation commit. The GitHub connector does not provide a local command runner; do not mark this change CI-verified until the branch workflow confirms typecheck and the full test suite.
