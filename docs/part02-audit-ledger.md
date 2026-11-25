@@ -43,7 +43,7 @@ The following are **owner/external-input blockers**, not reasons to repeatedly r
 6. Hook 11 needs the owner to name the admin allowlist.
 7. Hook 12 needs a defined target and renewal/extension policy for time-based benefits.
 8. Hook 14 needs the owner to set production user/device thresholds; production now fails closed if either is absent.
-9. Hook 16 now exports owner-scoped records from the currently composed core modules and explicitly reports incomplete coverage. Remaining engineering work is to expose all offline-sync history, search caches/domain rules and parent-keyed AI-training records; external binary artifacts need a storage-provider export contract. The owner must still verify the full data inventory and jurisdiction-approved retention/deletion policy.
+9. Hook 16 now exports owner-scoped records from the currently composed core modules, including all offline-sync operations, current entity snapshots, open and resolved conflicts, every search-integrity cache entry, and all web-search domain rules. Remaining engineering work is to expose parent-keyed AI-training records and define an external binary-artifact export contract; the workspaces module is still not composed. The owner must verify the full data inventory and jurisdiction-approved retention/deletion policy.
 
 Do not invent missing prices, algorithms, legal retention rules, admin identities, provider event semantics or free-tier engine profiles. These blockers are recorded so independent work can proceed without repeating the same inspection.
 
@@ -828,6 +828,13 @@ OB-052 follow-up verification: commit 88df054 passed TypeScript typecheck. Its f
 - CI run [45358725450](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45358725450) for `f1e1227e17582ee1976946891bb55dc1d7ae5c65` passed TypeScript typecheck but failed the test job: 944 passed, 26 failed, 23 cancelled, 1 skipped. The first failures occurred while the shared real-PostgreSQL test harness applied `pgStatusPageMigrations`; the PL/pgSQL trigger body used a single `$` instead of the required `$$` dollar-quote delimiter. This prevented multiple PostgreSQL-backed suites from bootstrapping, including the OB-052 integration test.
 - The first documentation checkpoint (commit `9613f4c`) did not include the migration file in its diff, so the malformed delimiter remained in source. This follow-up applies the actual source correction. The existing `test/status-pages-postgres.test.ts` exercises durable component transitions, page timestamp updates, actor/history persistence, and rejection of history mutation against real PostgreSQL. The source correction is verified by CI run [45566518272](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45566518272): TypeScript typecheck passed; the full test job reported 993 tests, 992 passed, 0 failed, 0 cancelled, and 1 skipped.
 
+
+### Hook 16 export coverage checkpoint (2026-11-25)
+
+- Commit `9caa56b72d43bbd833bd2e2cad619a87fd77607b` adds owner-scoped enumeration for offline-sync operation history, current entity snapshots and both open and resolved conflicts in the SQLite and PostgreSQL stores. The account export now includes all three collections rather than only open conflicts.
+- Search-integrity cache entries and every web-search domain rule are now enumerable by owner in the in-memory, SQLite and PostgreSQL adapters. The export no longer omits rules merely because a workspace has not yet produced a query.
+- Regression tests cover owner isolation, resolved-conflict history, export payload inclusion and the PostgreSQL offline-sync adapter. CI run [45570919143](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45570919143) passed TypeScript typecheck and the full test job.
+- Hook 16 remains incomplete: parent-keyed AI-training records still need safe owner-level enumeration; external binary/model artifacts need a storage-provider export contract; the workspaces module is not composed into the application. The export remains explicitly marked incomplete. Hard deletion remains disabled pending owner-verified data inventory and jurisdiction-approved retention policy.
 
 ### Hook 16 module-export verification checkpoint (2026-11-25)
 
