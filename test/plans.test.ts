@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { GOOD_PASSWORD, sessionCookie, startHarness, type Harness } from './helpers.ts';
-import { InMemoryBillingStore, InMemoryPlanStore, PlansService, signPaymentPayload, type PlanId } from '../src/modules/plans/index.ts';
+import { InMemoryBillingStore, InMemoryPlanStore, PlansService, signPaymentPayload, verifyAccessSnapshotSignature, type PlanId } from '../src/modules/plans/index.ts';
 import { systemClock } from '../src/kernel/clock.ts';
 import { SqliteWorkspaceStore } from '../src/modules/workspaces/index.ts';
 
@@ -626,9 +626,12 @@ describe('plan hooks batch B (country table, snapshots, admin console, promotion
       const user = await freeUser(h, 'batchb-snapshot@forge.test');
       const built = await h.post('/v1/plans/access-snapshot', {}, { cookie: user.cookie });
       assert.equal(built.status, 200);
-      const body = (await built.json()) as { snapshot: { userId: string; plan: string; planExpiresAt: number | null; passExpiresAt: Record<string, number | null>; expiresAt: number }; signature: string };
+      const body = (await built.json()) as { snapshot: { userId: string; plan: string; passes: string[]; planExpiresAt: number | null; passExpiresAt: Record<string, number | null>; issuedAt: number; expiresAt: number }; signature: string; publicKey: string; publicSignature: string };
       assert.equal(body.snapshot.plan, 'free');
       assert.ok(body.signature.length > 0);
+      assert.ok(body.publicKey.length > 0);
+      assert.ok(body.publicSignature.length > 0);
+      assert.equal(verifyAccessSnapshotSignature(body.snapshot, body.publicKey, body.publicSignature), true);
       const other = await freeUser(h, 'batchb-snapshot-other@forge.test');
       const crossAccount = await h.post('/v1/plans/access-snapshot/verify', { snapshot: body.snapshot, signature: body.signature }, { cookie: other.cookie });
       assert.equal(crossAccount.status, 403);
