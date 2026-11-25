@@ -125,7 +125,7 @@ export function plansRoutes(
       POST: async (ctx): Promise<HttpResult> => {
         const user = await requireUser(ctx);
         const result = await plans.buildAccessSnapshot(user.id);
-        return { status: 200, body: { snapshot: result.snapshot, signature: result.signature } };
+        return { status: 200, body: { snapshot: result.snapshot, signature: result.signature, publicKey: result.publicKey, publicSignature: result.publicSignature } };
       },
     },
     '/v1/plans/access-snapshot/verify': {
