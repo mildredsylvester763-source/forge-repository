@@ -4,8 +4,8 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Latest CI-verified code checkpoint:** `7cc4c52ca4edc8ab57d0228be8fc3480c9051f0a`. GitHub Actions run [45566518272](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45566518272) completed successfully: typecheck passed and the full test job reported 993 tests, 992 passed, 0 failed, 0 cancelled, 1 skipped.  
-**Feature-status caveat:** the successful CI run verifies the branch's typecheck and automated test suite; it does not mean every Part 02 catalogue feature is complete. DP-015 remains a partial implementation, and feature delivery status is tracked individually below.  
+**Latest CI-verified code checkpoint:** `b95158d1a16c371f6d0659e90d41f3e6e64e4de7`. GitHub Actions run [45568327170](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45568327170) completed successfully: typecheck passed and the full test job reported 994 tests, 993 passed, 0 failed, 0 cancelled, 1 skipped.  
+**Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-052's backend management API and durable component-history implementation now pass CI. Hook 16's cross-module export is expanded but explicitly incomplete. Feature delivery status remains per-row below.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
 **Audit date:** 2026-11-25.
 
@@ -29,7 +29,7 @@
 | 13 — Server UTC clock for windows and expiry | **IMPLEMENTED** | Credit windows, monthly resets and entitlement decisions use the injected server clock and UTC boundaries. Production clock synchronization remains an operational responsibility. |
 | 14 — Per-user and per-device gateway rate limits before AI work | **IMPLEMENTED; PRODUCTION THRESHOLDS OWNER-SUPPLIED** | Every catalogued non-auth feature route, including Free AI routes, now authenticates and enforces the signed server-issued HttpOnly device limit and user limit before handler execution. Shared SQLite/PostgreSQL rate-limit stores remain wired into the composition root. Production startup fails unless both user and device rules are explicitly configured. New route tests prove Free AI requests are limited by both device and user budgets. The owner must still supply real `FORGE_RATE_LIMITS` thresholds. Identity routes use IdentityService's own sign-in throttles. |
 | 15 — Fake payment/test mode and fake clock for renewals, failures, upgrades and refunds | **PARTIAL / LIFECYCLE POLICY BLOCKER** | Fake clock, HMAC-signed test payment events and event idempotency exist. Renewal, failed-payment/grace transitions, upgrade/downgrade, refund and reversal state machines are not complete. The governing documents do not define provider event types or refund/reversal accounting semantics; do not invent money or entitlement behavior. |
-| 16 — User export and deletion with jurisdiction-specific retention | **PARTIAL / OWNER LEGAL APPROVAL REQUIRED** | The export is now returned as a no-store JSON attachment and includes the public profile, plan, passes, subscription items, credit ledger and active session metadata. Trusted-device metadata is included when that optional store is configured; otherwise the export explicitly reports `trustedDevices: null` rather than failing or implying an empty list. Password hashes and session credentials are not exported. It still omits records owned by workspace, task, test, search, training and other product modules, so it is not yet a complete account export. A confirmed request durably pauses and queues the account and records an audit event; it does not hard-purge data. Full export requires a complete user-data inventory. Hard deletion must remain disabled until the owner verifies applicable retention requirements, including Nigeria's NDPR and other relevant jurisdictions. |
+| 16 — User export and deletion with jurisdiction-specific retention | **PARTIAL / OWNER LEGAL APPROVAL REQUIRED** | The no-store JSON export includes the public profile, plan, passes, subscription items, credit ledger and security metadata, plus owner-scoped records from task runtime, orchestrator, test quality, test generation, live testing, web search, workspace retrieval, search-integrity knowledge packs/open sync conflicts, enumerable AI-training records, training-data records and status pages with component history. Live-testing exports only the requesting user's participant row and strips generated test-account passwords; training-asset storage keys are omitted. `exportCoverage.complete` is explicitly `false` and enumerates remaining gaps: offline-sync entity/operation/resolved-conflict history; search-cache entries and unobserved domain rules; AI-training records requiring parent identifiers; external binary/model artifacts; other participants' identities and generated test-account passwords; and the uncomposed workspaces module. Password hashes and session credentials remain excluded. A confirmed deletion request durably pauses and queues the account and records an audit event; it does not hard-purge data. Hard deletion remains disabled until the owner verifies applicable retention requirements, including Nigeria's NDPR and other relevant jurisdictions. |
 
 ### Plan Hooks completion gate
 
@@ -43,17 +43,35 @@ The following are **owner/external-input blockers**, not reasons to repeatedly r
 6. Hook 11 needs the owner to name the admin allowlist.
 7. Hook 12 needs a defined target and renewal/extension policy for time-based benefits.
 8. Hook 14 needs the owner to set production user/device thresholds; production now fails closed if either is absent.
-9. Hook 16 needs a full user-data inventory and jurisdiction-approved retention/deletion policy.
+9. Hook 16 now exports owner-scoped records from the currently composed core modules and explicitly reports incomplete coverage. Remaining engineering work is to expose all offline-sync history, search caches/domain rules and parent-keyed AI-training records; external binary artifacts need a storage-provider export contract. The owner must still verify the full data inventory and jurisdiction-approved retention/deletion policy.
 
 Do not invent missing prices, algorithms, legal retention rules, admin identities, provider event semantics or free-tier engine profiles. These blockers are recorded so independent work can proceed without repeating the same inspection.
 
 ## Part 02 catalogue
 
+
+### Active 20-feature batch map
+
+The original audit was recorded in 37 four-ID detail slices. Those are historical evidence sections, not the active batch boundaries. The active implementation/audit batches are exactly 20 catalogue IDs each (only the final remainder may be smaller):
+
+| 20-ID batch | Catalogue-order range | Historical detail slices | Audit coverage |
+|---|---|---|---|
+| 1 | DP-001–DP-020 | 1–5 | Audited; per-feature delivery status below |
+| 2 | DP-021–DP-040 | 6–10 | Audited; per-feature delivery status below |
+| 3 | DP-041–DP-060 | 11–15 | Audited; per-feature delivery status below |
+| 4 | DP-061–DP-080 | 16–20 | Audited; per-feature delivery status below |
+| 5 | DP-081–DP-094, OB-001–OB-006 | 21–25 | Audited; per-feature delivery status below |
+| 6 | OB-007–OB-026 | 26–30 | Audited; per-feature delivery status below |
+| 7 | OB-027–OB-046 | 31–35 | Audited; per-feature delivery status below |
+| 8 | OB-047–OB-066 | 36–40 | **8 of 20 audited** (OB-047–OB-054); next is OB-055, then continue through OB-066 |
+
+The 20-ID batch is an organizational checkpoint, not a daily quota. Do not restart or re-audit completed detail slices; implement and verify the first unfinished feature in the active range.
+
 - The catalog has **459 distinct feature IDs** across DP, OB, CG, RV, BD and SC. The repeated CG-061 occurrence is a cross-reference, not another feature.
 - **452** rows are tiered.
 - These seven rows are explicitly **Not tiered here** and must stay outside ordinary subscription gating: `SC-020`, `SC-021`, `SC-022`, `SC-023`, `SC-041`, `SC-062`, `SC-063`.
 - The 452-row Part 02 gate metadata is registered centrally; the seven SC rows remain excluded.
-- The 452-row central gate registry is metadata, not feature delivery. DP-015 now has a partial, Pro-gated dependency-planning endpoint; no other Part 02 feature is yet implemented end-to-end.
+- The 452-row central gate registry is metadata, not feature delivery. DP-015 has a partial, Pro-gated dependency-planning endpoint. OB-052 has a backend implementation with SQLite/PostgreSQL persistence and component-history enforcement, verified by CI; its separately hosted public frontend/domain is outside this repository. Other Part 02 feature status remains per-row below.
 
 ### First four-feature batch: DP-001–DP-004 — BLOCKED BEFORE IMPLEMENTATION
 

@@ -143,14 +143,17 @@ signed with the access-snapshot HMAC secret; invalid or expired tokens receive a
 The device rule remains disabled until the owner supplies a limit/window in `FORGE_RATE_LIMITS`.
 Route wiring: `gate-middleware.ts`.
 
-**Hook 16 — export and delete my data.** Pure engine `engine/account-data-engine.ts`:
-buildAccountExport (plan, passes, subscription items, credit ledger, in one bundle) and
-accountRetention (the law lets us keep invoices; profile, sessions, subscriptions and the
-credit ledger are erasable; the jurisdictions — Nigeria NDPR and every other one — must be
-VERIFIED by the owner before deletion goes live). `POST /v1/account/export` gives the
-signed-in user their bundle; `POST /v1/account/delete` (confirm: true) pauses the account,
-queues the deletion and returns the retention policy. The hard purge needs billing-store
-deletes and the owner's confirmed retention list, so nothing is destroyed yet.
+**Hook 16 — export and delete my data.** Pure engine `engine/account-data-engine.ts`
+builds the base plan/pass/subscription/ledger bundle. The application export provider now adds
+owner-scoped records from the composed task, orchestrator, test, live-testing, search,
+workspace-retrieval, AI-training, training-data and status-page modules, plus open offline-sync
+conflicts. It redacts generated test-account passwords, other participants' identity rows and
+internal storage keys. `exportCoverage.complete` is deliberately `false` and lists the
+remaining offline-sync, cache, parent-keyed AI-training, external-artifact and uncomposed
+workspace gaps. `POST /v1/account/export` remains a no-store JSON attachment.
+`POST /v1/account/delete` (confirm: true) pauses and queues the account; it does not hard-purge.
+The owner must verify the full data inventory and applicable retention requirements (including
+Nigeria NDPR) before destructive deletion is enabled.
 
 ## What is NOT complete
 
@@ -165,8 +168,7 @@ subscription items. Remaining work is recorded in the audit ledger.
 - Country rows, verified tax rules, payment methods, admin allowlist and rate-limit values
   remain owner-configured and default empty/disabled.
 - Per-device identity and shared per-user/per-device counters are wired through the gateway. Production still requires owner-supplied user and device thresholds; missing rules fail closed at startup.
-- Promotion day-benefits, renewal/failure/refund test-mode lifecycle, complete account export
-  and jurisdiction-approved hard deletion remain unfinished.
+- Promotion day-benefits and renewal/failure/refund test-mode lifecycle remain unfinished. Account export now includes owner-scoped records across the composed core modules, but its explicit coverage manifest remains incomplete for offline-sync history, caches, some parent-keyed AI-training records, external artifacts and the uncomposed workspaces module. Jurisdiction-approved hard deletion remains disabled.
 - Access snapshots are signed and server-verified, but the client-side offline cache/refresh
   lifecycle is outside this backend.
 - The PostgreSQL Plan Hooks persistence suite now runs in CI against the PostgreSQL service;
