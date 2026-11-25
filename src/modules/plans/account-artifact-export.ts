@@ -78,7 +78,7 @@ export async function exportAccountArtifacts(
     const byteLength = raw.byteLength;
     const sha256 = raw.sha256;
     if (typeof artifactId !== 'string' || !expected.has(artifactId) || exported.has(artifactId)) invalid('unexpected or duplicate artifact id');
-    if (typeof filename !== 'string' || filename.length < 1 || filename.length > 255 || filename === '.' || filename === '..' || /[\\/\u0000-\u001f]/.test(filename)) invalid('unsafe artifact filename');
+    if (typeof filename !== 'string' || filename.length < 1 || filename.length > 255 || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\') || [...filename].some((character) => character.charCodeAt(0) < 32)) invalid('unsafe artifact filename');
     if (typeof mediaType !== 'string' || !/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(mediaType)) invalid('invalid media type');
     if (typeof contentBase64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(contentBase64)) invalid('artifact content must be canonical base64');
     const bytes = Buffer.from(contentBase64, 'base64');

@@ -5,12 +5,13 @@ import { GOOD_PASSWORD, sessionCookie, startHarness } from './helpers.ts';
 import { SqliteAiTrainingStore } from '../src/modules/ai-training/index.ts';
 import type { AccountArtifactExportProvider } from '../src/modules/plans/index.ts';
 
-async function signedInUser(h: Awaited<ReturnType<typeof startHarness>>, email: string): Promise<string> {
+async function signedInUser(h: Awaited<ReturnType<typeof startHarness>>, email: string): Promise<{ cookie: string; userId: string }> {
   const registered = await h.post('/v1/auth/register', { email, password: GOOD_PASSWORD, displayName: 'Artifact Export Tester' });
   assert.equal(registered.status, 201);
+  const registration = await registered.json() as { user: { id: string } };
   const signedIn = await h.post('/v1/auth/sign-in', { email, password: GOOD_PASSWORD });
   assert.equal(signedIn.status, 200);
-  return sessionCookie(signedIn);
+  return { cookie: sessionCookie(signedIn), userId: registration.user.id };
 }
 
 describe('Hook 16 external artifact export contract', () => {
@@ -37,23 +38,21 @@ describe('Hook 16 external artifact export contract', () => {
     };
     const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' }, { signInPerMinute: 100_000, registerPerMinute: 100_000 }, { accountArtifactExport: provider });
     try {
-      const cookie = await signedInUser(h, 'artifact-export-owner@forge.test');
+      const { cookie, userId } = await signedInUser(h, 'artifact-export-owner@forge.test');
       const db = h.app.db;
       assert.ok(db);
       const store = new SqliteAiTrainingStore(db);
-      const user = await h.app.identity.authenticate(cookie);
-      assert.ok(user);
       await store.createAsset({
-        userId: user.user.id, kind: 'dataset', classification: 'private', consent: true, quality: 1,
+        userId: userId, kind: 'dataset', classification: 'private', consent: true, quality: 1,
         title: 'Private dataset', description: null, storageKey: 'private/object/key',
         scrubFindings: [], scrubRedactions: 0, tags: ['export'], now: h.clock.now,
       });
       await store.createModelVersion({
-        userId: user.user.id, modelId: 'model-a', version: 1, stage: 'experimental', owners: ['owner'],
+        userId: userId, modelId: 'model-a', version: 1, stage: 'experimental', owners: ['owner'],
         lineage: {}, weightsFingerprint: 'weights-fingerprint', fingerprint: 'model-fingerprint', now: h.clock.now,
       });
       await store.createOnPremPackage({
-        userId: user.user.id, modelId: 'model-a', version: 1, format: 'safetensors',
+        userId: userId, modelId: 'model-a', version: 1, format: 'safetensors',
         weightsFingerprint: 'weights-fingerprint', quantized: false, licenseTerms: 'test fixture',
         fingerprint: 'package-fingerprint', now: h.clock.now,
       });
@@ -81,14 +80,12 @@ describe('Hook 16 external artifact export contract', () => {
   it('reports external artifacts as omitted when no storage adapter is configured', async () => {
     const h = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
-      const cookie = await signedInUser(h, 'artifact-export-missing-provider@forge.test');
+      const { cookie, userId } = await signedInUser(h, 'artifact-export-missing-provider@forge.test');
       const db = h.app.db;
       assert.ok(db);
       const store = new SqliteAiTrainingStore(db);
-      const user = await h.app.identity.authenticate(cookie);
-      assert.ok(user);
       await store.createAsset({
-        userId: user.user.id, kind: 'dataset', classification: 'private', consent: true, quality: 1,
+        userId: userId, kind: 'dataset', classification: 'private', consent: true, quality: 1,
         title: 'Private dataset', description: null, storageKey: 'private/object/key',
         scrubFindings: [], scrubRedactions: 0, tags: [], now: h.clock.now,
       });
