@@ -16,7 +16,6 @@ class TestSecureStore implements AccessSnapshotSecureStore {
 
 function makeEnvelope(userId = 'u1'): ClientAccessSnapshotEnvelope {
   const built = assembleAccessSnapshot({ userId, plan: 'pro', passes: ['music'], now: 1_000, ttlMs: 3_600_000 });
-  assert.equal(built.ok, true);
   if (!built.ok) throw new Error(built.reason);
   return { snapshot: built.value, ...signAccessSnapshot(Buffer.alloc(32, 7), built.value) };
 }
