@@ -849,3 +849,13 @@ OB-052 follow-up verification: commit 88df054 passed TypeScript typecheck. Its f
 - Added adapter contract tests for all 27 AI-training collections in memory, SQLite and PostgreSQL, including owner isolation. Extended the account-export integration test to verify workspace membership scoping.
 - Remaining Hook 16 gaps: external binary/model artifact bytes still require a storage-provider export contract; hard deletion remains disabled pending the complete owner-verified data inventory and jurisdiction-approved retention/deletion policy. No prices, legal rules or owner policy were invented.
 - Verification: CI workflow run `45574679173` on commit `c699b0354750459fe4730808c3fb20ef46aaef79` completed successfully. Both `npm run typecheck` and the full `node --test "test/**/*.test.ts"` step passed. The workspace migration is also applied by the SQLite-backed PostgreSQL test pool and the real PostgreSQL test harness.
+
+
+### Hook 9 offline access cache follow-up (2026-11-25)
+
+- Preserved the existing HMAC snapshot signature for the server verification route and added a separate Ed25519 signature/public key for offline client verification. The Ed25519 private key is derived with domain separation from the server-only access secret; only the public key and signature are returned to the client. Snapshot canonicalization sorts object keys before signing/verifying.
+- Added `ClientAccessSnapshotCache`, a platform-neutral refresh/cache state machine. It refreshes online first, falls back only when the transport explicitly classifies a connectivity failure, verifies the public signature and snapshot shape, applies entitlement expiries, uses a conservative server-time offset, and rejects local clock rollback. It clears cached access when the server rejects the account or when a signature, user binding, expiry or cache record is invalid.
+- The client interface requires authenticated HTTPS transport, a public-key verifier and device-protected authenticated-encryption storage. The repository has no mobile/web client or native Keychain/Keystore adapter, so platform integration remains outstanding; no HMAC secret is exposed to clients.
+- Added a 32-byte minimum for the access-snapshot signing secret so a weak configured value fails at startup rather than failing when a snapshot is issued.
+- Added signature and client lifecycle tests for canonical tamper detection, online refresh, offline fallback, expiry, clock rollback, bad signatures, server rejection and missing cache.
+- Verification: CI initially exposed a verifier argument-order mismatch in the client adapter; that was corrected in commit `c68438d`. The subsequent full CI run is pending. Do not mark Hook 9 complete until typecheck and all tests pass.
