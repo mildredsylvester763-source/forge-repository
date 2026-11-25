@@ -104,13 +104,21 @@ Routes: `GET /v1/plans/countries`, `POST /v1/plans/countries/get` (404 country-u
 403 country-disabled).
 
 **Hook 9 — cached access for bad networks.** Pure engine
-`engine/access-snapshot-engine.ts`: assemble/verify a snapshot
-{userId, plan, passes, issuedAt, expiresAt}. The service signs it with the same HMAC as
-payment events (`FORGE_ACCESS_SNAPSHOT_SECRET`, falling back to the webhook secret with a
-production warning); the TTL is `FORGE_ACCESS_SNAPSHOT_TTL_HOURS` (default 6, 1–72). The
-server stays the boss: an expired snapshot answers `snapshot-expired:<user>`, a tampered
-signature answers `snapshot-signature-invalid`, and verify returns the live server state.
-Routes: `POST /v1/plans/access-snapshot`, `POST /v1/plans/access-snapshot/verify`.
+`engine/access-snapshot-engine.ts` assembles/verifies a snapshot
+{userId, plan, passes, issuedAt, expiresAt}. The server retains its HMAC signature for
+server-to-server verification and also emits a domain-separated Ed25519 signature plus
+public key for offline client verification. The private signing material is derived from
+`FORGE_ACCESS_SNAPSHOT_SECRET` (falling back to the webhook secret with a production
+warning); configured secrets must contain at least 32 UTF-8 bytes. The TTL is
+`FORGE_ACCESS_SNAPSHOT_TTL_HOURS` (default 6, 1–72). The platform-neutral
+`client-access-cache.ts` refreshes online first, falls back only for classified connectivity
+loss, verifies the public signature, enforces server-time expiry and local clock rollback
+checks, clears cache on server rejection, and never extends the signed expiry. The host
+application must supply authenticated HTTPS transport, a public-key verifier and encrypted
+Keychain/Keystore-equivalent storage; this backend repository has no mobile/web client or
+native secure-storage adapter. The server stays authoritative and verify still returns live
+server state. Routes: `POST /v1/plans/access-snapshot`,
+`POST /v1/plans/access-snapshot/verify`.
 
 **Hook 11 — the basic admin console.** Pure engine `engine/admin-console-engine.ts`:
 `isAdmin` (allowlist) and `validateAdminAction` with named refusals; a written reason is
