@@ -7,6 +7,7 @@ export { aiTrainingRoutes } from './routes.ts';
 export {
   InMemoryAiTrainingStore,
   type AgentEventRecord,
+  type AiTrainingAccountExport,
   type AiTrainingStore,
   type BlindBallotRecord,
   type ByokKeyRecord,
