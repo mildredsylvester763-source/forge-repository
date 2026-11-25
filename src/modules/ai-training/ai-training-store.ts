@@ -597,7 +597,39 @@ export interface NewOutputSchema {
  * gateway logs, capability matrices and output schemas. SQLite and
  * PostgreSQL adapters sit behind the same interface.
  */
+export interface AiTrainingAccountExport {
+  readonly assets: TrainingAssetRecord[];
+  readonly datasets: DatasetSnapshotRecord[];
+  readonly runs: TrainingRunRecord[];
+  readonly evalSuites: EvalSuiteRecord[];
+  readonly panelVotes: PanelVoteRecord[];
+  readonly safetyBatteries: SafetyBatteryRecord[];
+  readonly safetyGrades: SafetyGradeRecord[];
+  readonly blindBallots: BlindBallotRecord[];
+  readonly experiments: ExperimentRecord[];
+  readonly experimentSubjects: ExperimentSubjectRecord[];
+  readonly agentEvents: AgentEventRecord[];
+  readonly trendSamples: TrendSampleRecord[];
+  readonly miningBatches: MiningBatchRecord[];
+  readonly modelVersions: ModelVersionRecord[];
+  readonly modelCards: ModelCardRecord[];
+  readonly modelPromotions: ModelPromotionRecord[];
+  readonly servingPlans: ServingPlanRecord[];
+  readonly modelOps: ModelOpsRecord[];
+  readonly modelPins: ModelPinRecord[];
+  readonly instanceReservations: InstanceReservationRecord[];
+  readonly onPremPackages: OnPremPackageRecord[];
+  readonly gatewayProviders: GatewayProviderRecord[];
+  readonly byokKeys: ByokKeyRecord[];
+  readonly gatewayUsage: GatewayUsageRecord[];
+  readonly gatewayLogs: GatewayLogRecord[];
+  readonly capabilityMatrices: CapabilityMatrixRecord[];
+  readonly outputSchemas: OutputSchemaRecord[];
+}
+
 export interface AiTrainingStore {
+  /** Enumerate every database-backed record owned by this user, including records normally queried through parent IDs. */
+  exportByUser(userId: string, take: number): Promise<AiTrainingAccountExport>;
   createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord>;
   listAssetsByUser(userId: string, take: number): Promise<TrainingAssetRecord[]>;
   listAssetsByIds(userId: string, ids: readonly string[]): Promise<TrainingAssetRecord[]>;
@@ -725,6 +757,25 @@ export class InMemoryAiTrainingStore implements AiTrainingStore {
   private readonly gatewayLogsByUser = new Map<string, GatewayLogRecord[]>();
   private readonly capabilityByUser = new Map<string, CapabilityMatrixRecord[]>();
   private readonly outputSchemasByUser = new Map<string, OutputSchemaRecord[]>();
+
+  async exportByUser(userId: string, take: number): Promise<AiTrainingAccountExport> {
+    const list = <T>(records: Map<string, T[]>): T[] => (records.get(userId) ?? []).slice(0, take);
+    return {
+      assets: list(this.assetsByUser), datasets: list(this.datasetsByUser), runs: list(this.runsByUser),
+      evalSuites: list(this.evalSuitesByUser), panelVotes: list(this.panelVotesByUser),
+      safetyBatteries: list(this.batteriesByUser), safetyGrades: list(this.gradesByUser),
+      blindBallots: list(this.ballotsByUser), experiments: list(this.experimentsByUser),
+      experimentSubjects: list(this.subjectsByUser), agentEvents: list(this.agentEventsByUser),
+      trendSamples: list(this.trendByUser), miningBatches: list(this.miningByUser),
+      modelVersions: list(this.modelVersionsByUser), modelCards: list(this.modelCardsByUser),
+      modelPromotions: list(this.modelPromotionsByUser), servingPlans: list(this.servingPlansByUser),
+      modelOps: list(this.modelOpsByUser), modelPins: list(this.modelPinsByUser),
+      instanceReservations: list(this.reservationsByUser), onPremPackages: list(this.onPremByUser),
+      gatewayProviders: list(this.providersByUser), byokKeys: list(this.byokByUser),
+      gatewayUsage: list(this.gatewayUsageByUser), gatewayLogs: list(this.gatewayLogsByUser),
+      capabilityMatrices: list(this.capabilityByUser), outputSchemas: list(this.outputSchemasByUser),
+    };
+  }
 
   async createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord> {
     const record: TrainingAssetRecord = {
