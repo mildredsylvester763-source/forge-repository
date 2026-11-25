@@ -810,10 +810,8 @@ export class PlansService {
         complete: false,
         includedModules: Object.keys(modules).sort(),
         omitted: [
-          'AI-training records that require parent identifiers are not all enumerable (including some evaluation, safety, experiment, model-version, model-card, promotion, pin, reservation, package and trend records).',
-          'Binary assets and model artifacts stored outside the database are represented only by metadata; their file contents are not attached.',
-          'Other participants’ identities and generated test-account passwords are intentionally excluded from this user export.',
-          'The workspaces module is not currently composed into the application runtime.'
+          'Binary training assets and model artifacts stored outside the database are represented by metadata only; their file contents are not attached because no storage-provider export contract is configured.',
+          'Other participants’ identities and generated test-account passwords are intentionally excluded from this user export to protect third-party data and credentials.'
         ]
       }
     };
