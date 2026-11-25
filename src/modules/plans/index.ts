@@ -4,6 +4,7 @@ export * from './engine/part02-feature-gates.ts';
 export * from './engine/route-gates.ts';
 export * from './engine/country-registry-engine.ts';
 export * from './engine/access-snapshot-engine.ts';
+export * from './access-snapshot-signature.ts';
 export * from './engine/admin-console-engine.ts';
 export * from './engine/promotion-engine.ts';
 export * from './engine/rate-limit-engine.ts';
