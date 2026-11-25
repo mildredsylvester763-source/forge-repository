@@ -180,13 +180,16 @@ subscription items. Remaining work is recorded in the audit ledger.
   remain owner-configured and default empty/disabled.
 - Per-device identity and shared per-user/per-device counters are wired through the gateway. Production still requires owner-supplied user and device thresholds; missing rules fail closed at startup.
 - Promotion day-benefits and renewal/failure/refund test-mode lifecycle remain unfinished. Account export now enumerates all 27 database-backed AI-training record collections by owner across in-memory, SQLite and PostgreSQL, plus the authenticated user's workspace memberships, offline-sync history, search caches and web-search domain rules. Training-asset storage keys remain redacted; external binary/model artifact bytes still require a storage-provider export contract. Jurisdiction-approved hard deletion remains disabled.
-- Access snapshots are signed and server-verified, but the client-side offline cache/refresh
-  lifecycle is outside this backend.
-- The PostgreSQL Plan Hooks persistence suite now runs in CI against the PostgreSQL service;
+- Hook 9 now has a public-key-verifiable Ed25519 snapshot signature and a platform-neutral
+  client cache/refresh state machine. The actual app must still supply authenticated HTTPS,
+  a platform verifier and integrity-protected Keychain/Keystore-equivalent storage; this
+  repository contains no mobile/web application or native secure-storage adapter.
+- The PostgreSQL Plan Hooks persistence suite runs in CI against the PostgreSQL 16 service;
   the latest verified workflow is recorded in the audit ledger.
 
-Do not start Part 02 feature implementation until the remaining Plan Hooks prerequisites are
-closed or explicitly blocked by owner-supplied inputs/approvals.
+Finish engineering work that is supported by the two governing documents. Record missing
+owner-supplied prices, tax/legal rules, admin identities, production thresholds and lifecycle
+policies as explicit blockers, but do not let those blockers stop independent Part 02 work.
 
 ## Where the code lives
 
@@ -204,7 +207,7 @@ The repository audit found that the earlier "handled once" wording overstated th
 
 Admin actions now emit append-only `plans.admin.action` events with the authenticated admin actor, target, action and required reason. Promotion redemptions and account-deletion requests also emit named events. The admin promotion-definition endpoint now requires a written reason.
 
-These changes close the storage race conditions in the SQLite and PostgreSQL adapters, but do not close every Plan Hooks requirement. Remaining gaps are tracked in `docs/part02-audit-ledger.md`: durable account pause/deletion state, durable promotion definitions/redemptions and atomic redemption limits, complete pass-product/price validation (including multi-engine credit allocation and the ALG-52/ALG-56 inputs not contained in the two governing documents), full account export/purge policy approval, device identity at the gateway, explicit payment test-mode lifecycle coverage, and an atomic audit outbox tying the hash-chained event log to billing commits. Native PostgreSQL CI must still be run against a real PostgreSQL service; the SQLite-backed adapter harness is not equivalent evidence.
+Subsequent implementation closed the durable account pause/deletion state and atomic promotion-definition/redemption gaps in the SQLite and PostgreSQL adapters. Billing mutations and their hash-chained audit events are committed in the same database transaction for the production adapters. Remaining work is tracked in `docs/part02-audit-ledger.md`: owner-supplied regional price books and ALG-52/ALG-56 guard inputs; owner-approved tax/payment/country configuration, admin identities, rate thresholds and time-based promotion/refund policies; native client secure-storage integration; external binary artifact export and approved hard-deletion policy; and complete failure/renewal/refund test-mode lifecycle coverage. The CI workflow runs against a real PostgreSQL 16 service; the SQLite-backed adapter harness is additional fast coverage, not the only database evidence.
 
 
 ### Audit correction — 20 November 2026 (follow-up)
