@@ -2,8 +2,8 @@
  * Hook 9 - cached access for bad networks, pure engine. A signed copy of what the user
  * may use (plan, passes, expiry) that works offline for a few hours. The server stays the
  * boss: the snapshot carries issuedAt/expiresAt, an expired snapshot is refused by name,
- * and the signature (the service's job, HMAC like payment events) can never be forged by
- * the client. Pure and deterministic.
+ * and a server-only Ed25519 signing key lets clients verify the snapshot with a public key
+ * without exposing an HMAC secret to the device. Shape and expiry checks stay pure.
  */
 
 export interface AccessSnapshot {
