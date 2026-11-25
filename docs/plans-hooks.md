@@ -150,9 +150,11 @@ workspace-retrieval, AI-training, training-data and status-page modules. It now 
 offline-sync operations, current entity snapshots and open/resolved conflicts, every
 search-integrity cache entry, and all web-search domain rules (including unqueried workspaces).
 It redacts generated test-account passwords, other participants' identity rows and internal
-storage keys. `exportCoverage.complete` remains deliberately `false` for parent-keyed AI-training
-records, external artifacts and the uncomposed workspaces module. `POST /v1/account/export`
-remains a no-store JSON attachment. `POST /v1/account/delete` (confirm: true) pauses and queues
+storage keys. The Hook 16 follow-up adds direct owner-scoped enumeration for every database-backed
+AI-training record and the authenticated user's workspace memberships. `exportCoverage.complete`
+remains deliberately `false` for external binary/model artifacts whose bytes are not available
+through a storage-provider export contract. `POST /v1/account/export` remains a no-store JSON
+attachment. `POST /v1/account/delete` (confirm: true) pauses and queues
 the account; it does not hard-purge. The owner must verify the full data inventory and applicable
 retention requirements (including Nigeria NDPR) before destructive deletion is enabled.
 
@@ -169,7 +171,7 @@ subscription items. Remaining work is recorded in the audit ledger.
 - Country rows, verified tax rules, payment methods, admin allowlist and rate-limit values
   remain owner-configured and default empty/disabled.
 - Per-device identity and shared per-user/per-device counters are wired through the gateway. Production still requires owner-supplied user and device thresholds; missing rules fail closed at startup.
-- Promotion day-benefits and renewal/failure/refund test-mode lifecycle remain unfinished. Account export now includes owner-scoped offline-sync history, search caches and web-search domain rules across the durable adapters. Its explicit coverage manifest remains incomplete for some parent-keyed AI-training records, external artifacts and the uncomposed workspaces module. Jurisdiction-approved hard deletion remains disabled.
+- Promotion day-benefits and renewal/failure/refund test-mode lifecycle remain unfinished. Account export now enumerates all 27 database-backed AI-training record collections by owner across in-memory, SQLite and PostgreSQL, plus the authenticated user's workspace memberships, offline-sync history, search caches and web-search domain rules. Training-asset storage keys remain redacted; external binary/model artifact bytes still require a storage-provider export contract. Jurisdiction-approved hard deletion remains disabled.
 - Access snapshots are signed and server-verified, but the client-side offline cache/refresh
   lifecycle is outside this backend.
 - The PostgreSQL Plan Hooks persistence suite now runs in CI against the PostgreSQL service;
