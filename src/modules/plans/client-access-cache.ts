@@ -17,7 +17,7 @@ export interface CachedAccessSnapshot {
   readonly lastLocalNow: number;
 }
 
-/** Implement with Keychain/Keystore or an equivalent encrypted, device-protected store. */
+/** Implement with Keychain/Keystore or equivalent device-protected authenticated encryption; integrity-protect the clock metadata as well as the snapshot. */
 export interface AccessSnapshotSecureStore {
   get(userId: string): Promise<CachedAccessSnapshot | null>;
   set(userId: string, snapshot: CachedAccessSnapshot): Promise<void>;
