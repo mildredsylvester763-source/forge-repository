@@ -56,7 +56,7 @@ export interface ForgeConfig {
     rateLimits: { user: RateLimitRule | null; device: RateLimitRule | null };
     /** Hook 9: how many hours a signed access snapshot stays valid. */
     accessSnapshotTtlHours: number;
-    /** Hook 9: the HMAC secret access snapshots are signed with. */
+    /** Hook 9: server HMAC and domain-separated Ed25519 signing secret for access snapshots. */
     accessSecret: Buffer;
   };
   safety: {
