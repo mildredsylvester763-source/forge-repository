@@ -77,6 +77,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         accessSecret: Buffer.from('forge-postgres-plan-test-secret', 'utf8'),
       });
       const event: PaymentEvent = {
+        status: 'succeeded',
         eventId: 'pg-payment-retry-1',
         userId: user.id,
         amountMinor: 999,
@@ -129,6 +130,7 @@ describe('PostgreSQL Plan Hooks persistence (real database only)', { skip: REAL_
         accessSecret: Buffer.from('forge-postgres-plan-test-secret', 'utf8'),
       });
       const event: PaymentEvent = {
+        status: 'succeeded',
         eventId: 'pg-payment-audit-rollback',
         userId: user.id,
         amountMinor: 999,
