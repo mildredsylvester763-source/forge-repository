@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { SqlPool } from '../../kernel/sql.ts';
 import type {
   AgentEventRecord,
+  AiTrainingAccountExport,
   AiTrainingStore,
   BlindBallotRecord,
   ByokKeyRecord,
@@ -142,6 +143,14 @@ interface BatteryRow {
   user_id: string;
   battery_id: string;
   probes: string;
+  created_at: string | number;
+}
+
+interface GradeRow {
+  id: string;
+  user_id: string;
+  battery_id: string;
+  grade: string;
   created_at: string | number;
 }
 
@@ -443,6 +452,14 @@ const toBatteryRecord = (r: BatteryRow): SafetyBatteryRecord => ({
   createdAt: num(r.created_at),
 });
 
+const toSafetyGradeRecord = (r: GradeRow): SafetyGradeRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  batteryId: r.battery_id,
+  grade: JSON.parse(r.grade) as unknown,
+  createdAt: num(r.created_at),
+});
+
 const toBallotRecord = (r: BallotRow): BlindBallotRecord => ({
   id: r.id,
   userId: r.user_id,
@@ -662,6 +679,48 @@ export class PostgresAiTrainingStore implements AiTrainingStore {
 
   constructor(pool: SqlPool) {
     this.pool = pool;
+  }
+
+  async exportByUser(userId: string, take: number): Promise<AiTrainingAccountExport> {
+    const list = async <Row>(table: string, orderBy: 'created_at' | 'logged_at' = 'created_at'): Promise<Row[]> => {
+      const result = await this.pool.query<Row>(
+        'SELECT * FROM ' + table + ' WHERE user_id = $1 ORDER BY ' + orderBy + ' DESC, id DESC LIMIT $2',
+        [userId, take],
+      );
+      return result.rows;
+    };
+    const [
+      assets, datasets, runs, evalSuites, panelVotes, safetyBatteries, safetyGrades, blindBallots,
+      experiments, experimentSubjects, agentEvents, trendSamples, miningBatches, modelVersions,
+      modelCards, modelPromotions, servingPlans, modelOps, modelPins, instanceReservations,
+      onPremPackages, gatewayProviders, byokKeys, gatewayUsage, gatewayLogs, capabilityMatrices, outputSchemas,
+    ] = await Promise.all([
+      list<AssetRow>('training_assets'), list<DatasetRow>('training_datasets'), list<RunRow>('training_runs'),
+      list<SuiteRow>('eval_suites'), list<PanelVoteRow>('panel_votes'), list<BatteryRow>('safety_batteries'),
+      list<GradeRow>('safety_grades'), list<BallotRow>('blind_ballots'), list<ExperimentRow>('experiments'),
+      list<SubjectRow>('experiment_subjects'), list<AgentEventRow>('agent_events'), list<TrendRow>('eval_trend_samples'),
+      list<MiningRow>('mining_batches'), list<PgModelVersionRow>('model_versions'), list<PgModelCardRow>('model_cards'),
+      list<PgModelPromotionRow>('model_promotions'), list<PgServingPlanRow>('serving_plans'), list<PgModelOpsRow>('model_ops_records'),
+      list<PgModelPinRow>('model_pins'), list<PgReservationRow>('instance_reservations'), list<PgOnPremRow>('onprem_packages'),
+      list<PgProviderRow>('gateway_providers'), list<PgByokRow>('byok_keys'), list<PgGatewayUsageRow>('gateway_usage'),
+      list<PgGatewayLogRow>('gateway_logs', 'logged_at'), list<PgCapabilityRow>('capability_matrices'),
+      list<PgOutputSchemaRow>('output_schemas'),
+    ]);
+    return {
+      assets: assets.map(toAssetRecord), datasets: datasets.map(toDatasetRecord), runs: runs.map(toRunRecord),
+      evalSuites: evalSuites.map(toSuiteRecord), panelVotes: panelVotes.map(toPanelVoteRecord),
+      safetyBatteries: safetyBatteries.map(toBatteryRecord), safetyGrades: safetyGrades.map(toSafetyGradeRecord),
+      blindBallots: blindBallots.map(toBallotRecord), experiments: experiments.map(toExperimentRecord),
+      experimentSubjects: experimentSubjects.map(toSubjectRecord), agentEvents: agentEvents.map(toAgentEventRecord),
+      trendSamples: trendSamples.map(toTrendRecord), miningBatches: miningBatches.map(toMiningRecord),
+      modelVersions: modelVersions.map(toModelVersionRecord), modelCards: modelCards.map(toModelCardRecord),
+      modelPromotions: modelPromotions.map(toModelPromotionRecord), servingPlans: servingPlans.map(toServingPlanRecord),
+      modelOps: modelOps.map(toModelOpsRecord), modelPins: modelPins.map(toModelPinRecord),
+      instanceReservations: instanceReservations.map(toReservationRecord), onPremPackages: onPremPackages.map(toOnPremRecord),
+      gatewayProviders: gatewayProviders.map(toProviderRecord), byokKeys: byokKeys.map(toByokRecord),
+      gatewayUsage: gatewayUsage.map(toGatewayUsageRecord), gatewayLogs: gatewayLogs.map(toGatewayLogRecord),
+      capabilityMatrices: capabilityMatrices.map(toCapabilityRecord), outputSchemas: outputSchemas.map(toOutputSchemaRecord),
+    };
   }
 
   async createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord> {
