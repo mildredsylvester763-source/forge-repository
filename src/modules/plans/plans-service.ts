@@ -75,7 +75,7 @@ export interface PlansDeps {
   readonly rateLimitStore?: SharedRateLimiter;
   /** Hook 9: how many hours a signed access snapshot stays valid. */
   readonly accessSnapshotTtlHours: number;
-  /** Hook 9: the HMAC secret access snapshots are signed with. */
+  /** Hook 9: server HMAC and domain-separated Ed25519 signing secret for access snapshots. */
   readonly accessSecret: Buffer;
   /** Test-only entitlement seeding. Production must use verified payment events or audited admin comp. */
   readonly allowTestPlanWrites?: boolean;
