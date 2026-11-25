@@ -30,7 +30,7 @@ export interface AccessSnapshotTransport {
 }
 
 export interface AccessSnapshotSignatureVerifier {
-  verify(snapshot: AccessSnapshot, publicSignature: string, publicKey: string): Promise<boolean> | boolean;
+  verify(snapshot: AccessSnapshot, publicKey: string, publicSignature: string): Promise<boolean> | boolean;
 }
 
 export interface AccessSnapshotClock {
@@ -113,7 +113,7 @@ export class ClientAccessSnapshotCache {
       throw new AccessSnapshotInvalidError('Local clock moved backwards');
     }
     let signatureValid = false;
-    try { signatureValid = await this.verifier.verify(cached.snapshot, cached.publicSignature, cached.publicKey); } catch { signatureValid = false; }
+    try { signatureValid = await this.verifier.verify(cached.snapshot, cached.publicKey, cached.publicSignature); } catch { signatureValid = false; }
     if (!signatureValid) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Cached snapshot signature is invalid');
@@ -149,7 +149,7 @@ export class ClientAccessSnapshotCache {
       throw new AccessSnapshotInvalidError('Server returned a snapshot for a different account');
     }
     let signatureValid = false;
-    try { signatureValid = await this.verifier.verify(envelope.snapshot, envelope.publicSignature, envelope.publicKey); } catch { signatureValid = false; }
+    try { signatureValid = await this.verifier.verify(envelope.snapshot, envelope.publicKey, envelope.publicSignature); } catch { signatureValid = false; }
     if (!signatureValid) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Server snapshot signature is invalid');
