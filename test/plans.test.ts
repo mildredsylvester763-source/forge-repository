@@ -245,6 +245,60 @@ describe('plans (PLAN GATE LAW)', () => {
     }
   });
 
+  it('rejects failed and refunded provider notifications without granting subscriptions or credits (Hook 15)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-non-success-payment@forge.test');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const now = h.clock.now;
+      for (const [index, status] of (['failed', 'refunded'] as const).entries()) {
+        const payload = {
+          status, eventId: 'evt_non_success_' + index, userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
+          products: [{ itemType: 'base_plan', itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
+        };
+        const response = await h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+        assert.equal(response.status, 400);
+        assert.equal(await errorCode(response), 'payment_event_rejected');
+      }
+      const state = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(state.plan, 'free');
+      assert.deepEqual(state.passes, []);
+      const credits = (await (await h.get('/v1/credits/me', { cookie: user.cookie })).json()) as { balances: { general: number; engines: unknown[] } };
+      assert.equal(credits.balances.general, 0);
+      assert.deepEqual(credits.balances.engines, []);
+    } finally { await h.close(); }
+  });
+
+  it('uses the fake clock and signed test payments to exercise renewal and upgrade transitions (Hook 15)', async () => {
+    const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
+    try {
+      const user = await freeUser(h, 'plans-renewal-upgrade@forge.test');
+      const secret = Buffer.from('forge-insecure-development-webhook-secret', 'utf8');
+      const day = 86_400_000;
+      const send = async (eventId: string, productCode: string, startsAt: number, endsAt: number): Promise<Response> => {
+        const payload = { status: 'succeeded', eventId, userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: h.clock.now,
+          products: [{ itemType: 'base_plan', itemCode: productCode, startsAt, endsAt }] };
+        return h.post('/v1/payments/event', { payload, signature: signPaymentPayload(secret, payload) });
+      };
+      const firstStart = h.clock.now;
+      const firstEnd = firstStart + 30 * day;
+      assert.equal((await send('evt_plus_initial', 'plus_plan', firstStart, firstEnd)).status, 200);
+      h.clock.now = firstEnd;
+      const renewalStart = h.clock.now;
+      const renewalEnd = renewalStart + 30 * day;
+      assert.equal((await send('evt_plus_renewal', 'plus_plan', renewalStart, renewalEnd)).status, 200);
+      assert.equal((await h.app.plans.getEntitlementState(user.id)).plan, 'plus');
+      h.clock.now = renewalStart + 5 * day;
+      const upgradeStart = h.clock.now;
+      const upgradeEnd = upgradeStart + 30 * day;
+      assert.equal((await send('evt_plus_to_pro_upgrade', 'pro_plan', upgradeStart, upgradeEnd)).status, 200);
+      const upgraded = await h.app.plans.getEntitlementState(user.id);
+      assert.equal(upgraded.plan, 'pro');
+      const liveBasePlans = upgraded.items.filter((item) => item.itemType === 'base_plan' && item.status === 'active' && item.startsAt <= h.clock.now && h.clock.now < item.endsAt);
+      assert.equal(liveBasePlans.length, 1);
+      assert.equal(liveBasePlans[0]?.itemCode, 'pro');
+    } finally { await h.close(); }
+  });
   it('resolves arbitrary base-plan product codes through explicit catalog mapping (Hook 4)', async () => {
     const h = await startHarness({ FORGE_PASS_CATALOG: PAYMENT_CATALOG });
     try {
