@@ -99,16 +99,17 @@ export class ClientAccessSnapshotCache {
     this.assertUserId(userId);
     const cached = await this.store.get(userId);
     if (cached === null) throw new AccessSnapshotUnavailableError();
-    if (cached.userId !== userId || cached.snapshot.userId !== userId) {
+    if (cached.userId !== userId || cached.snapshot.userId !== userId || !Number.isSafeInteger(cached.lastLocalNow) || !Number.isSafeInteger(cached.serverTimeOffsetMs)) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Cached snapshot belongs to a different account');
     }
     const now = this.clock.now();
-    if (!Number.isSafeInteger(now) || now < cached.lastLocalNow || !Number.isSafeInteger(cached.serverTimeOffsetMs)) {
+    if (!Number.isSafeInteger(now) || now < cached.lastLocalNow) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Local clock moved backwards or cached time metadata is invalid');
     }
-    const signatureValid = await this.verifier.verify(cached.snapshot, cached.publicSignature, cached.publicKey);
+    let signatureValid = false;
+    try { signatureValid = await this.verifier.verify(cached.snapshot, cached.publicSignature, cached.publicKey); } catch { signatureValid = false; }
     if (!signatureValid) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Cached snapshot signature is invalid');
@@ -139,17 +140,22 @@ export class ClientAccessSnapshotCache {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Local clock changed during snapshot refresh');
     }
-    if (envelope.snapshot.userId !== userId) {
+    if (typeof envelope !== 'object' || envelope === null || typeof envelope.publicKey !== 'string' || typeof envelope.publicSignature !== 'string' || typeof envelope.snapshot !== 'object' || envelope.snapshot === null || envelope.snapshot.userId !== userId) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Server returned a snapshot for a different account');
     }
-    const signatureValid = await this.verifier.verify(envelope.snapshot, envelope.publicSignature, envelope.publicKey);
+    let signatureValid = false;
+    try { signatureValid = await this.verifier.verify(envelope.snapshot, envelope.publicSignature, envelope.publicKey); } catch { signatureValid = false; }
     if (!signatureValid) {
       await this.store.clear(userId);
       throw new AccessSnapshotInvalidError('Server snapshot signature is invalid');
     }
     // Using request start makes the estimate conservative: network latency consumes, rather than extends, the TTL.
     const serverTimeOffsetMs = envelope.snapshot.issuedAt - requestStartedAt;
+    if (!Number.isSafeInteger(serverTimeOffsetMs)) {
+      await this.store.clear(userId);
+      throw new AccessSnapshotInvalidError('Server-time offset is invalid');
+    }
     const estimatedServerNow = responseReceivedAt + serverTimeOffsetMs;
     const checked = verifySnapshotShape(envelope.snapshot, estimatedServerNow);
     if (!checked.ok) {
@@ -161,7 +167,10 @@ export class ClientAccessSnapshotCache {
       serverTimeOffsetMs, lastLocalNow: responseReceivedAt,
     };
     let cachePersisted = true;
-    try { await this.store.set(userId, cached); } catch { cachePersisted = false; }
+    try { await this.store.set(userId, cached); } catch {
+      await this.store.clear(userId);
+      cachePersisted = false;
+    }
     return { snapshot: checked.value.snapshot, remainingMs: checked.value.remainingMs, source: 'network', cachePersisted };
   }
 
