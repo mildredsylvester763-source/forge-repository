@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type {
   AgentEventRecord,
+  AiTrainingAccountExport,
   AiTrainingStore,
   BlindBallotRecord,
   ByokKeyRecord,
@@ -142,6 +143,14 @@ interface BatteryRow {
   user_id: string;
   battery_id: string;
   probes: string;
+  created_at: number;
+}
+
+interface GradeRow {
+  id: string;
+  user_id: string;
+  battery_id: string;
+  grade: string;
   created_at: number;
 }
 
@@ -440,6 +449,14 @@ const toBatteryRecord = (r: BatteryRow): SafetyBatteryRecord => ({
   userId: r.user_id,
   batteryId: r.battery_id,
   probes: JSON.parse(r.probes) as unknown,
+  createdAt: r.created_at,
+});
+
+const toSafetyGradeRecord = (r: GradeRow): SafetyGradeRecord => ({
+  id: r.id,
+  userId: r.user_id,
+  batteryId: r.battery_id,
+  grade: JSON.parse(r.grade) as unknown,
   createdAt: r.created_at,
 });
 
@@ -816,6 +833,40 @@ export class SqliteAiTrainingStore implements AiTrainingStore {
     this.findOutputSchemaStmt = db.prepare('SELECT * FROM output_schemas WHERE user_id = ? AND schema_id = ? ORDER BY created_at DESC, id DESC LIMIT 1');
     this.outputSchemasByUser = db.prepare('SELECT * FROM output_schemas WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?');
     this.updateOutputSchema = db.prepare('UPDATE output_schemas SET schema_id = ?, fields = ?, fingerprint = ?, created_at = ? WHERE id = ?');
+  }
+
+  async exportByUser(userId: string, take: number): Promise<AiTrainingAccountExport> {
+    const rows = <T>(table: string, orderBy: 'created_at' | 'logged_at' = 'created_at'): T[] =>
+      this.db.prepare('SELECT * FROM ' + table + ' WHERE user_id = ? ORDER BY ' + orderBy + ' DESC, id DESC LIMIT ?').all(userId, take) as unknown as T[];
+    return {
+      assets: rows<AssetRow>('training_assets').map(toAssetRecord),
+      datasets: rows<DatasetRow>('training_datasets').map(toDatasetRecord),
+      runs: rows<RunRow>('training_runs').map(toRunRecord),
+      evalSuites: rows<SuiteRow>('eval_suites').map(toSuiteRecord),
+      panelVotes: rows<PanelVoteRow>('panel_votes').map(toPanelVoteRecord),
+      safetyBatteries: rows<BatteryRow>('safety_batteries').map(toBatteryRecord),
+      safetyGrades: rows<GradeRow>('safety_grades').map(toSafetyGradeRecord),
+      blindBallots: rows<BallotRow>('blind_ballots').map(toBallotRecord),
+      experiments: rows<ExperimentRow>('experiments').map(toExperimentRecord),
+      experimentSubjects: rows<SubjectRow>('experiment_subjects').map(toSubjectRecord),
+      agentEvents: rows<AgentEventRow>('agent_events').map(toAgentEventRecord),
+      trendSamples: rows<TrendRow>('eval_trend_samples').map(toTrendRecord),
+      miningBatches: rows<MiningRow>('mining_batches').map(toMiningRecord),
+      modelVersions: rows<ModelVersionRow>('model_versions').map(toModelVersionRecord),
+      modelCards: rows<ModelCardRow>('model_cards').map(toModelCardRecord),
+      modelPromotions: rows<ModelPromotionRow>('model_promotions').map(toModelPromotionRecord),
+      servingPlans: rows<ServingPlanRow>('serving_plans').map(toServingPlanRecord),
+      modelOps: rows<ModelOpsRow>('model_ops_records').map(toModelOpsRecord),
+      modelPins: rows<ModelPinRow>('model_pins').map(toModelPinRecord),
+      instanceReservations: rows<ReservationRow>('instance_reservations').map(toReservationRecord),
+      onPremPackages: rows<OnPremRow>('onprem_packages').map(toOnPremRecord),
+      gatewayProviders: rows<ProviderRow>('gateway_providers').map(toProviderRecord),
+      byokKeys: rows<ByokRow>('byok_keys').map(toByokRecord),
+      gatewayUsage: rows<GatewayUsageRow>('gateway_usage').map(toGatewayUsageRecord),
+      gatewayLogs: rows<GatewayLogRow>('gateway_logs', 'logged_at').map(toGatewayLogRecord),
+      capabilityMatrices: rows<CapabilityRow>('capability_matrices').map(toCapabilityRecord),
+      outputSchemas: rows<OutputSchemaRow>('output_schemas').map(toOutputSchemaRecord),
+    };
   }
 
   async createAsset(asset: NewTrainingAsset): Promise<TrainingAssetRecord> {
