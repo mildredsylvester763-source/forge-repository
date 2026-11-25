@@ -153,6 +153,7 @@ import {
 
 import { StatusPageService, InMemoryStatusPageStore, PostgresStatusPageStore, SqliteStatusPageStore, statusPageMigrations, statusPageRoutes, type StatusPageStore } from './modules/status-pages/index.ts';
 import { offlineSyncRoutes } from './modules/offline-sync/index.ts';
+import { InMemoryWorkspaceStore, PostgresWorkspaceStore, SqliteWorkspaceStore, workspaceMigrations, type WorkspaceStore } from './modules/workspaces/index.ts';
 import { deploymentRoutes } from './modules/deployments/index.ts';
 
 export interface AppOverrides {
@@ -205,6 +206,7 @@ interface Storage {
   liveTesting: LiveTestingStore;
   webSearch: WebSearchStore;
   workspaceRetrieval: WorkspaceRetrievalStore;
+  workspaces: WorkspaceStore;
   searchIntegrity: SearchIntegrityStore;
   aiTraining: AiTrainingStore;
   trainingData: TrainingDataStore;
@@ -235,6 +237,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const liveTesting = new PostgresLiveTestingStore(pool);
     const webSearch = new PostgresWebSearchStore(pool);
     const workspaceRetrieval = new PostgresWorkspaceRetrievalStore(pool);
+    const workspaces = new PostgresWorkspaceStore(pool);
     const searchIntegrity = new PostgresSearchIntegrityStore(pool);
     const aiTraining = new PostgresAiTrainingStore(pool);
     const trainingData = new PostgresTrainingDataStore(pool);
@@ -243,7 +246,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const billing = new PostgresBillingStore(pool, events);
     const offlineSync = new PostgresOfflineSyncStore(pool);
     const rateLimitStore = new PostgresRateLimitStore(pool);
-    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
+    return { db: null, syncDb: null, pool, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, workspaces, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new PostgresIdentityUnitOfWork({ pool, users, sessions: sessionStore, events, clock }) };
   }
   const path = config.storage.databasePath;
   if (path !== null && eventsOverride === undefined) {
@@ -257,6 +260,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     migrate(db, 'live_testing', liveTestingMigrations);
     migrate(db, 'web_search', webSearchMigrations);
     migrate(db, 'workspace_retrieval', workspaceRetrievalMigrations);
+    migrate(db, 'workspaces', workspaceMigrations);
     migrate(db, 'search_integrity', searchIntegrityMigrations);
     migrate(db, 'ai_training', aiTrainingMigrations);
     migrate(db, 'training_data', trainingDataMigrations);
@@ -274,6 +278,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const liveTesting = new SqliteLiveTestingStore(db);
     const webSearch = new SqliteWebSearchStore(db);
     const workspaceRetrieval = new SqliteWorkspaceRetrievalStore(db);
+    const workspaces = new SqliteWorkspaceStore(db);
     const searchIntegrity = new SqliteSearchIntegrityStore(db);
     const aiTraining = new SqliteAiTrainingStore(db);
     const trainingData = new SqliteTrainingDataStore(db);
@@ -282,7 +287,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
     const billing = new SqliteBillingStore(db, events);
     const offlineSync = new SqliteOfflineSyncStore(db);
     const rateLimitStore = new SqliteRateLimitStore(db);
-    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
+    return { db, syncDb: null, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, workspaces, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new SqliteIdentityUnitOfWork({ db, users, sessions: sessionStore, events, clock }) };
   }
   const outbox = new InMemoryOutboxStore();
   const events = eventsOverride ?? new InMemoryEventStore({ clock, logger, outbox });
@@ -296,6 +301,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   const liveTesting = new InMemoryLiveTestingStore();
   const webSearch = new InMemoryWebSearchStore();
   const workspaceRetrieval = new InMemoryWorkspaceRetrievalStore();
+  const workspaces = new InMemoryWorkspaceStore();
   const searchIntegrity = new InMemorySearchIntegrityStore();
   const aiTraining = new InMemoryAiTrainingStore();
   const trainingData = new InMemoryTrainingDataStore();
@@ -306,7 +312,7 @@ function buildStorage(config: ForgeConfig, clock: Clock, logger: Logger, overrid
   migrate(syncDb, 'kernel', kernelMigrations);
   const offlineSync = new SqliteOfflineSyncStore(syncDb);
   const rateLimitStore = new InMemoryRateLimitStore();
-  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
+  return { db: null, syncDb, pool: null, events, users, sessionStore, passkeys, runs, plans, goldens, suites, liveTesting, webSearch, workspaceRetrieval, workspaces, searchIntegrity, aiTraining, trainingData, statusPages, userPlans, billing, offlineSync, rateLimitStore, outbox, uow: new InMemoryIdentityUnitOfWork({ users, sessions: sessionStore, events, clock }) };
 }
 
 const ACCOUNT_EXPORT_TAKE = Number.MAX_SAFE_INTEGER;
@@ -317,10 +323,9 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
   const [
     taskRuns, orchestratorPlans, goldens, generatedSuites,
     webQueries, webPages, webCitations, contentItems, researchReports, knowledgePacks,
-    aiAssetsRaw, aiDatasets, aiRuns, aiAgentEvents, aiServingPlans, aiProviders,
-    aiCapabilityMatrices, aiOutputSchemas, aiMetricsOps, aiShadowOps, aiRollbackOps,
+    aiTrainingRecords,
     lakeItems, consentGrants, consentLedger, syntheticRecords, labelRecords,
-    preferenceRecords, codeDataRecords, creativeWorks, tokenizerRecords,
+    preferenceRecords, codeDataRecords, creativeWorks, tokenizerRecords, workspaceMemberships,
     offlineOperations, offlineEntities, offlineConflicts, searchCacheEntries, domainRules
   ] = await Promise.all([
     storage.runs.listByUser(userId, take),
@@ -333,17 +338,7 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     storage.workspaceRetrieval.listItemsByUser(userId, take),
     storage.workspaceRetrieval.listReportsByUser(userId, take),
     storage.searchIntegrity.listPacksByUser(userId, take),
-    storage.aiTraining.listAssetsByUser(userId, take),
-    storage.aiTraining.listDatasetsByUser(userId, take),
-    storage.aiTraining.listRunsByUser(userId, take),
-    storage.aiTraining.listAgentEvents(userId, take),
-    storage.aiTraining.listServingPlans(userId, take),
-    storage.aiTraining.listGatewayProviders(userId, take),
-    storage.aiTraining.listCapabilityMatrices(userId, take),
-    storage.aiTraining.listOutputSchemas(userId, take),
-    storage.aiTraining.listModelOpsRecords(userId, 'metrics', take),
-    storage.aiTraining.listModelOpsRecords(userId, 'shadow', take),
-    storage.aiTraining.listModelOpsRecords(userId, 'rollback', take),
+    storage.aiTraining.exportByUser(userId, take),
     storage.trainingData.listLakeItems(userId, take),
     storage.trainingData.listConsentGrants(userId, take),
     storage.trainingData.listConsentLedger(userId, take),
@@ -353,6 +348,7 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     storage.trainingData.listCodeDataRecords(userId, take),
     storage.trainingData.listCreativeWorks(userId, take),
     storage.trainingData.listTokenizerRecords(userId, take),
+    storage.workspaces.listByUser(userId),
     storage.offlineSync.listOperationsByOwner(userId, take),
     storage.offlineSync.listEntitiesByOwner(userId, take),
     storage.offlineSync.listConflictsByOwner(userId, take),
@@ -360,18 +356,20 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     storage.webSearch.listRulesByUser(userId, take)
   ]);
 
-  const aiAssets = aiAssetsRaw.map((asset) => {
+  const aiProviders = aiTrainingRecords.gatewayProviders;
+  const aiMetricsOps = aiTrainingRecords.modelOps.filter((entry) => entry.kind === 'metrics');
+  const aiShadowOps = aiTrainingRecords.modelOps.filter((entry) => entry.kind === 'shadow');
+  const aiRollbackOps = aiTrainingRecords.modelOps.filter((entry) => entry.kind === 'rollback');
+  const aiAssets = aiTrainingRecords.assets.map((asset) => {
     const { storageKey: _storageKey, ...safeAsset } = asset;
     void _storageKey;
     return safeAsset;
   });
-  const gatewayProviderData = await Promise.all(aiProviders.map(async (provider) => {
-    const [usage, logs, byokKey] = await Promise.all([
-      storage.aiTraining.listGatewayUsage(userId, provider.providerId, take),
-      storage.aiTraining.listGatewayLogs(userId, provider.providerId, take),
-      storage.aiTraining.findByokKey(userId, provider.providerId)
-    ]);
-    return { providerId: provider.providerId, usage, logs, byokKey };
+  const gatewayProviderData = aiProviders.map((provider) => ({
+    providerId: provider.providerId,
+    usage: aiTrainingRecords.gatewayUsage.filter((entry) => entry.providerId === provider.providerId),
+    logs: aiTrainingRecords.gatewayLogs.filter((entry) => entry.providerId === provider.providerId),
+    byokKey: aiTrainingRecords.byokKeys.find((entry) => entry.providerId === provider.providerId) ?? null
   }));
 
   const offlineOpenConflicts = offlineConflicts.filter((conflict) => conflict.status === 'open');
@@ -418,11 +416,12 @@ async function collectAccountModuleData(storage: Storage, userId: string): Promi
     searchIntegrity: { cacheEntries: searchCacheEntries, knowledgePacks, openOfflineSyncConflicts: offlineOpenConflicts },
     offlineSync: { operations: offlineOperations, entities: offlineEntities, conflicts: offlineConflicts },
     aiTraining: {
-      assets: aiAssets, datasets: aiDatasets, runs: aiRuns, agentEvents: aiAgentEvents,
-      servingPlans: aiServingPlans, gatewayProviders: aiProviders, gatewayProviderData,
-      capabilityMatrices: aiCapabilityMatrices, outputSchemas: aiOutputSchemas,
+      ...aiTrainingRecords,
+      assets: aiAssets,
+      gatewayProviderData,
       modelOps: { metrics: aiMetricsOps, shadow: aiShadowOps, rollback: aiRollbackOps }
     },
+    workspaces: { memberships: workspaceMemberships },
     trainingData: {
       lakeItems, consentGrants, consentLedger, syntheticRecords, labels: labelRecords,
       preferences: preferenceRecords, codeData: codeDataRecords, creativeWorks, tokenizers: tokenizerRecords
