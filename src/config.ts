@@ -429,6 +429,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
     accessSecret = paymentWebhookSecret;
     if (production) warnings.push('FORGE_ACCESS_SNAPSHOT_SECRET not set: reusing the payment webhook secret for access snapshots. Set a dedicated secret.');
   }
+  if (accessSecret.length < 32) throw new ConfigError('FORGE_ACCESS_SNAPSHOT_SECRET must contain at least 32 UTF-8 bytes');
 
   const currentPepperVersion = Math.max(...peppers.keys());
   const maxWrongfulBlockRate = optionalUnitRate(env, 'FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE');
