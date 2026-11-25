@@ -202,6 +202,7 @@ describe('plans (PLAN GATE LAW)', () => {
       assert.deepEqual(emptyBody.balances.engines, []);
       const now = h.clock.now;
       const payload = {
+        status: 'succeeded',
         eventId: 'evt_plans_1',
         userId: user.id,
         amountMinor: 2499,
@@ -250,6 +251,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-custom-product-code@forge.test');
       const now = h.clock.now;
       const payload = {
+        status: 'succeeded',
         eventId: 'evt_custom_base_product',
         userId: user.id,
         amountMinor: 999,
@@ -272,7 +274,7 @@ describe('plans (PLAN GATE LAW)', () => {
     try {
       const user = await freeUser(h, 'plans-subscription-expiry@forge.test');
       const now = h.clock.now, endsAt = now + 86_400_000;
-      const event = { eventId: 'evt_subscription_expiry', userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
+      const event = { status: 'succeeded', eventId: 'evt_subscription_expiry', userId: user.id, amountMinor: 999, currency: 'USD', occurredAt: now,
         products: [
           { itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt },
           { itemType: 'engine_pass' as const, itemCode: 'music_pass', startsAt: now, endsAt },
@@ -293,6 +295,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-payment-audit-rollback@forge.test');
       const now = h.clock.now;
       const event = {
+        status: 'succeeded',
         eventId: 'evt_audit_rollback',
         userId: user.id,
         amountMinor: 2499,
@@ -328,6 +331,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-atomic-payment@forge.test');
       const now = h.clock.now;
       const event = {
+        status: 'succeeded',
         eventId: 'evt_atomic_same',
         userId: user.id,
         amountMinor: 2499,
@@ -344,11 +348,13 @@ describe('plans (PLAN GATE LAW)', () => {
 
       const second = {
         ...event,
+        status: 'succeeded',
         eventId: 'evt_atomic_second',
         products: [{ itemType: 'base_plan' as const, itemCode: 'plus_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
       };
       const third = {
         ...event,
+        status: 'succeeded',
         eventId: 'evt_atomic_third',
         products: [{ itemType: 'base_plan' as const, itemCode: 'team_plan', startsAt: now, endsAt: now + 30 * 86_400_000 }],
       };
@@ -375,6 +381,7 @@ describe('plans (PLAN GATE LAW)', () => {
       const user = await freeUser(h, 'plans-multi-engine-pass@forge.test');
       const now = h.clock.now;
       const event = {
+        status: 'succeeded',
         eventId: 'evt_multi_engine_pass',
         userId: user.id,
         amountMinor: 1999,
