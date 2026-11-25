@@ -20,6 +20,7 @@ import { pgSearchIntegrityMigrations } from './modules/search-integrity/index.ts
 import { pgAiTrainingMigrations } from './modules/ai-training/index.ts';
 import { pgTrainingDataMigrations } from './modules/training-data/index.ts';
 import { pgStatusPageMigrations } from './modules/status-pages/index.ts';
+import { pgWorkspaceMigrations } from './modules/workspaces/index.ts';
 
 async function main(): Promise<void> {
   let config;
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
     });
     await migratePostgres(pool, 'kernel', pgKernelMigrations);
     await migratePostgres(pool, 'identity', pgIdentityMigrations);
+    await migratePostgres(pool, 'workspaces', pgWorkspaceMigrations);
     await migratePostgres(pool, 'task_runtime', pgTaskRuntimeMigrations);
     await migratePostgres(pool, 'orchestrator', pgOrchestratorMigrations);
     await migratePostgres(pool, 'test_quality', pgTestQualityMigrations);
