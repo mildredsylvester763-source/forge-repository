@@ -20,6 +20,7 @@ import { pgSearchIntegrityMigrations } from './modules/search-integrity/index.ts
 import { pgAiTrainingMigrations } from './modules/ai-training/index.ts';
 import { pgTrainingDataMigrations } from './modules/training-data/index.ts';
 import { pgStatusPageMigrations } from './modules/status-pages/index.ts';
+import { pgIncidentMigrations } from './modules/incidents/index.ts';
 import { pgWorkspaceMigrations } from './modules/workspaces/index.ts';
 
 async function main(): Promise<void> {
@@ -60,6 +61,7 @@ async function main(): Promise<void> {
     await migratePostgres(pool, 'ai_training', pgAiTrainingMigrations);
     await migratePostgres(pool, 'training_data', pgTrainingDataMigrations);
     await migratePostgres(pool, 'status_pages', pgStatusPageMigrations);
+    await migratePostgres(pool, 'incidents', pgIncidentMigrations);
     await migratePostgres(pool, 'plans', pgPlansMigrations);
     logger.info('database ready', { kind: 'postgresql' });
   }

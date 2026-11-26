@@ -6,6 +6,7 @@ import type { ScryptParams } from './modules/identity/password-hasher.ts';
 import { isEngineCode, isPlanId } from './modules/plans/index.ts';
 import type { CountryRow, FreeEngineLimits, PassCatalogEntry, PlanId, RateLimitRule } from './modules/plans/index.ts';
 import { validateCountryRow, validateRateLimitRule } from './modules/plans/index.ts';
+import type { IncidentAutoTrigger } from './modules/incidents/types.ts';
 
 export type Environment = 'development' | 'test' | 'production';
 
@@ -59,6 +60,7 @@ export interface ForgeConfig {
     /** Hook 9: server HMAC and domain-separated Ed25519 signing secret for access snapshots. */
     accessSecret: Buffer;
   };
+  incidents: { automaticTriggers: readonly IncidentAutoTrigger[] };
   safety: {
     /** TS-793: owner-configured wrongful-block rate threshold; null keeps automatic tasking disabled until decided. */
     maxWrongfulBlockRate: number | null;
@@ -431,6 +433,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
   }
   if (accessSecret.length < 32) throw new ConfigError('FORGE_ACCESS_SNAPSHOT_SECRET must contain at least 32 UTF-8 bytes');
 
+  let incidentAutomaticTriggers: IncidentAutoTrigger[] = [];
+  if (env.FORGE_INCIDENT_AUTO_TRIGGERS !== undefined && env.FORGE_INCIDENT_AUTO_TRIGGERS !== '') {
+    let parsedTriggers: unknown;
+    try { parsedTriggers = JSON.parse(env.FORGE_INCIDENT_AUTO_TRIGGERS); }
+    catch { throw new ConfigError('FORGE_INCIDENT_AUTO_TRIGGERS must be a JSON array of exact source/signal pairs'); }
+    if (!Array.isArray(parsedTriggers) || parsedTriggers.length > 100) {
+      throw new ConfigError('FORGE_INCIDENT_AUTO_TRIGGERS must be an array with at most 100 entries');
+    }
+    const seenTriggers = new Set<string>();
+    incidentAutomaticTriggers = parsedTriggers.map((raw) => {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw new ConfigError('FORGE_INCIDENT_AUTO_TRIGGERS entries must be objects');
+      }
+      const value = raw as Record<string, unknown>;
+      const source = value.source;
+      const signal = value.signal;
+      if (typeof source !== 'string' || !/^[a-z][a-z0-9._:-]{0,63}$/.test(source) ||
+          typeof signal !== 'string' || !/^[a-z][a-z0-9._:-]{0,63}$/.test(signal)) {
+        throw new ConfigError('FORGE_INCIDENT_AUTO_TRIGGERS source and signal must be lowercase identifiers of 1 to 64 characters');
+      }
+      const key = source + '\u0000' + signal;
+      if (seenTriggers.has(key)) throw new ConfigError('FORGE_INCIDENT_AUTO_TRIGGERS source/signal pairs must be unique');
+      seenTriggers.add(key);
+      return { source, signal };
+    });
+  }
+
   const currentPepperVersion = Math.max(...peppers.keys());
   const maxWrongfulBlockRate = optionalUnitRate(env, 'FORGE_SAFETY_MAX_WRONGFUL_BLOCK_RATE');
 
@@ -485,6 +514,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ForgeConfig {
       accessSnapshotTtlHours,
       accessSecret,
     },
+    incidents: { automaticTriggers: incidentAutomaticTriggers },
     safety: { maxWrongfulBlockRate },
     storage: {
       databaseUrl,

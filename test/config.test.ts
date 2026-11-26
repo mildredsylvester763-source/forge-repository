@@ -143,6 +143,15 @@ describe('configuration safety', () => {
     ]) })), ConfigError, 'production sellable products require price and margin guard');
   });
 
+  it('keeps automatic incident triggers inactive until exact source/signal pairs are supplied', () => {
+    assert.deepEqual(loadConfig({ FORGE_ENV: 'test' }).incidents.automaticTriggers, []);
+    const configured = loadConfig({ FORGE_ENV: 'test', FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'monitor', signal: 'service_unavailable' }]) });
+    assert.deepEqual(configured.incidents.automaticTriggers, [{ source: 'monitor', signal: 'service_unavailable' }]);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_INCIDENT_AUTO_TRIGGERS: 'not-json' }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'Monitor', signal: 'service_unavailable' }]) }), ConfigError);
+    assert.throws(() => loadConfig({ FORGE_ENV: 'test', FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'monitor', signal: 'service_unavailable' }, { source: 'monitor', signal: 'service_unavailable' }]) }), ConfigError);
+  });
+
   it('picks the highest pepper version for new hashes', () => {
     const c = loadConfig(prod({ FORGE_PASSWORD_PEPPERS: `1:${key()},3:${key()},2:${key()}` }));
     assert.equal(c.password.currentPepperVersion, 3);

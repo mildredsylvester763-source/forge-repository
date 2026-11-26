@@ -3,6 +3,7 @@ import type { SqlPool, SqlResult } from '../src/kernel/sql.ts';
 import { migrate, openDatabase, type Database } from '../src/kernel/sqlite.ts';
 import { identityMigrations } from '../src/modules/identity/index.ts';
 import { workspaceMigrations } from '../src/modules/workspaces/index.ts';
+import { incidentMigrations } from '../src/modules/incidents/index.ts';
 
 /**
  * A stand-in for a PostgreSQL pool, backed by SQLite, so the PostgreSQL adapters' logic (transactions,
@@ -69,6 +70,7 @@ export function createSqliteBackedPool(): SqlPool {
   migrate(db, 'kernel', kernelMigrations);
   migrate(db, 'identity', identityMigrations);
   migrate(db, 'workspaces', workspaceMigrations);
+  migrate(db, 'incidents', incidentMigrations);
   const mutex = new Mutex();
   return {
     query: async <T>(text: string, params?: readonly unknown[]) => {

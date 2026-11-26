@@ -167,8 +167,11 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(isPlanId(42), false);
   });
 
-  it('pins every wired route to a catalog feature (300 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 300);
+  it('pins every wired route to a catalog feature (303 routes)', () => {
+    assert.equal(Object.keys(ROUTE_GATES).length, 303);
+    assert.equal(ROUTE_GATES['/v1/incidents'], 'OB-041');
+    assert.equal(ROUTE_GATES['/v1/incidents/get'], 'OB-041');
+    assert.equal(ROUTE_GATES['/v1/incidents/automatic'], 'OB-041');
     assert.equal(ROUTE_GATES['/v1/status-pages'], 'OB-052');
     assert.equal(ROUTE_GATES['/v1/deployments/dependency-graph/plan'], 'DP-015');
     for (const [path, feature] of Object.entries(ROUTE_GATES)) {
