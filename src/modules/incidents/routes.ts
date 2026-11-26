@@ -44,5 +44,12 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: 200, body: await service.timeline(ownerId, body.incidentId) };
       },
     },
+    '/v1/incidents/postmortem/draft': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
+        return { status: 200, body: await service.draftPostmortem(ownerId, body.incidentId) };
+      },
+    },
   };
 }

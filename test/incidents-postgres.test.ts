@@ -48,6 +48,11 @@ it('persists incident declarations, idempotent automatic signals and append-only
     const timeline = await service.timeline(ownerId, first.incident.id);
     assert.equal(timeline.incident.id, first.incident.id);
     assert.deepEqual(timeline.timeline.map((event) => event.externalEventId), ['pg-event-1', 'pg-event-2']);
+    const postmortem = await service.draftPostmortem(ownerId, first.incident.id);
+    assert.equal(postmortem.status, 'draft');
+    assert.equal(postmortem.rootCause.text, null);
+    assert.equal(postmortem.impact.text, null);
+    assert.deepEqual(postmortem.evidenceEventIds, timeline.timeline.map((event) => event.id));
     await assert.rejects(
       testPool.pool.query('UPDATE incident_events SET payload_json = $1 WHERE id = $2', ['{}', events[0]!.id]),
       /append-only/,

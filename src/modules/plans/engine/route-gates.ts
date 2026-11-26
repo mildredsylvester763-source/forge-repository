@@ -313,6 +313,7 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/incidents/get': 'OB-041',
   '/v1/incidents/automatic': 'OB-041',
   '/v1/incidents/timeline': 'OB-055',
+  '/v1/incidents/postmortem/draft': 'OB-056',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentAutoTrigger, IncidentEventRecord, IncidentRecord } from './types.ts';
+import type { DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentAutoTrigger, IncidentEventRecord, IncidentPostmortemDraft, IncidentRecord } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
 
@@ -97,5 +97,43 @@ export class IncidentService {
     const incident = await this.get(ownerId, incidentId);
     const timeline = await this.store.listEvents(ownerId, incident.id, 500);
     return { incident, timeline };
+  }
+
+  /** Build a reviewable postmortem draft without asserting facts absent from the event stream. */
+  async draftPostmortem(ownerId: string, incidentId: string): Promise<IncidentPostmortemDraft> {
+    const { incident, timeline } = await this.timeline(ownerId, incidentId);
+    const entries = timeline.map((event) => {
+      const payloadTitle = event.payload.title;
+      const payloadSignal = event.payload.signal;
+      const payloadDescription = event.payload.description;
+      const title = typeof payloadTitle === 'string' && payloadTitle.trim() !== '' ? payloadTitle.trim() : event.eventType;
+      const signal = typeof payloadSignal === 'string' && payloadSignal.trim() !== '' ? 'Signal: ' + payloadSignal.trim() : null;
+      const description = typeof payloadDescription === 'string' && payloadDescription.trim() !== '' ? payloadDescription.trim() : null;
+      const summary = [title, signal, description].filter((part): part is string => part !== null).join(' — ');
+      return {
+        eventId: event.id,
+        eventType: event.eventType,
+        actorKind: event.actorKind,
+        actorId: event.actorId,
+        source: event.source,
+        externalEventId: event.externalEventId,
+        occurredAt: event.occurredAt,
+        summary,
+      };
+    });
+    const evidenceEventIds = timeline.map((event) => event.id);
+    return {
+      incident: {
+        id: incident.id, title: incident.title, description: incident.description,
+        origin: incident.origin, createdAt: incident.createdAt,
+      },
+      status: 'draft',
+      generatedAt: this.clock(),
+      rootCause: { status: 'needs_review', text: null, evidenceEventIds: [] },
+      impact: { status: 'needs_review', text: null, evidenceEventIds: [] },
+      timeline: entries,
+      evidenceEventIds,
+      reviewRequired: ['rootCause', 'impact'],
+    };
   }
 }

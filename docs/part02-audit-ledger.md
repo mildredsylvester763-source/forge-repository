@@ -910,3 +910,14 @@ The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its
 - The corrected full CI run [45784742182](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784742182) on `1de5b5adc8ca3299bab375e0581356a53bdd9ef8` passed TypeScript typecheck and the complete test suite (**1,017 tests: 1,016 passed, 0 failed, 0 cancelled, 1 skipped**). The Plus-gated timeline route, route registry, owner-scope checks, immutable event reads, SQLite integration and PostgreSQL service assertions all passed.
 - The earlier failure [45784495111](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784495111) was a fixture timestamp-order assumption in the pre-existing OB-041 in-memory test, not a runtime defect in OB-055. The fake clock correction is included in the verified commit.
 - Next exact catalogue item: **OB-056 — Postmortem drafting: root cause, impact, timeline** (Pro).
+
+
+### OB-056 implementation — evidence-based postmortem draft (2026-11-26)
+
+- Source requirement: Part 02 catalog, page 15, OB-056 — **PRO / Plan from Pro / General**: “Postmortem drafting: root cause, impact, timeline.”
+- Added an authenticated, owner-scoped, Pro-gated `POST /v1/incidents/postmortem/draft` endpoint. It builds a structured draft from the incident record and the immutable event stream: incident context, an event-derived timeline with actor/source/external-event attribution, event evidence IDs and server generation time.
+- Root cause and impact are explicitly `needs_review` with null text and no asserted evidence because OB-041 currently records declarations/signals, not verified root-cause or customer-impact findings. The draft does not fabricate those facts, synthesize events, or mutate the incident event stream. It is a generated response, not a persisted postmortem record.
+- Added Pro/free/unauthenticated and cross-owner route tests, no-mutation/repeated-generation assertions, SQLite route coverage, PostgreSQL service coverage, and central route-gate registry checks.
+- Files: `src/modules/incidents/types.ts`, `incident-service.ts`, `routes.ts`, `index.ts`, `src/modules/plans/engine/route-gates.ts`, `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`, and this ledger.
+- Verification status: pending GitHub Actions on this implementation commit. Do not mark OB-056 complete until typecheck and the full suite pass, including PostgreSQL persistence tests.
+- Next task after verification: **OB-057 — Action items tracked to completion** (Plus). Derive action items only from explicit recorded follow-up evidence; do not invent owners, due dates or completion states.

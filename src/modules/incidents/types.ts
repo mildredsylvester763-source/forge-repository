@@ -30,6 +30,40 @@ export interface IncidentEventRecord {
   readonly createdAt: number;
 }
 
+export interface IncidentPostmortemSection {
+  readonly status: 'needs_review';
+  readonly text: null;
+  readonly evidenceEventIds: readonly string[];
+}
+
+export interface IncidentPostmortemTimelineEntry {
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly actorKind: IncidentActorKind;
+  readonly actorId: string;
+  readonly source: string | null;
+  readonly externalEventId: string | null;
+  readonly occurredAt: number;
+  readonly summary: string;
+}
+
+export interface IncidentPostmortemDraft {
+  readonly incident: {
+    readonly id: string;
+    readonly title: string;
+    readonly description: string;
+    readonly origin: IncidentOrigin;
+    readonly createdAt: number;
+  };
+  readonly status: 'draft';
+  readonly generatedAt: number;
+  readonly rootCause: IncidentPostmortemSection;
+  readonly impact: IncidentPostmortemSection;
+  readonly timeline: readonly IncidentPostmortemTimelineEntry[];
+  readonly evidenceEventIds: readonly string[];
+  readonly reviewRequired: readonly ('rootCause' | 'impact')[];
+}
+
 export interface IncidentAutoTrigger {
   readonly source: string;
   readonly signal: string;

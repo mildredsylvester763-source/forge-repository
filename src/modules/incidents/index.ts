@@ -7,4 +7,4 @@ export { PostgresIncidentStore } from './postgres-store.ts';
 export { incidentMigrations } from './migrations.ts';
 export { pgIncidentMigrations } from './postgres-migrations.ts';
 export type { IncidentStore, AutomaticIncidentResult } from './store.ts';
-export type { IncidentRecord, IncidentEventRecord, IncidentOrigin, IncidentStatus, IncidentActorKind, IncidentAutoTrigger, DeclareManualIncidentInput, DeclareAutomaticIncidentInput } from './types.ts';
+export type { IncidentRecord, IncidentEventRecord, IncidentOrigin, IncidentStatus, IncidentActorKind, IncidentAutoTrigger, IncidentPostmortemSection, IncidentPostmortemTimelineEntry, IncidentPostmortemDraft, DeclareManualIncidentInput, DeclareAutomaticIncidentInput } from './types.ts';

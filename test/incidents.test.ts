@@ -177,11 +177,84 @@ describe('incident declaration (OB-041)', () => {
     }
   });
 
+  it('drafts a Pro-gated postmortem from recorded events without inventing cause or impact', async () => {
+    const h: Harness = await startHarness({
+      FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'monitor', signal: 'service_unavailable' }]),
+    });
+    try {
+      const owner = await signedIn(h, 'incident-postmortem-owner@forge.test');
+      const other = await signedIn(h, 'incident-postmortem-other@forge.test');
+      const free = await signedIn(h, 'incident-postmortem-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      await h.app.plans.setPlan(other.userId, 'pro');
+
+      const unauthenticated = await h.post('/v1/incidents/postmortem/draft', { incidentId: 'missing' });
+      assert.equal(unauthenticated.status, 401);
+      const denied = await h.post('/v1/incidents/postmortem/draft', { incidentId: 'missing' }, { cookie: free.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const first = await h.post('/v1/incidents/automatic', {
+        source: 'monitor', signal: 'service_unavailable', eventId: 'postmortem-evt-001',
+        dedupeKey: 'postmortem-api', title: 'Public API unavailable', description: 'Health check failed.',
+      }, { cookie: owner.cookie });
+      assert.equal(first.status, 201);
+      const firstBody = await first.json() as { incident: { id: string } };
+      h.clock.now += 1000;
+      const followUp = await h.post('/v1/incidents/automatic', {
+        source: 'monitor', signal: 'service_unavailable', eventId: 'postmortem-evt-002',
+        dedupeKey: 'postmortem-api', title: 'Public API still unavailable',
+      }, { cookie: owner.cookie });
+      assert.equal(followUp.status, 200);
+
+      const response = await h.post('/v1/incidents/postmortem/draft', { incidentId: firstBody.incident.id }, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const draft = await response.json() as {
+        incident: { id: string; title: string };
+        status: string;
+        generatedAt: number;
+        rootCause: { status: string; text: null; evidenceEventIds: string[] };
+        impact: { status: string; text: null; evidenceEventIds: string[] };
+        timeline: Array<{ eventId: string; eventType: string; actorKind: string; actorId: string; source: string | null; externalEventId: string | null; occurredAt: number; summary: string }>;
+        evidenceEventIds: string[];
+        reviewRequired: string[];
+      };
+      assert.equal(draft.status, 'draft');
+      assert.equal(draft.incident.id, firstBody.incident.id);
+      assert.equal(draft.incident.title, 'Public API unavailable');
+      assert.equal(draft.generatedAt, h.clock.now);
+      assert.equal(draft.rootCause.status, 'needs_review');
+      assert.equal(draft.rootCause.text, null);
+      assert.deepEqual(draft.rootCause.evidenceEventIds, []);
+      assert.equal(draft.impact.status, 'needs_review');
+      assert.equal(draft.impact.text, null);
+      assert.deepEqual(draft.impact.evidenceEventIds, []);
+      assert.deepEqual(draft.timeline.map((event) => event.eventType), ['incident.declared', 'incident.signal.received']);
+      assert.deepEqual(draft.timeline.map((event) => event.externalEventId), ['postmortem-evt-001', 'postmortem-evt-002']);
+      assert.equal(draft.timeline[0]?.actorKind, 'system');
+      assert.equal(draft.timeline[0]?.actorId, 'monitor');
+      assert.equal(draft.timeline[0]?.source, 'monitor');
+      assert.match(draft.timeline[0]?.summary ?? '', /Public API unavailable/);
+      assert.match(draft.timeline[0]?.summary ?? '', /Signal: service_unavailable/);
+      assert.deepEqual(draft.evidenceEventIds, draft.timeline.map((event) => event.eventId));
+      assert.deepEqual(draft.reviewRequired, ['rootCause', 'impact']);
+
+      const foreign = await h.post('/v1/incidents/postmortem/draft', { incidentId: firstBody.incident.id }, { cookie: other.cookie });
+      assert.equal(foreign.status, 404);
+      assert.equal(await errorCode(foreign), 'incident_not_found');
+      const repeated = await h.post('/v1/incidents/postmortem/draft', { incidentId: firstBody.incident.id }, { cookie: owner.cookie });
+      assert.equal(((await repeated.json()) as { timeline: unknown[] }).timeline.length, 2);
+      assert.equal((await h.app.incidents.listEvents(owner.userId, firstBody.incident.id)).length, 2);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('persists incident declarations and prevents event-history mutation in SQLite', async () => {
     const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const owner = await signedIn(h, 'incident-sqlite@forge.test');
-      await h.app.plans.setPlan(owner.userId, 'plus');
+      await h.app.plans.setPlan(owner.userId, 'pro');
       const created = await h.post('/v1/incidents', { title: 'SQLite incident' }, { cookie: owner.cookie });
       assert.equal(created.status, 201);
       const incident = ((await created.json()) as { incident: { id: string } }).incident;
@@ -194,6 +267,12 @@ describe('incident declaration (OB-041)', () => {
       assert.equal(timelineBody.incident.id, incident.id);
       assert.deepEqual(timelineBody.timeline.map((event) => event.eventType), ['incident.declared']);
       assert.equal(timelineBody.timeline[0]?.actorId, owner.userId);
+      const draftResponse = await h.post('/v1/incidents/postmortem/draft', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(draftResponse.status, 200);
+      const draft = await draftResponse.json() as { rootCause: { text: null }; impact: { text: null }; timeline: Array<{ eventId: string }> };
+      assert.equal(draft.rootCause.text, null);
+      assert.equal(draft.impact.text, null);
+      assert.deepEqual(draft.timeline.map((event) => event.eventId), [events[0]!.id]);
 
       const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
       assert.equal(exported.status, 200);
