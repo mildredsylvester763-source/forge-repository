@@ -85,6 +85,8 @@ describe('incident declaration (OB-041)', () => {
       assert.equal(firstBody.duplicate, false);
       assert.equal(firstBody.incident.origin, 'automatic');
 
+      // Distinguish event times so this assertion verifies chronology, not UUID tie-breaking.
+      h.clock.now += 1;
       const followUp = await h.post('/v1/incidents/automatic', {
         source: 'monitor', signal: 'service_unavailable', eventId: 'evt-002',
         dedupeKey: 'public-api', title: 'Public API still unavailable',

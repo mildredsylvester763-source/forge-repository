@@ -898,3 +898,8 @@ The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its
 - Files: `src/modules/incidents/incident-service.ts`, `src/modules/incidents/routes.ts`, `src/modules/plans/engine/route-gates.ts`, `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`, and this ledger.
 - Verification status: pending GitHub Actions on this implementation commit. Do not mark OB-055 complete until typecheck and the full suite pass, including PostgreSQL persistence tests.
 - Next task after verification: **OB-056 — postmortem drafting: root cause, impact, timeline** (Pro). Build from verified incident evidence; do not invent a root cause or impact assessment.
+
+
+### OB-055 CI correction note (2026-11-26)
+
+- CI run [45784495111](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784495111) passed typecheck but the full suite failed in the pre-existing in-memory OB-041 repeated-signal test. The fixture gave the declaration and follow-up signal the same fake timestamp while the event store correctly used its deterministic UUID tie-break, so the test incorrectly assumed insertion order for equal timestamps. The correction advances the harness server clock before the follow-up signal. The new OB-055 route and tests produced no reported failure in that run; rerun the full suite before marking OB-055 verified.
