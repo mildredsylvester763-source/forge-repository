@@ -4,8 +4,8 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Latest CI-verified code checkpoint:** `8a65b5310787c3199ec7df3328150fed77825b2b`. GitHub Actions run [45783860215](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45783860215) completed successfully: typecheck and the full test suite passed. The PostgreSQL incident test was corrected to use distinct fake server timestamps when asserting chronological event order.  
-**Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-052's backend management API and durable component-history implementation now pass CI. Hook 16's cross-module export is expanded but explicitly incomplete. Feature delivery status remains per-row below.  
+**Latest CI-verified code checkpoint:** `1de5b5adc8ca3299bab375e0581356a53bdd9ef8`. GitHub Actions run [45784742182](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784742182) completed successfully: TypeScript typecheck passed; the full suite reported 1,017 tests, 1,016 passed, 0 failed, 0 cancelled and 1 skipped. OB-041 and OB-055 are verified across their covered in-memory, SQLite and PostgreSQL paths.  
+**Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-041 incident declaration, OB-052's backend status-page management and OB-055's event-derived incident timeline pass CI. Hook 16's export is expanded but still depends on a production storage adapter and approved deletion policy. Feature delivery status remains per-row below.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
 **Audit date:** 2026-11-26.
 
@@ -896,10 +896,17 @@ The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its
 - The service timeline is a read model over the same event stream used by OB-041 and Hook 16; owner scoping is enforced by resolving the incident through the authenticated owner before reading its events. A foreign owner's incident is returned as not found.
 - Added route-gate coverage, Plus/free/unauthenticated and cross-owner route tests, repeated-read/no-duplication assertions, SQLite route coverage and PostgreSQL service coverage.
 - Files: `src/modules/incidents/incident-service.ts`, `src/modules/incidents/routes.ts`, `src/modules/plans/engine/route-gates.ts`, `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`, and this ledger.
-- Verification status: pending GitHub Actions on this implementation commit. Do not mark OB-055 complete until typecheck and the full suite pass, including PostgreSQL persistence tests.
-- Next task after verification: **OB-056 — postmortem drafting: root cause, impact, timeline** (Pro). Build from verified incident evidence; do not invent a root cause or impact assessment.
+- Verification: implementation commit `a9b7164e56561fab26e352880b1cce29c464fcc6` initially passed typecheck but the full suite exposed an existing OB-041 in-memory test fixture that assumed insertion order for equal timestamps. The fixture now advances its fake server clock before the follow-up signal. Commit `1de5b5adc8ca3299bab375e0581356a53bdd9ef8` passed typecheck and the full suite in CI run [45784742182](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784742182): 1,016 passed, 0 failed, 1 skipped. OB-055 is verified.
+- Next task: **OB-056 — postmortem drafting: root cause, impact, timeline** (Pro). Build from verified incident evidence; do not invent a root cause or impact assessment.
 
 
 ### OB-055 CI correction note (2026-11-26)
 
 - CI run [45784495111](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784495111) passed typecheck but the full suite failed in the pre-existing in-memory OB-041 repeated-signal test. The fixture gave the declaration and follow-up signal the same fake timestamp while the event store correctly used its deterministic UUID tie-break, so the test incorrectly assumed insertion order for equal timestamps. The correction advances the harness server clock before the follow-up signal. The new OB-055 route and tests produced no reported failure in that run; rerun the full suite before marking OB-055 verified.
+
+
+### OB-055 verification checkpoint (2026-11-26)
+
+- The corrected full CI run [45784742182](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784742182) on `1de5b5adc8ca3299bab375e0581356a53bdd9ef8` passed TypeScript typecheck and the complete test suite (**1,017 tests: 1,016 passed, 0 failed, 0 cancelled, 1 skipped**). The Plus-gated timeline route, route registry, owner-scope checks, immutable event reads, SQLite integration and PostgreSQL service assertions all passed.
+- The earlier failure [45784495111](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45784495111) was a fixture timestamp-order assumption in the pre-existing OB-041 in-memory test, not a runtime defect in OB-055. The fake clock correction is included in the verified commit.
+- Next exact catalogue item: **OB-056 — Postmortem drafting: root cause, impact, timeline** (Pro).
