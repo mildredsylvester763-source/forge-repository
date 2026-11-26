@@ -117,16 +117,81 @@ describe('incident declaration (OB-041)', () => {
     }
   });
 
+  it('serves a Plus-gated, owner-scoped timeline derived from immutable incident events', async () => {
+    const h: Harness = await startHarness({
+      FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'monitor', signal: 'service_unavailable' }]),
+    });
+    try {
+      const owner = await signedIn(h, 'incident-timeline-owner@forge.test');
+      const other = await signedIn(h, 'incident-timeline-other@forge.test');
+      const free = await signedIn(h, 'incident-timeline-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
+      await h.app.plans.setPlan(other.userId, 'plus');
+
+      const unauthenticated = await h.post('/v1/incidents/timeline', { incidentId: 'missing' });
+      assert.equal(unauthenticated.status, 401);
+      const denied = await h.post('/v1/incidents/timeline', { incidentId: 'missing' }, { cookie: free.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const first = await h.post('/v1/incidents/automatic', {
+        source: 'monitor', signal: 'service_unavailable', eventId: 'timeline-evt-001',
+        dedupeKey: 'timeline-api', title: 'Public API unavailable',
+      }, { cookie: owner.cookie });
+      assert.equal(first.status, 201);
+      const firstBody = await first.json() as { incident: { id: string } };
+      h.clock.now += 1000;
+      const followUp = await h.post('/v1/incidents/automatic', {
+        source: 'monitor', signal: 'service_unavailable', eventId: 'timeline-evt-002',
+        dedupeKey: 'timeline-api', title: 'Public API still unavailable',
+      }, { cookie: owner.cookie });
+      assert.equal(followUp.status, 200);
+
+      const response = await h.post('/v1/incidents/timeline', { incidentId: firstBody.incident.id }, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        incident: { id: string };
+        timeline: Array<{
+          eventType: string; actorKind: string; actorId: string; source: string | null;
+          externalEventId: string | null; occurredAt: number;
+        }>;
+      };
+      assert.equal(body.incident.id, firstBody.incident.id);
+      assert.deepEqual(body.timeline.map((event) => event.eventType), ['incident.declared', 'incident.signal.received']);
+      assert.deepEqual(body.timeline.map((event) => event.externalEventId), ['timeline-evt-001', 'timeline-evt-002']);
+      assert.equal(body.timeline[0]?.actorKind, 'system');
+      assert.equal(body.timeline[0]?.actorId, 'monitor');
+      assert.equal(body.timeline[0]?.source, 'monitor');
+      assert.ok((body.timeline[1]?.occurredAt ?? 0) > (body.timeline[0]?.occurredAt ?? 0));
+
+      const foreign = await h.post('/v1/incidents/timeline', { incidentId: firstBody.incident.id }, { cookie: other.cookie });
+      assert.equal(foreign.status, 404);
+      assert.equal(await errorCode(foreign), 'incident_not_found');
+      const repeated = await h.post('/v1/incidents/timeline', { incidentId: firstBody.incident.id }, { cookie: owner.cookie });
+      assert.equal(((await repeated.json()) as { timeline: unknown[] }).timeline.length, 2);
+      assert.equal((await h.app.incidents.listEvents(owner.userId, firstBody.incident.id)).length, 2);
+    } finally {
+      await h.close();
+    }
+  });
+
   it('persists incident declarations and prevents event-history mutation in SQLite', async () => {
     const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
     try {
       const owner = await signedIn(h, 'incident-sqlite@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
       const created = await h.post('/v1/incidents', { title: 'SQLite incident' }, { cookie: owner.cookie });
       assert.equal(created.status, 201);
       const incident = ((await created.json()) as { incident: { id: string } }).incident;
       const events = await h.app.incidents.listEvents(owner.userId, incident.id);
       assert.equal(events.length, 1);
       assert.equal(events[0]?.eventType, 'incident.declared');
+      const timelineResponse = await h.post('/v1/incidents/timeline', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(timelineResponse.status, 200);
+      const timelineBody = await timelineResponse.json() as { incident: { id: string }; timeline: Array<{ eventType: string; actorId: string }> };
+      assert.equal(timelineBody.incident.id, incident.id);
+      assert.deepEqual(timelineBody.timeline.map((event) => event.eventType), ['incident.declared']);
+      assert.equal(timelineBody.timeline[0]?.actorId, owner.userId);
 
       const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
       assert.equal(exported.status, 200);

@@ -4,10 +4,10 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Latest CI-verified code checkpoint:** `b95158d1a16c371f6d0659e90d41f3e6e64e4de7`. GitHub Actions run [45568327170](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45568327170) completed successfully: typecheck passed and the full test job reported 994 tests, 993 passed, 0 failed, 0 cancelled, 1 skipped.  
+**Latest CI-verified code checkpoint:** `8a65b5310787c3199ec7df3328150fed77825b2b`. GitHub Actions run [45783860215](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45783860215) completed successfully: typecheck and the full test suite passed. The PostgreSQL incident test was corrected to use distinct fake server timestamps when asserting chronological event order.  
 **Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-052's backend management API and durable component-history implementation now pass CI. Hook 16's cross-module export is expanded but explicitly incomplete. Feature delivery status remains per-row below.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
-**Audit date:** 2026-11-25.
+**Audit date:** 2026-11-26.
 
 ## Plan Hooks — prerequisite audit
 
@@ -885,5 +885,16 @@ The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its
 - Every declaration/signal is written to an append-only incident event stream in the same transaction as its incident record. SQLite and PostgreSQL stores enforce owner/source/event idempotency and open-incident dedupe constraints. The service exposes owner-scoped incident/event reads for the upcoming OB-055 timeline and for Hook 16 account export.
 - Routes are session-authenticated and wired through the catalog gate for OB-041. Added manual create, automatic signal intake, list and owner-scoped get operations. The feature remains Free as the catalog specifies.
 - Files: `src/modules/incidents/` (types, store contract, in-memory/SQLite/PostgreSQL stores, SQLite/PostgreSQL migrations, service, routes and module exports); `src/app.ts`, `src/main.ts`, `src/config.ts`, `src/modules/plans/engine/route-gates.ts`, `test/pg-helpers.ts`, route/config/integration tests, and this ledger.
-- Verification status at checkpoint creation: pending GitHub Actions for the implementation commit. Do not mark OB-041 complete until typecheck and the full test suite pass, including the real PostgreSQL integration test.
-- Next catalogue task after OB-041 verification: **OB-055 — incident timeline built automatically from events** (Plus). Build the owner-facing timeline from the incident event stream, preserve chronological ordering and source/actor attribution, and do not duplicate or rewrite source events.
+- Verification: implementation commit `1f85019c08c30235965544b28e4c24890bee0966` initially passed typecheck but exposed one PostgreSQL integration-test assertion that reused an identical fake timestamp for two signals. The fixture now advances the fake server clock before the follow-up signal; commit `8a65b5310787c3199ec7df3328150fed77825b2b` passed typecheck and the full suite in CI run [45783860215](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45783860215). OB-041 is now verified in the in-memory, SQLite and real PostgreSQL paths.
+- Next catalogue task: **OB-055 — incident timeline built automatically from events** (Plus). Build the owner-facing timeline from the incident event stream, preserve chronological ordering and source/actor attribution, and do not duplicate or rewrite source events.
+
+
+### OB-055 implementation — event-derived incident timeline (2026-11-26)
+
+- Source requirement: Part 02 catalog, page 15, OB-055 — **PRO / Plan from Plus / General**: “Incident timeline built automatically from events.”
+- Added an authenticated, owner-scoped, Plus-gated timeline read route at `POST /v1/incidents/timeline`. It returns the incident plus the existing immutable event records in the store's chronological order, preserving event type, actor kind/id, source, external event ID, payload and timestamps. It does not synthesize events, rewrite source events or mutate the incident.
+- The service timeline is a read model over the same event stream used by OB-041 and Hook 16; owner scoping is enforced by resolving the incident through the authenticated owner before reading its events. A foreign owner's incident is returned as not found.
+- Added route-gate coverage, Plus/free/unauthenticated and cross-owner route tests, repeated-read/no-duplication assertions, SQLite route coverage and PostgreSQL service coverage.
+- Files: `src/modules/incidents/incident-service.ts`, `src/modules/incidents/routes.ts`, `src/modules/plans/engine/route-gates.ts`, `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`, and this ledger.
+- Verification status: pending GitHub Actions on this implementation commit. Do not mark OB-055 complete until typecheck and the full suite pass, including PostgreSQL persistence tests.
+- Next task after verification: **OB-056 — postmortem drafting: root cause, impact, timeline** (Pro). Build from verified incident evidence; do not invent a root cause or impact assessment.

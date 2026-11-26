@@ -89,7 +89,13 @@ export class IncidentService {
   }
 
   async listEvents(ownerId: string, incidentId: string): Promise<IncidentEventRecord[]> {
+    return (await this.timeline(ownerId, incidentId)).timeline;
+  }
+
+  /** Read-only timeline projection; every entry is an existing immutable incident event. */
+  async timeline(ownerId: string, incidentId: string): Promise<{ incident: IncidentRecord; timeline: IncidentEventRecord[] }> {
     const incident = await this.get(ownerId, incidentId);
-    return this.store.listEvents(ownerId, incident.id, 500);
+    const timeline = await this.store.listEvents(ownerId, incident.id, 500);
+    return { incident, timeline };
   }
 }

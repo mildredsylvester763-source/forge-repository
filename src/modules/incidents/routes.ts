@@ -37,5 +37,12 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: result.created ? 201 : 200, body: result };
       },
     },
+    '/v1/incidents/timeline': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
+        return { status: 200, body: await service.timeline(ownerId, body.incidentId) };
+      },
+    },
   };
 }

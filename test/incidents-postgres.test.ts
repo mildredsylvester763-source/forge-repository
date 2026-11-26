@@ -45,6 +45,9 @@ it('persists incident declarations, idempotent automatic signals and append-only
     const events = await service.listEvents(ownerId, first.incident.id);
     assert.equal(events.length, 2);
     assert.equal(events[1]?.eventType, 'incident.signal.received');
+    const timeline = await service.timeline(ownerId, first.incident.id);
+    assert.equal(timeline.incident.id, first.incident.id);
+    assert.deepEqual(timeline.timeline.map((event) => event.externalEventId), ['pg-event-1', 'pg-event-2']);
     await assert.rejects(
       testPool.pool.query('UPDATE incident_events SET payload_json = $1 WHERE id = $2', ['{}', events[0]!.id]),
       /append-only/,
