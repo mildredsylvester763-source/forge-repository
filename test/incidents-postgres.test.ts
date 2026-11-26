@@ -11,7 +11,7 @@ it('persists incident declarations, idempotent automatic signals and append-only
       t.skip('requires the CI PostgreSQL service');
       return;
     }
-    const now = 1_800_000_000_000;
+    let now = 1_800_000_000_000;
     const ownerId = randomUUID();
     await testPool.pool.query(
       'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
@@ -26,6 +26,9 @@ it('persists incident declarations, idempotent automatic signals and append-only
       source: 'monitor', signal: 'service_unavailable', eventId: 'pg-event-1',
       dedupeKey: 'api', title: 'API unavailable',
     });
+    // Give the follow-up signal a later server timestamp so the timeline assertion tests
+    // chronological ordering rather than the random UUID tie-break for equal timestamps.
+    now += 1;
     const second = await service.declareAutomatically(ownerId, {
       source: 'monitor', signal: 'service_unavailable', eventId: 'pg-event-2',
       dedupeKey: 'api', title: 'API still unavailable',
