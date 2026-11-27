@@ -4,10 +4,10 @@
 
 **Repository:** `mildredsylvester763-source/forge-repository`  
 **Working branch:** `forge-part02-audit`, retained as an isolated branch based on `manus/part36-safety`.  
-**Latest CI-verified code checkpoint:** `4ae869377bfd3767ba602fd84d2d37c87c4d0ea0`. GitHub Actions run [45785847060](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45785847060) completed successfully: TypeScript typecheck passed; the full suite reported 1,018 tests, 1,017 passed, 0 failed, 0 cancelled and 1 skipped. OB-041, OB-055 and the OB-056 postmortem draft are verified across their covered in-memory, SQLite and PostgreSQL paths.  
-**Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-041 incident declaration, OB-052's backend status-page management, OB-055's event-derived incident timeline and OB-056's evidence-based postmortem draft pass CI. Hook 16's export is expanded but still depends on a production storage adapter and approved deletion policy. Feature delivery status remains per-row below.  
+**Latest CI-verified code checkpoint:** `4ab7feaa8d03a9cc86941e0877911347b2f4dee5`. GitHub Actions run [45963234998](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45963234998) completed successfully: TypeScript typecheck passed; the full suite reported 1,020 tests, 1,019 passed, 0 failed, 0 cancelled and 1 skipped. OB-041, OB-055, OB-056 and OB-057 are verified across their covered in-memory, SQLite and PostgreSQL paths.  
+**Feature-status caveat:** CI verifies typecheck and the automated test suite at the recorded branch head; it does not mean every Part 02 catalogue feature is complete. DP-015 remains partial. OB-041 incident declaration, OB-052's backend status-page management, OB-055's event-derived incident timeline, OB-056's evidence-based postmortem draft and OB-057's incident action-item lifecycle pass CI. Hook 16's export is expanded but still depends on a production storage adapter and approved deletion policy. Feature delivery status remains per-row below.  
 **Intermediate verification:** `9f31ddc` passed in [run 45133878250](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45133878250). `69ba292` initially failed because the export test assumed the optional trusted-device store was configured; `8c008ec` explicitly represents that capability as unavailable and the full suite then passed.  
-**Audit date:** 2026-11-26.
+**Audit date:** 2026-11-27.
 
 ## Plan Hooks — prerequisite audit
 
@@ -63,7 +63,7 @@ The original audit was recorded in 37 four-ID detail slices. Those are historica
 | 5 | DP-081–DP-094, OB-001–OB-006 | 21–25 | Audited; per-feature delivery status below |
 | 6 | OB-007–OB-026 | 26–30 | Audited; per-feature delivery status below |
 | 7 | OB-027–OB-046 | 31–35 | Audited; per-feature delivery status below |
-| 8 | OB-047–OB-066 | 36–40 | **8 of 20 audited** (OB-047–OB-054); next is OB-055, then continue through OB-066 |
+| 8 | OB-047–OB-066 | 36–40 | **11 of 20 processed** (OB-047–OB-057); next is OB-058, then continue through OB-066 |
 
 The 20-ID batch is an organizational checkpoint, not a daily quota. Do not restart or re-audit completed detail slices; implement and verify the first unfinished feature in the active range.
 
@@ -873,9 +873,9 @@ OB-052 follow-up verification: commit 88df054 passed TypeScript typecheck. Its f
 - Verification completed: CI workflow run [45689200215](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45689200215) on documentation/checkpoint commit `077506cdce9fb28d33d0975e4b4d1008e641e9f4` passed `npm run typecheck` and the full test suite (**1,009 passed, 0 failed**). The preceding implementation commit `035a9790d24a8abf588acda6afade9a1683d0561` also passed CI run 45688989846. Earlier failed runs on the uncorrected intermediate commits were superseded by these verified runs; no failed CI state remains on the current branch head.
 
 
-### Next dependency checkpoint — incident declaration before OB-055 (2026-11-25)
+### Incident declaration dependency checkpoint — resolved (2026-11-27)
 
-The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its next unprocessed ID. However, the earlier audit explicitly found OB-041 (incident declaration, manual and automatic) missing, and OB-055's automatic incident timeline depends on a real incident entity and event lifecycle. Do not implement OB-055 as a detached timeline or pretend generic audit events are incidents. Before resuming OB-055, implement OB-041 as a dependency prerequisite, preserving the original catalogue/reporting order and recording this dependency work separately. Do not invent severity levels (OB-042), automatic trigger thresholds, or owner policy; make trigger criteria configurable and leave them inactive until supplied. After the OB-041 foundation is verified, return to OB-055 and continue the active range in exact order.
+The earlier checkpoint paused OB-055 because OB-041 (incident declaration, manual and automatic) was missing. OB-041 was implemented and verified before work returned to the catalogue sequence. OB-055, OB-056 and OB-057 have since been implemented in exact order. The active 20-ID reporting range remains OB-047–OB-066; its next unprocessed feature is OB-058. Severity levels, automatic trigger thresholds and owner policy remain un-invented; automatic incident triggers stay inactive until exact source/signal pairs are configured.
 
 ### OB-041 dependency implementation — incident declaration foundation (2026-11-26)
 
@@ -920,11 +920,29 @@ The active catalogue reporting range remains OB-047–OB-066, with OB-055 as its
 - Added Pro/free/unauthenticated and cross-owner route tests, no-mutation/repeated-generation assertions, SQLite route coverage, PostgreSQL service coverage, and central route-gate registry checks.
 - Files: `src/modules/incidents/types.ts`, `incident-service.ts`, `routes.ts`, `index.ts`, `src/modules/plans/engine/route-gates.ts`, `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`, and this ledger.
 - Verification: commit `4ae869377bfd3767ba602fd84d2d37c87c4d0ea0` passed TypeScript typecheck and the full suite in CI run [45785847060](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45785847060): 1,018 tests, 1,017 passed, 0 failed, 0 cancelled and 1 skipped. Route gating, owner isolation, evidence summaries, missing-cause/impact handling, SQLite and PostgreSQL assertions all passed. OB-056 is verified as an evidence-based draft generator; the root-cause and impact text remains deliberately unasserted until verified findings exist.
-- Next task: **OB-057 — Action items tracked to completion** (Plus). Derive action items only from explicit recorded follow-up evidence; do not invent owners, due dates or completion states.
+- Next task: **OB-058 — Learning loop: each incident yields new tests, alerts and runbook updates** (Pro). Inspect existing test, alert and runbook integration points before choosing the smallest evidence-backed implementation; do not invent automatic acceptance or deployment policy.
 
 
 ### OB-056 verification checkpoint (2026-11-26)
 
 - CI run [45785847060](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45785847060) on `4ae869377bfd3767ba602fd84d2d37c87c4d0ea0` passed `npm run typecheck` and the complete test suite (**1,018 tests: 1,017 passed, 0 failed, 0 cancelled, 1 skipped**).
 - The new Pro-gated route is owner-scoped and read-only. It derives its timeline and evidence references from the persisted incident event stream. Root cause and impact remain marked for review rather than being fabricated from declarations/signals that do not establish either fact.
-- Next exact catalogue item: **OB-057 — Action items tracked to completion** (Plus).
+- Next exact catalogue item: **OB-058 — Learning loop: each incident yields new tests, alerts and runbook updates** (Pro).
+
+
+### OB-057 implementation and verification checkpoint (2026-11-27)
+
+- Source requirement: Part 02 catalog, page 16, OB-057 — **PRO / Plan from Plus / General**: “Action items tracked to completion.” The feature is sold through the base plan from the Plan from column; no engine pass is involved.
+- Implemented authenticated, owner-scoped, Plus-gated incident action items:
+  - `POST /v1/incidents/action-items` creates an explicitly titled action item with an optional description.
+  - `POST /v1/incidents/action-items/list` lists action items for an owner-visible incident.
+  - `POST /v1/incidents/action-items/complete` records completion by the authenticated actor and server time.
+- Action-item state is durable in `incident_action_items` with `open` and `completed` states, creator/completer attribution, timestamps, owner/incident composite foreign-key enforcement, validation checks and list indexes. SQLite and PostgreSQL migration version 2 create the table. Creation and completion append immutable `incident.action_item.created` / `incident.action_item.completed` records to the existing incident event stream in the same storage transaction.
+- Completion is idempotent. SQLite uses its transaction boundary; PostgreSQL locks the action-item row before changing state. A repeated or concurrent completion returns the completed record without adding another completion event.
+- Hook 16 account export now includes owner-scoped incident action items alongside incident records and events.
+- The catalog does not define assignee, due-date, reminder, escalation or reopen policy. This implementation does not auto-assign people or dates and does not invent those workflows; the authenticated account owner creates and completes the items.
+- Added Plus/free/unauthenticated and cross-owner route tests, event-history assertions, repeated completion checks, SQLite persistence/export coverage, PostgreSQL persistence coverage, concurrent PostgreSQL completion coverage and route-gate registry assertions.
+- Files: `src/modules/incidents/types.ts`, `store.ts`, `in-memory-store.ts`, `sqlite-store.ts`, `postgres-store.ts`, `migrations.ts`, `postgres-migrations.ts`, `incident-service.ts`, `routes.ts`, `index.ts`; `src/app.ts`; `src/modules/plans/engine/route-gates.ts`; `test/incidents.test.ts`, `test/incidents-postgres.test.ts`, `test/plans-engines.test.ts`; and this ledger.
+- Implementation commit: `f5531c82ade5ed9e59e83c873dd73a44ba483d11`. CI corrections covered deterministic fake-clock chronology and the route registry's expected count after adding three OB-057 paths. The PostgreSQL integration test was then strengthened to complete one item concurrently from two requests and assert exactly one state transition/event.
+- Final verification: commit `4ab7feaa8d03a9cc86941e0877911347b2f4dee5` passed `npm run typecheck` and the full GitHub Actions suite in run [45963234998](https://github.com/mildredsylvester763-source/forge-repository/actions/runs/45963234998): **1,020 tests, 1,019 passed, 0 failed, 0 cancelled, 1 skipped**. OB-057 is verified in the in-memory, SQLite and real PostgreSQL paths.
+- Next exact catalogue item: **OB-058 — Learning loop: each incident yields new tests, alerts and runbook updates** (Pro).
