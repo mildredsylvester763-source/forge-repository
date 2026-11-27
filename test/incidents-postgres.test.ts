@@ -53,9 +53,11 @@ it('persists incident declarations, idempotent automatic signals and append-only
     assert.equal(postmortem.rootCause.text, null);
     assert.equal(postmortem.impact.text, null);
     assert.deepEqual(postmortem.evidenceEventIds, timeline.timeline.map((event) => event.id));
+    now += 1;
     const actionItem = await service.createActionItem(ownerId, { incidentId: first.incident.id, title: 'Verify database recovery' });
     assert.equal(actionItem.status, 'open');
     assert.equal(actionItem.completedAt, null);
+    now += 1;
     const completedAction = await service.completeActionItem(ownerId, actionItem.id);
     assert.equal(completedAction.changed, true);
     assert.equal(completedAction.actionItem.status, 'completed');
