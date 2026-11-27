@@ -317,6 +317,7 @@ describe('incident action items (OB-057)', () => {
       assert.equal(freeDenied.status, 402);
       assert.equal(await errorCode(freeDenied), 'plan_required');
 
+      h.clock.now += 1;
       const created = await h.post('/v1/incidents/action-items', {
         incidentId: incident.id, title: 'Verify service recovery', description: 'Confirm the API health check is stable.',
       }, { cookie: owner.cookie });
