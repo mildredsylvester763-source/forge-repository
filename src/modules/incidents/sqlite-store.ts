@@ -292,43 +292,6 @@ export class SqliteIncidentStore implements IncidentStore {
 
 
 
-interface RunbookRow {
-  id: string; owner_id: string; title: string; description: string; status: 'draft' | 'published';
-  revision: number; steps_json: string; source_incident_id: string | null;
-  source_learning_loop_id: string | null; source_learning_update_id: string | null;
-  created_by: string; created_at: number; updated_at: number; published_at: number | null;
-}
-interface RunbookExecutionRow {
-  id: string; owner_id: string; runbook_id: string; runbook_revision: number; runbook_title: string;
-  status: 'in_progress' | 'completed'; steps_json: string; started_by: string;
-  started_at: number; updated_at: number; completed_at: number | null;
-}
-interface RunbookAuditEventRow {
-  id: string; owner_id: string; runbook_id: string; execution_id: string | null;
-  event_type: string; actor_id: string; payload_json: string; occurred_at: number;
-}
-const runbookRecord = (r: RunbookRow): RunbookRecord => ({
-  id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
-  revision: Number(r.revision), steps: JSON.parse(r.steps_json) as RunbookRecord['steps'],
-  sourceIncidentId: r.source_incident_id, sourceLearningLoopId: r.source_learning_loop_id,
-  sourceLearningUpdateId: r.source_learning_update_id, createdBy: r.created_by,
-  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
-  publishedAt: r.published_at === null ? null : Number(r.published_at),
-});
-const runbookExecutionRecord = (r: RunbookExecutionRow): RunbookExecutionRecord => ({
-  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, runbookRevision: Number(r.runbook_revision),
-  runbookTitle: r.runbook_title, status: r.status,
-  steps: JSON.parse(r.steps_json) as RunbookExecutionRecord['steps'],
-  startedBy: r.started_by, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
-  completedAt: r.completed_at === null ? null : Number(r.completed_at),
-});
-const runbookAuditEventRecord = (r: RunbookAuditEventRow): RunbookAuditEventRecord => ({
-  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, executionId: r.execution_id,
-  eventType: r.event_type, actorId: r.actor_id,
-  payload: JSON.parse(r.payload_json) as Record<string, unknown>, occurredAt: Number(r.occurred_at),
-});
-
-
   private insertRunbookAuditEvent(event: RunbookAuditEventRecord): void {
     this.db.prepare(`INSERT INTO runbook_audit_events
       (id,owner_id,runbook_id,execution_id,event_type,actor_id,payload_json,occurred_at)
