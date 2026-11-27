@@ -79,4 +79,35 @@ export const pgIncidentMigrations: readonly Migration[] = [{
     CREATE INDEX incident_action_items_owner_status_idx
       ON incident_action_items(owner_id, status, created_at, id);
   `
+},
+  {
+  version: 3,
+  name: 'incident_learning_loop_drafts',
+  sql: `
+    CREATE TABLE incident_learning_loops (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      fingerprint TEXT NOT NULL CHECK (fingerprint ~ '^[0-9a-f]{64}$'),
+      evidence_event_ids_json TEXT NOT NULL,
+      tests_json TEXT NOT NULL,
+      alerts_json TEXT NOT NULL,
+      runbook_updates_json TEXT NOT NULL,
+      generated_at BIGINT NOT NULL CHECK (generated_at >= 0),
+      FOREIGN KEY (incident_id, owner_id) REFERENCES incidents(id, owner_id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX incident_learning_loop_revision_idx
+      ON incident_learning_loops(owner_id, incident_id, revision);
+    CREATE UNIQUE INDEX incident_learning_loop_fingerprint_idx
+      ON incident_learning_loops(owner_id, incident_id, fingerprint);
+    CREATE INDEX incident_learning_loop_owner_created_idx
+      ON incident_learning_loops(owner_id, generated_at, id);
+    CREATE FUNCTION incident_learning_loops_block_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'incident learning loops are append-only'; END;
+    $$;
+    CREATE TRIGGER incident_learning_loops_no_update BEFORE UPDATE ON incident_learning_loops
+      FOR EACH ROW EXECUTE FUNCTION incident_learning_loops_block_update();
+  `
+}
 }];

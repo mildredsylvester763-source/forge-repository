@@ -1,5 +1,5 @@
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord } from './types.ts';
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const boundedTake = (take: number): number => Math.max(1, Math.floor(take));
@@ -8,6 +8,7 @@ export class InMemoryIncidentStore implements IncidentStore {
   private readonly incidents = new Map<string, IncidentRecord>();
   private readonly events = new Map<string, IncidentEventRecord>();
   private readonly actionItems = new Map<string, IncidentActionItemRecord>();
+  private readonly learningLoops = new Map<string, IncidentLearningLoopRecord>();
 
   async createManual(incident: IncidentRecord, event: IncidentEventRecord): Promise<IncidentRecord> {
     if (this.incidents.has(incident.id) || this.events.has(event.id)) throw new Error('incident_id_conflict');
@@ -114,5 +115,40 @@ export class InMemoryIncidentStore implements IncidentStore {
     this.events.set(event.id, copy(storedEvent));
     return { actionItem: copy(updated), changed: true };
   }
+
+
+  async getLearningLoop(ownerId: string, incidentId: string): Promise<IncidentLearningLoopRecord | null> {
+    const rows = [...this.learningLoops.values()]
+      .filter((loop) => loop.ownerId === ownerId && loop.incidentId === incidentId)
+      .sort((a, b) => b.revision - a.revision || b.generatedAt - a.generatedAt || a.id.localeCompare(b.id));
+    return rows[0] ? copy(rows[0]) : null;
+  }
+
+  async listLearningLoopsByOwner(ownerId: string, take: number): Promise<IncidentLearningLoopRecord[]> {
+    return [...this.learningLoops.values()]
+      .filter((loop) => loop.ownerId === ownerId)
+      .sort((a, b) => a.generatedAt - b.generatedAt || a.id.localeCompare(b.id))
+      .slice(0, boundedTake(take)).map(copy);
+  }
+
+  async createLearningLoop(loop: IncidentLearningLoopRecord, event: IncidentEventRecord): Promise<IncidentLearningLoopMutationResult | null> {
+    const incident = this.incidents.get(loop.incidentId);
+    if (!incident || incident.ownerId !== loop.ownerId) return null;
+    if (event.ownerId !== loop.ownerId || event.incidentId !== loop.incidentId || event.eventType !== 'incident.learning.generated') {
+      throw new Error('incident_learning_event_scope_mismatch');
+    }
+    const existing = [...this.learningLoops.values()].find((item) =>
+      item.ownerId === loop.ownerId && item.incidentId === loop.incidentId && item.fingerprint === loop.fingerprint);
+    if (existing) return { learningLoop: copy(existing), created: false };
+    if (this.learningLoops.has(loop.id) || this.events.has(event.id)) throw new Error('incident_learning_loop_conflict');
+    const revision = [...this.learningLoops.values()]
+      .filter((item) => item.ownerId === loop.ownerId && item.incidentId === loop.incidentId)
+      .reduce((max, item) => Math.max(max, item.revision), 0) + 1;
+    const saved = { ...loop, revision };
+    this.learningLoops.set(saved.id, copy(saved));
+    this.events.set(event.id, copy(event));
+    return { learningLoop: copy(saved), created: true };
+  }
+
 
 }

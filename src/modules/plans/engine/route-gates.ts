@@ -317,6 +317,8 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/incidents/action-items': 'OB-057',
   '/v1/incidents/action-items/list': 'OB-057',
   '/v1/incidents/action-items/complete': 'OB-057',
+  '/v1/incidents/learning-loop': 'OB-058',
+  '/v1/incidents/learning-loop/get': 'OB-058',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */

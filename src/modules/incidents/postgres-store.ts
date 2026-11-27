@@ -1,6 +1,6 @@
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentRecord, IncidentStatus } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
@@ -33,6 +33,19 @@ const actionItemRecord = (r: ActionItemRow): IncidentActionItemRecord => ({
   status: r.status, createdBy: r.created_by, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   completedBy: r.completed_by, completedAt: r.completed_at === null ? null : Number(r.completed_at),
 });
+interface LearningLoopRow {
+  id: string; incident_id: string; owner_id: string; revision: number | string; fingerprint: string;
+  evidence_event_ids_json: string; tests_json: string; alerts_json: string; runbook_updates_json: string; generated_at: number | string;
+}
+const learningLoopRecord = (r: LearningLoopRow): IncidentLearningLoopRecord => ({
+  id: r.id, incidentId: r.incident_id, ownerId: r.owner_id, revision: Number(r.revision),
+  fingerprint: r.fingerprint, evidenceEventIds: JSON.parse(r.evidence_event_ids_json) as string[],
+  tests: JSON.parse(r.tests_json) as IncidentLearningLoopRecord['tests'],
+  alerts: JSON.parse(r.alerts_json) as IncidentLearningLoopRecord['alerts'],
+  runbookUpdates: JSON.parse(r.runbook_updates_json) as IncidentLearningLoopRecord['runbookUpdates'],
+  generatedAt: Number(r.generated_at),
+});
+
 const takeLimit = (take: number): number => Math.max(1, Math.floor(take));
 
 export class PostgresIncidentStore implements IncidentStore {
@@ -196,5 +209,48 @@ export class PostgresIncidentStore implements IncidentStore {
       return { actionItem: actionItemRecord(updated.rows[0]), changed: true };
     });
   }
+
+
+  async getLearningLoop(ownerId: string, incidentId: string): Promise<IncidentLearningLoopRecord | null> {
+    const result = await this.pool.query<LearningLoopRow>(`SELECT * FROM incident_learning_loops
+      WHERE owner_id = $1 AND incident_id = $2 ORDER BY revision DESC LIMIT 1`, [ownerId, incidentId]);
+    return result.rows[0] ? learningLoopRecord(result.rows[0]) : null;
+  }
+
+  async listLearningLoopsByOwner(ownerId: string, take: number): Promise<IncidentLearningLoopRecord[]> {
+    const result = await this.pool.query<LearningLoopRow>(`SELECT * FROM incident_learning_loops
+      WHERE owner_id = $1 ORDER BY generated_at, id LIMIT $2`, [ownerId, takeLimit(take)]);
+    return result.rows.map(learningLoopRecord);
+  }
+
+  async createLearningLoop(loop: IncidentLearningLoopRecord, event: IncidentEventRecord): Promise<IncidentLearningLoopMutationResult | null> {
+    return withTransaction(this.pool, async (conn) => {
+      if (event.ownerId !== loop.ownerId || event.incidentId !== loop.incidentId || event.eventType !== 'incident.learning.generated') {
+        throw new Error('incident_learning_event_scope_mismatch');
+      }
+      const incident = await conn.query<{ id: string }>(
+        'SELECT id FROM incidents WHERE id = $1 AND owner_id = $2 FOR UPDATE', [loop.incidentId, loop.ownerId],
+      );
+      if (!incident.rows[0]) return null;
+      const existing = await conn.query<LearningLoopRow>(`SELECT * FROM incident_learning_loops
+        WHERE owner_id = $1 AND incident_id = $2 AND fingerprint = $3 LIMIT 1`,
+      [loop.ownerId, loop.incidentId, loop.fingerprint]);
+      if (existing.rows[0]) return { learningLoop: learningLoopRecord(existing.rows[0]), created: false };
+      const next = await conn.query<{ revision: number | string }>(`SELECT COALESCE(MAX(revision), 0) + 1 AS revision
+        FROM incident_learning_loops WHERE owner_id = $1 AND incident_id = $2`, [loop.ownerId, loop.incidentId]);
+      const saved = { ...loop, revision: Number(next.rows[0]?.revision ?? 1) };
+      const inserted = await conn.query<LearningLoopRow>(`INSERT INTO incident_learning_loops
+        (id,incident_id,owner_id,revision,fingerprint,evidence_event_ids_json,tests_json,alerts_json,runbook_updates_json,generated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`, [
+        saved.id, saved.incidentId, saved.ownerId, saved.revision, saved.fingerprint,
+        JSON.stringify(saved.evidenceEventIds), JSON.stringify(saved.tests), JSON.stringify(saved.alerts),
+        JSON.stringify(saved.runbookUpdates), saved.generatedAt,
+      ]);
+      if (!inserted.rows[0]) throw new Error('incident_learning_loop_insert_failed');
+      await this.insertEvent(conn, event);
+      return { learningLoop: learningLoopRecord(inserted.rows[0]), created: true };
+    });
+  }
+
 
 }

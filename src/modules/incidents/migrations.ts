@@ -76,4 +76,32 @@ export const incidentMigrations: readonly Migration[] = [{
     CREATE INDEX incident_action_items_owner_status_idx
       ON incident_action_items(owner_id, status, created_at, id);
   `
+},
+  {
+  version: 3,
+  name: 'incident_learning_loop_drafts',
+  sql: `
+    CREATE TABLE incident_learning_loops (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL CHECK (revision > 0),
+      fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
+      evidence_event_ids_json TEXT NOT NULL,
+      tests_json TEXT NOT NULL,
+      alerts_json TEXT NOT NULL,
+      runbook_updates_json TEXT NOT NULL,
+      generated_at INTEGER NOT NULL CHECK (generated_at >= 0),
+      FOREIGN KEY (incident_id, owner_id) REFERENCES incidents(id, owner_id) ON DELETE CASCADE
+    ) STRICT;
+    CREATE UNIQUE INDEX incident_learning_loop_revision_idx
+      ON incident_learning_loops(owner_id, incident_id, revision);
+    CREATE UNIQUE INDEX incident_learning_loop_fingerprint_idx
+      ON incident_learning_loops(owner_id, incident_id, fingerprint);
+    CREATE INDEX incident_learning_loop_owner_created_idx
+      ON incident_learning_loops(owner_id, generated_at, id);
+    CREATE TRIGGER incident_learning_loops_block_update BEFORE UPDATE ON incident_learning_loops
+      BEGIN SELECT RAISE(ABORT, 'incident learning loops are append-only'); END;
+  `
+}
 }];

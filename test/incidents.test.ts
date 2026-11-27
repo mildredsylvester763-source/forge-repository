@@ -404,3 +404,49 @@ describe('incident action items (OB-057)', () => {
     }
   });
 });
+
+
+describe('incident learning loop persistence (OB-058)', () => {
+  it('persists immutable learning revisions in SQLite and includes them in account export', async () => {
+    const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const owner = await signedIn(h, 'incident-learning-sqlite@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      const declared = await h.post('/v1/incidents', { title: 'SQLite learning incident' }, { cookie: owner.cookie });
+      assert.equal(declared.status, 201);
+      const incident = (await declared.json() as { incident: { id: string } }).incident;
+
+      const firstResponse = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(firstResponse.status, 201);
+      const first = (await firstResponse.json() as { learningLoop: { id: string; revision: number } }).learningLoop;
+      assert.equal(first.revision, 1);
+      assert.equal((await h.app.incidents.getLearningLoop(owner.userId, incident.id)).id, first.id);
+
+      const action = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Confirm SQLite recovery',
+      }, { cookie: owner.cookie });
+      assert.equal(action.status, 201);
+      h.clock.now += 1;
+      const secondResponse = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(secondResponse.status, 201);
+      const second = (await secondResponse.json() as { learningLoop: { id: string; revision: number } }).learningLoop;
+      assert.equal(second.revision, 2);
+
+      const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = await exported.json() as {
+        modules: { incidents: { learningLoops: Array<{ id: string; revision: number }> } };
+      };
+      assert.deepEqual(bundle.modules.incidents.learningLoops.map((loop) => loop.revision), [1, 2]);
+
+      const db = h.app.db;
+      assert.ok(db);
+      assert.throws(
+        () => db.prepare('UPDATE incident_learning_loops SET tests_json = ? WHERE id = ?').run('[]', first.id),
+        /append-only/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

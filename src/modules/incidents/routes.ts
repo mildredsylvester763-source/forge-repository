@@ -74,5 +74,22 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: 200, body: await service.completeActionItem(ownerId, body.actionItemId) };
       },
     },
+
+    '/v1/incidents/learning-loop': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
+        const result = await service.generateLearningLoop(ownerId, body.incidentId);
+        return { status: result.created ? 201 : 200, body: result };
+      },
+    },
+    '/v1/incidents/learning-loop/get': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
+        return { status: 200, body: { learningLoop: await service.getLearningLoop(ownerId, body.incidentId) } };
+      },
+    },
+
   };
 }

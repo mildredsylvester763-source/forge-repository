@@ -53,6 +53,17 @@ it('persists incident declarations, idempotent automatic signals and append-only
     assert.equal(postmortem.rootCause.text, null);
     assert.equal(postmortem.impact.text, null);
     assert.deepEqual(postmortem.evidenceEventIds, timeline.timeline.map((event) => event.id));
+    const [learningA, learningB] = await Promise.all([
+      service.generateLearningLoop(ownerId, first.incident.id),
+      service.generateLearningLoop(ownerId, first.incident.id),
+    ]);
+    assert.equal([learningA.created, learningB.created].filter(Boolean).length, 1);
+    assert.equal(learningA.learningLoop.id, learningB.learningLoop.id);
+    assert.equal(learningA.learningLoop.revision, 1);
+    assert.equal(learningA.learningLoop.alerts[0]?.source, 'monitor');
+    assert.equal(learningA.learningLoop.alerts[0]?.signal, 'service_unavailable');
+    assert.equal(learningA.learningLoop.alerts[0]?.enabled, false);
+    assert.equal((await service.listEvents(ownerId, first.incident.id)).filter((event) => event.eventType === 'incident.learning.generated').length, 1);
     now += 1;
     const actionItem = await service.createActionItem(ownerId, { incidentId: first.incident.id, title: 'Verify database recovery' });
     assert.equal(actionItem.status, 'open');
@@ -71,6 +82,16 @@ it('persists incident declarations, idempotent automatic signals and append-only
     assert.equal(repeatedAction.changed, false);
     assert.equal((await store.listActionItems(ownerId, first.incident.id, 10)).length, 1);
     assert.equal((await store.listActionItemsByOwner(ownerId, 10))[0]?.status, 'completed');
+    const updatedLearning = await service.generateLearningLoop(ownerId, first.incident.id);
+    assert.equal(updatedLearning.created, true);
+    assert.equal(updatedLearning.learningLoop.revision, 2);
+    assert.ok(updatedLearning.learningLoop.tests.some((candidate) => candidate.title.includes('action-item completion')));
+    assert.equal(updatedLearning.learningLoop.runbookUpdates[0]?.actionItems[0]?.status, 'completed');
+    assert.equal((await store.listLearningLoopsByOwner(ownerId, 10)).length, 2);
+    await assert.rejects(
+      testPool.pool.query('UPDATE incident_learning_loops SET tests_json = $1 WHERE id = $2', ['[]', learningA.learningLoop.id]),
+      /append-only/,
+    );
     await assert.rejects(
       testPool.pool.query('UPDATE incident_events SET payload_json = $1 WHERE id = $2', ['{}', events[0]!.id]),
       /append-only/,

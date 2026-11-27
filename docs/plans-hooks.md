@@ -240,3 +240,9 @@ Production configuration now refuses `sellable: true` until regional minor-unit 
 ### Audit correction — 20 November 2026 (per-engine access level)
 
 A feature row may name several engines. A single pass must not mark the whole row paid: the access decision now returns `engineLevels` for each named engine, and the aggregate feature level is paid only when every engine in that row is paid (or the account is on a configured all-round plan). This closes the previous `some()` check that let one pass raise the level of other engines named by the same feature.
+
+
+
+### Hook 16 export — incident learning records (2026-11-27)
+
+The owner-scoped account export now includes incident learning-loop revisions alongside incident declarations, immutable events and action items. Learning-loop records contain evidence-event references and reviewable test, alert and runbook drafts; they do not activate alerts, publish runbooks or execute tests. The drafts remain in the owner's export so generated operational knowledge can be downloaded with the rest of the account data. This is an additive export surface; jurisdiction-approved hard deletion remains disabled pending owner verification.
