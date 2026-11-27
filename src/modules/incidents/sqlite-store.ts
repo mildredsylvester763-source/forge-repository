@@ -1,6 +1,6 @@
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
@@ -44,6 +44,43 @@ const learningLoopRecord = (r: LearningLoopRow): IncidentLearningLoopRecord => (
   alerts: JSON.parse(r.alerts_json) as IncidentLearningLoopRecord['alerts'],
   runbookUpdates: JSON.parse(r.runbook_updates_json) as IncidentLearningLoopRecord['runbookUpdates'],
   generatedAt: Number(r.generated_at),
+});
+
+
+interface RunbookRow {
+  id: string; owner_id: string; title: string; description: string; status: 'draft' | 'published';
+  revision: number; steps_json: string; source_incident_id: string | null;
+  source_learning_loop_id: string | null; source_learning_update_id: string | null;
+  created_by: string; created_at: number; updated_at: number; published_at: number | null;
+}
+interface RunbookExecutionRow {
+  id: string; owner_id: string; runbook_id: string; runbook_revision: number; runbook_title: string;
+  status: 'in_progress' | 'completed'; steps_json: string; started_by: string;
+  started_at: number; updated_at: number; completed_at: number | null;
+}
+interface RunbookAuditEventRow {
+  id: string; owner_id: string; runbook_id: string; execution_id: string | null;
+  event_type: string; actor_id: string; payload_json: string; occurred_at: number;
+}
+const runbookRecord = (r: RunbookRow): RunbookRecord => ({
+  id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
+  revision: Number(r.revision), steps: JSON.parse(r.steps_json) as RunbookRecord['steps'],
+  sourceIncidentId: r.source_incident_id, sourceLearningLoopId: r.source_learning_loop_id,
+  sourceLearningUpdateId: r.source_learning_update_id, createdBy: r.created_by,
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  publishedAt: r.published_at === null ? null : Number(r.published_at),
+});
+const runbookExecutionRecord = (r: RunbookExecutionRow): RunbookExecutionRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, runbookRevision: Number(r.runbook_revision),
+  runbookTitle: r.runbook_title, status: r.status,
+  steps: JSON.parse(r.steps_json) as RunbookExecutionRecord['steps'],
+  startedBy: r.started_by, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
+  completedAt: r.completed_at === null ? null : Number(r.completed_at),
+});
+const runbookAuditEventRecord = (r: RunbookAuditEventRow): RunbookAuditEventRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, executionId: r.execution_id,
+  eventType: r.event_type, actorId: r.actor_id,
+  payload: JSON.parse(r.payload_json) as Record<string, unknown>, occurredAt: Number(r.occurred_at),
 });
 
 const takeLimit = (take: number): number => Math.max(1, Math.floor(take));
@@ -251,6 +288,191 @@ export class SqliteIncidentStore implements IncidentStore {
       this.insertEvent(event);
       return { learningLoop: saved, created: true };
     });
+  }
+
+
+
+interface RunbookRow {
+  id: string; owner_id: string; title: string; description: string; status: 'draft' | 'published';
+  revision: number; steps_json: string; source_incident_id: string | null;
+  source_learning_loop_id: string | null; source_learning_update_id: string | null;
+  created_by: string; created_at: number; updated_at: number; published_at: number | null;
+}
+interface RunbookExecutionRow {
+  id: string; owner_id: string; runbook_id: string; runbook_revision: number; runbook_title: string;
+  status: 'in_progress' | 'completed'; steps_json: string; started_by: string;
+  started_at: number; updated_at: number; completed_at: number | null;
+}
+interface RunbookAuditEventRow {
+  id: string; owner_id: string; runbook_id: string; execution_id: string | null;
+  event_type: string; actor_id: string; payload_json: string; occurred_at: number;
+}
+const runbookRecord = (r: RunbookRow): RunbookRecord => ({
+  id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
+  revision: Number(r.revision), steps: JSON.parse(r.steps_json) as RunbookRecord['steps'],
+  sourceIncidentId: r.source_incident_id, sourceLearningLoopId: r.source_learning_loop_id,
+  sourceLearningUpdateId: r.source_learning_update_id, createdBy: r.created_by,
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  publishedAt: r.published_at === null ? null : Number(r.published_at),
+});
+const runbookExecutionRecord = (r: RunbookExecutionRow): RunbookExecutionRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, runbookRevision: Number(r.runbook_revision),
+  runbookTitle: r.runbook_title, status: r.status,
+  steps: JSON.parse(r.steps_json) as RunbookExecutionRecord['steps'],
+  startedBy: r.started_by, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
+  completedAt: r.completed_at === null ? null : Number(r.completed_at),
+});
+const runbookAuditEventRecord = (r: RunbookAuditEventRow): RunbookAuditEventRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, executionId: r.execution_id,
+  eventType: r.event_type, actorId: r.actor_id,
+  payload: JSON.parse(r.payload_json) as Record<string, unknown>, occurredAt: Number(r.occurred_at),
+});
+
+
+  private insertRunbookAuditEvent(event: RunbookAuditEventRecord): void {
+    this.db.prepare(`INSERT INTO runbook_audit_events
+      (id,owner_id,runbook_id,execution_id,event_type,actor_id,payload_json,occurred_at)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
+      event.id, event.ownerId, event.runbookId, event.executionId, event.eventType,
+      event.actorId, JSON.stringify(event.payload), event.occurredAt,
+    );
+  }
+
+  async createRunbook(runbook: RunbookRecord, event: RunbookAuditEventRecord): Promise<RunbookRecord | null> {
+    return transaction(this.db, () => {
+      if (event.ownerId !== runbook.ownerId || event.runbookId !== runbook.id || event.executionId !== null ||
+        event.eventType !== 'runbook.created' || event.actorId !== runbook.createdBy) {
+        throw new Error('runbook_creation_event_scope_mismatch');
+      }
+      if (runbook.sourceIncidentId !== null) {
+        const incident = this.db.prepare('SELECT id FROM incidents WHERE id = ? AND owner_id = ?')
+          .get(runbook.sourceIncidentId, runbook.ownerId) as { id: string } | undefined;
+        if (!incident) return null;
+      }
+      if (runbook.sourceLearningLoopId !== null) {
+        const loop = this.db.prepare('SELECT runbook_updates_json FROM incident_learning_loops WHERE id = ? AND owner_id = ? AND incident_id = ?')
+          .get(runbook.sourceLearningLoopId, runbook.ownerId, runbook.sourceIncidentId) as { runbook_updates_json: string } | undefined;
+        if (!loop || !(JSON.parse(loop.runbook_updates_json) as Array<{ id: string }>).some((update) => update.id === runbook.sourceLearningUpdateId)) return null;
+      }
+      this.db.prepare(`INSERT INTO runbooks
+        (id,owner_id,title,description,status,revision,steps_json,source_incident_id,source_learning_loop_id,source_learning_update_id,created_by,created_at,updated_at,published_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        runbook.id, runbook.ownerId, runbook.title, runbook.description, runbook.status, runbook.revision,
+        JSON.stringify(runbook.steps), runbook.sourceIncidentId, runbook.sourceLearningLoopId,
+        runbook.sourceLearningUpdateId, runbook.createdBy, runbook.createdAt, runbook.updatedAt, runbook.publishedAt,
+      );
+      this.insertRunbookAuditEvent(event);
+      return runbook;
+    });
+  }
+
+  async getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord | null> {
+    const row = this.db.prepare('SELECT * FROM runbooks WHERE owner_id = ? AND id = ?')
+      .get(ownerId, runbookId) as RunbookRow | undefined;
+    return row ? runbookRecord(row) : null;
+  }
+
+  async listRunbooksByOwner(ownerId: string, take: number): Promise<RunbookRecord[]> {
+    const rows = this.db.prepare('SELECT * FROM runbooks WHERE owner_id = ? ORDER BY updated_at DESC, id LIMIT ?')
+      .all(ownerId, takeLimit(take)) as unknown as RunbookRow[];
+    return rows.map(runbookRecord);
+  }
+
+  async publishRunbook(ownerId: string, runbookId: string, publishedAt: number, event: RunbookAuditEventRecord): Promise<RunbookMutationResult<RunbookRecord> | null> {
+    return transaction(this.db, () => {
+      const row = this.db.prepare('SELECT * FROM runbooks WHERE owner_id = ? AND id = ?')
+        .get(ownerId, runbookId) as RunbookRow | undefined;
+      if (!row) return null;
+      const current = runbookRecord(row);
+      if (current.status === 'published') return { record: current, changed: false };
+      if (event.ownerId !== ownerId || event.runbookId !== runbookId || event.executionId !== null ||
+        event.eventType !== 'runbook.published' || event.actorId !== ownerId) throw new Error('runbook_publish_event_scope_mismatch');
+      const updated = this.db.prepare(`UPDATE runbooks SET status = 'published', published_at = ?, updated_at = ?
+        WHERE owner_id = ? AND id = ? AND status = 'draft'`).run(publishedAt, publishedAt, ownerId, runbookId);
+      if (updated.changes !== 1) {
+        const latest = this.db.prepare('SELECT * FROM runbooks WHERE owner_id = ? AND id = ?')
+          .get(ownerId, runbookId) as RunbookRow | undefined;
+        return latest ? { record: runbookRecord(latest), changed: false } : null;
+      }
+      this.insertRunbookAuditEvent(event);
+      return { record: { ...current, status: 'published', publishedAt, updatedAt: publishedAt }, changed: true };
+    });
+  }
+
+  async startRunbookExecution(execution: RunbookExecutionRecord, event: RunbookAuditEventRecord): Promise<RunbookExecutionRecord | null> {
+    return transaction(this.db, () => {
+      const runbook = this.db.prepare(`SELECT * FROM runbooks WHERE owner_id = ? AND id = ? AND status = 'published'`)
+        .get(execution.ownerId, execution.runbookId) as RunbookRow | undefined;
+      if (!runbook || Number(runbook.revision) !== execution.runbookRevision) return null;
+      if (event.ownerId !== execution.ownerId || event.runbookId !== execution.runbookId ||
+        event.executionId !== execution.id || event.eventType !== 'runbook.execution.started' ||
+        event.actorId !== execution.startedBy) throw new Error('runbook_execution_event_scope_mismatch');
+      this.db.prepare(`INSERT INTO runbook_executions
+        (id,owner_id,runbook_id,runbook_revision,runbook_title,status,steps_json,started_by,started_at,updated_at,completed_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+        execution.id, execution.ownerId, execution.runbookId, execution.runbookRevision, execution.runbookTitle,
+        execution.status, JSON.stringify(execution.steps), execution.startedBy, execution.startedAt,
+        execution.updatedAt, execution.completedAt,
+      );
+      this.insertRunbookAuditEvent(event);
+      return execution;
+    });
+  }
+
+  async getRunbookExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord | null> {
+    const row = this.db.prepare('SELECT * FROM runbook_executions WHERE owner_id = ? AND id = ?')
+      .get(ownerId, executionId) as RunbookExecutionRow | undefined;
+    return row ? runbookExecutionRecord(row) : null;
+  }
+
+  async listRunbookExecutionsByOwner(ownerId: string, take: number): Promise<RunbookExecutionRecord[]> {
+    const rows = this.db.prepare('SELECT * FROM runbook_executions WHERE owner_id = ? ORDER BY started_at DESC, id LIMIT ?')
+      .all(ownerId, takeLimit(take)) as unknown as RunbookExecutionRow[];
+    return rows.map(runbookExecutionRecord);
+  }
+
+  async completeRunbookStep(ownerId: string, executionId: string, stepId: string, evidenceNote: string | null, event: RunbookAuditEventRecord): Promise<RunbookExecutionMutationResult | null> {
+    return transaction(this.db, () => {
+      const row = this.db.prepare('SELECT * FROM runbook_executions WHERE owner_id = ? AND id = ?')
+        .get(ownerId, executionId) as RunbookExecutionRow | undefined;
+      if (!row) return null;
+      const current = runbookExecutionRecord(row);
+      const step = current.steps.find((item) => item.id === stepId);
+      if (!step) return null;
+      if (current.status === 'completed' || step.status === 'completed') return { execution: current, changed: false };
+      if (event.ownerId !== ownerId || event.runbookId !== current.runbookId || event.executionId !== executionId ||
+        event.eventType !== 'runbook.execution.step_completed' || event.actorId !== ownerId) throw new Error('runbook_step_event_scope_mismatch');
+      const completedAt = Math.max(event.occurredAt, current.startedAt, current.updatedAt);
+      const steps = current.steps.map((item) => item.id === stepId
+        ? { ...item, status: 'completed' as const, completedBy: ownerId, completedAt, evidenceNote }
+        : item);
+      const finished = steps.every((item) => item.status === 'completed');
+      const updated: RunbookExecutionRecord = {
+        ...current, steps, status: finished ? 'completed' : 'in_progress',
+        updatedAt: completedAt, completedAt: finished ? completedAt : null,
+      };
+      const result = this.db.prepare(`UPDATE runbook_executions
+        SET status = ?, steps_json = ?, updated_at = ?, completed_at = ?
+        WHERE owner_id = ? AND id = ? AND status = 'in_progress'`).run(
+        updated.status, JSON.stringify(updated.steps), updated.updatedAt, updated.completedAt, ownerId, executionId,
+      );
+      if (result.changes !== 1) {
+        const latest = this.db.prepare('SELECT * FROM runbook_executions WHERE owner_id = ? AND id = ?')
+          .get(ownerId, executionId) as RunbookExecutionRow | undefined;
+        return latest ? { execution: runbookExecutionRecord(latest), changed: false } : null;
+      }
+      this.insertRunbookAuditEvent({
+        ...event, occurredAt: completedAt,
+        payload: { ...event.payload, executionStatus: updated.status },
+      });
+      return { execution: updated, changed: true };
+    });
+  }
+
+  async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
+    const rows = this.db.prepare('SELECT * FROM runbook_audit_events WHERE owner_id = ? ORDER BY occurred_at, id LIMIT ?')
+      .all(ownerId, takeLimit(take)) as unknown as RunbookAuditEventRow[];
+    return rows.map(runbookAuditEventRecord);
   }
 
 

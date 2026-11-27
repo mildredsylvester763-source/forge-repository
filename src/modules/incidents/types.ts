@@ -166,3 +166,95 @@ export interface IncidentLearningLoopMutationResult {
   readonly learningLoop: IncidentLearningLoopRecord;
   readonly created: boolean;
 }
+
+
+export type RunbookStatus = 'draft' | 'published';
+export type RunbookExecutionStatus = 'in_progress' | 'completed';
+export type RunbookStepStatus = 'pending' | 'completed';
+
+export interface RunbookStepDefinition {
+  readonly id: string;
+  readonly position: number;
+  readonly title: string;
+  readonly instructions: string;
+  /** Steps are operator-confirmed; this service does not execute arbitrary shell or remote commands. */
+  readonly confirmationRequired: true;
+}
+
+export interface RunbookRecord {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly title: string;
+  readonly description: string;
+  readonly status: RunbookStatus;
+  readonly revision: number;
+  readonly steps: readonly RunbookStepDefinition[];
+  readonly sourceIncidentId: string | null;
+  readonly sourceLearningLoopId: string | null;
+  readonly sourceLearningUpdateId: string | null;
+  readonly createdBy: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly publishedAt: number | null;
+}
+
+export interface RunbookExecutionStep extends RunbookStepDefinition {
+  readonly status: RunbookStepStatus;
+  readonly completedBy: string | null;
+  readonly completedAt: number | null;
+  readonly evidenceNote: string | null;
+}
+
+export interface RunbookExecutionRecord {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly runbookId: string;
+  readonly runbookRevision: number;
+  readonly runbookTitle: string;
+  readonly status: RunbookExecutionStatus;
+  readonly steps: readonly RunbookExecutionStep[];
+  readonly startedBy: string;
+  readonly startedAt: number;
+  readonly updatedAt: number;
+  readonly completedAt: number | null;
+}
+
+export interface RunbookAuditEventRecord {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly runbookId: string;
+  readonly executionId: string | null;
+  readonly eventType: string;
+  readonly actorId: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly occurredAt: number;
+}
+
+export interface RunbookMutationResult<T> {
+  readonly record: T;
+  readonly changed: boolean;
+}
+
+export interface RunbookExecutionMutationResult {
+  readonly execution: RunbookExecutionRecord;
+  readonly changed: boolean;
+}
+
+export interface CreateRunbookInput {
+  readonly title: unknown;
+  readonly description?: unknown;
+  readonly steps: unknown;
+  readonly sourceIncidentId?: unknown;
+}
+
+export interface CreateRunbookFromLearningLoopInput {
+  readonly incidentId: unknown;
+  readonly runbookUpdateId: unknown;
+}
+
+export interface CompleteRunbookStepInput {
+  readonly executionId: unknown;
+  readonly stepId: unknown;
+  readonly confirmed: unknown;
+  readonly evidenceNote?: unknown;
+}

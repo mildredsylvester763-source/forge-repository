@@ -104,4 +104,68 @@ export const incidentMigrations: readonly Migration[] = [{
       BEGIN SELECT RAISE(ABORT, 'incident learning loops are append-only'); END;
   `
 }
+, {
+  version: 4,
+  name: 'incident_runbook_library_and_executions',
+  sql: `
+    CREATE TABLE runbooks (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 2 AND 160),
+      description TEXT NOT NULL CHECK (length(description) <= 2000),
+      status TEXT NOT NULL CHECK (status IN ('draft','published')),
+      revision INTEGER NOT NULL CHECK (revision > 0),
+      steps_json TEXT NOT NULL,
+      source_incident_id TEXT,
+      source_learning_loop_id TEXT,
+      source_learning_update_id TEXT,
+      created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL CHECK (created_at >= 0),
+      updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+      published_at INTEGER,
+      UNIQUE (id, owner_id),
+      FOREIGN KEY (source_incident_id, owner_id) REFERENCES incidents(id, owner_id) ON DELETE CASCADE,
+      CHECK ((status = 'draft' AND published_at IS NULL) OR (status = 'published' AND published_at IS NOT NULL))
+    ) STRICT;
+    CREATE INDEX runbooks_owner_updated_idx ON runbooks(owner_id, updated_at DESC, id);
+
+    CREATE TABLE runbook_executions (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      runbook_id TEXT NOT NULL,
+      runbook_revision INTEGER NOT NULL CHECK (runbook_revision > 0),
+      runbook_title TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('in_progress','completed')),
+      steps_json TEXT NOT NULL,
+      started_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      started_at INTEGER NOT NULL CHECK (started_at >= 0),
+      updated_at INTEGER NOT NULL CHECK (updated_at >= started_at),
+      completed_at INTEGER,
+      UNIQUE (id, owner_id),
+      FOREIGN KEY (runbook_id, owner_id) REFERENCES runbooks(id, owner_id) ON DELETE CASCADE,
+      CHECK ((status = 'in_progress' AND completed_at IS NULL) OR (status = 'completed' AND completed_at IS NOT NULL AND completed_at >= started_at))
+    ) STRICT;
+    CREATE INDEX runbook_executions_owner_started_idx ON runbook_executions(owner_id, started_at DESC, id);
+    CREATE INDEX runbook_executions_runbook_idx ON runbook_executions(owner_id, runbook_id, started_at DESC);
+
+    CREATE TABLE runbook_audit_events (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      runbook_id TEXT NOT NULL,
+      execution_id TEXT,
+      event_type TEXT NOT NULL,
+      actor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      payload_json TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL CHECK (occurred_at >= 0),
+      FOREIGN KEY (runbook_id, owner_id) REFERENCES runbooks(id, owner_id) ON DELETE CASCADE,
+      FOREIGN KEY (execution_id, owner_id) REFERENCES runbook_executions(id, owner_id) ON DELETE CASCADE
+    ) STRICT;
+    CREATE INDEX runbook_audit_events_owner_time_idx ON runbook_audit_events(owner_id, occurred_at, id);
+    CREATE TRIGGER runbook_audit_events_block_update BEFORE UPDATE ON runbook_audit_events
+      BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
+    CREATE TRIGGER runbook_audit_events_block_delete BEFORE DELETE ON runbook_audit_events
+      BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
+  `
+}
+
 ];

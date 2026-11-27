@@ -420,11 +420,14 @@ async function collectAccountModuleData(storage: Storage, userId: string, artifa
     storage.liveTesting.listPersonas(userId, null)
   ]);
 
-  const [incidentRecords, incidentEvents, incidentActionItems, incidentLearningLoops] = await Promise.all([
+  const [incidentRecords, incidentEvents, incidentActionItems, incidentLearningLoops, incidentRunbooks, incidentRunbookExecutions, incidentRunbookAuditEvents] = await Promise.all([
     storage.incidents.listByOwner(userId, take),
     storage.incidents.listEventsByOwner(userId, take),
     storage.incidents.listActionItemsByOwner(userId, take),
-    storage.incidents.listLearningLoopsByOwner(userId, take)
+    storage.incidents.listLearningLoopsByOwner(userId, take),
+    storage.incidents.listRunbooksByOwner(userId, take),
+    storage.incidents.listRunbookExecutionsByOwner(userId, take),
+    storage.incidents.listRunbookAuditEventsByOwner(userId, take)
   ]);
   const ownedStatusPages = await storage.statusPages.listPages(userId);
   const statusPages = await Promise.all(ownedStatusPages.map(async (page) => ({
@@ -455,7 +458,7 @@ async function collectAccountModuleData(storage: Storage, userId: string, artifa
       preferences: preferenceRecords, codeData: codeDataRecords, creativeWorks, tokenizers: tokenizerRecords
     },
     statusPages: { pages: statusPages },
-    incidents: { records: incidentRecords, events: incidentEvents, actionItems: incidentActionItems, learningLoops: incidentLearningLoops },
+    incidents: { records: incidentRecords, events: incidentEvents, actionItems: incidentActionItems, learningLoops: incidentLearningLoops, runbooks: incidentRunbooks, runbookExecutions: incidentRunbookExecutions, runbookAuditEvents: incidentRunbookAuditEvents },
     accountArtifacts
   };
 }

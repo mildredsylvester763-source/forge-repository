@@ -587,3 +587,161 @@ describe('incident learning loop API (OB-058)', () => {
     }
   });
 });
+
+
+describe('runbook library and execution (OB-059)', () => {
+  it('is Plus-gated, owner-scoped, converts reviewed learning drafts and records explicit step confirmations', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'runbook-owner@forge.test');
+      const other = await signedIn(h, 'runbook-other@forge.test');
+      const free = await signedIn(h, 'runbook-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      await h.app.plans.setPlan(other.userId, 'plus');
+
+      assert.equal((await h.get('/v1/runbooks')).status, 401);
+      const freeAccess = await h.post('/v1/plans/check', { featureId: 'OB-059' }, { cookie: free.cookie });
+      assert.equal(freeAccess.status, 200);
+      const freeDecision = (await freeAccess.json()) as { decision: { allowed: boolean; gate: string } };
+      assert.equal(freeDecision.decision.allowed, false);
+      assert.equal(freeDecision.decision.gate, 'plus');
+      const denied = await h.post('/v1/runbooks', {
+        title: 'Recovery runbook',
+        steps: [{ title: 'Check health', instructions: 'Confirm the health endpoint is responding.' }],
+      }, { cookie: free.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const incidentResponse = await h.post('/v1/incidents', {
+        title: 'Runbook source incident', description: 'A service returned errors during recovery.',
+      }, { cookie: owner.cookie });
+      assert.equal(incidentResponse.status, 201);
+      const incident = (await incidentResponse.json() as { incident: { id: string } }).incident;
+      const actionResponse = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Verify service recovery',
+        description: 'Check the service health endpoint and confirm successful responses.',
+      }, { cookie: owner.cookie });
+      assert.equal(actionResponse.status, 201);
+      const learningResponse = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(learningResponse.status, 201);
+      const learning = (await learningResponse.json() as {
+        learningLoop: { id: string; runbookUpdates: Array<{ id: string; actionItems: Array<{ status: string }> }> };
+      }).learningLoop;
+      const update = learning.runbookUpdates[0];
+      assert.ok(update);
+      assert.equal(update.actionItems[0]?.status, 'open');
+
+      const created = await h.post('/v1/runbooks/from-learning-loop', {
+        incidentId: incident.id, runbookUpdateId: update.id,
+      }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const runbook = (await created.json() as {
+        runbook: {
+          id: string; status: string; sourceIncidentId: string; sourceLearningLoopId: string;
+          steps: Array<{ id: string; title: string; instructions: string; confirmationRequired: boolean }>;
+        };
+      }).runbook;
+      assert.equal(runbook.status, 'draft');
+      assert.equal(runbook.sourceIncidentId, incident.id);
+      assert.equal(runbook.sourceLearningLoopId, learning.id);
+      assert.equal(runbook.steps.length, 1);
+      assert.equal(runbook.steps[0]?.title, 'Verify service recovery');
+      assert.equal(runbook.steps[0]?.confirmationRequired, true);
+
+      const draftStart = await h.post('/v1/runbooks/executions/start', { runbookId: runbook.id }, { cookie: owner.cookie });
+      assert.equal(draftStart.status, 409);
+      assert.equal(await errorCode(draftStart), 'runbook_not_published');
+
+      h.clock.now += 1;
+      const published = await h.post('/v1/runbooks/publish', { runbookId: runbook.id }, { cookie: owner.cookie });
+      assert.equal(published.status, 200);
+      const publishedBody = await published.json() as { runbook: { status: string }; changed: boolean };
+      assert.equal(publishedBody.runbook.status, 'published');
+      assert.equal(publishedBody.changed, true);
+
+      h.clock.now += 1;
+      const executionResponse = await h.post('/v1/runbooks/executions/start', { runbookId: runbook.id }, { cookie: owner.cookie });
+      assert.equal(executionResponse.status, 201);
+      const execution = (await executionResponse.json() as {
+        execution: { id: string; status: string; steps: Array<{ id: string; status: string }> };
+      }).execution;
+      assert.equal(execution.status, 'in_progress');
+      assert.equal(execution.steps[0]?.status, 'pending');
+
+      const foreignRunbook = await h.post('/v1/runbooks/get', { runbookId: runbook.id }, { cookie: other.cookie });
+      assert.equal(foreignRunbook.status, 404);
+      const foreignExecution = await h.post('/v1/runbooks/executions/get', { executionId: execution.id }, { cookie: other.cookie });
+      assert.equal(foreignExecution.status, 404);
+
+      const stepId = execution.steps[0]?.id;
+      assert.ok(stepId);
+      const unconfirmed = await h.post('/v1/runbooks/executions/step/complete', {
+        executionId: execution.id, stepId, confirmed: false,
+      }, { cookie: owner.cookie });
+      assert.equal(unconfirmed.status, 400);
+      assert.equal(await errorCode(unconfirmed), 'runbook_confirmation_required');
+
+      h.clock.now += 1;
+      const completed = await h.post('/v1/runbooks/executions/step/complete', {
+        executionId: execution.id, stepId, confirmed: true, evidenceNote: 'Health endpoint returned successful responses.',
+      }, { cookie: owner.cookie });
+      assert.equal(completed.status, 200);
+      const completion = await completed.json() as {
+        changed: boolean; execution: { status: string; completedAt: number | null; steps: Array<{ status: string; evidenceNote: string | null }> };
+      };
+      assert.equal(completion.changed, true);
+      assert.equal(completion.execution.status, 'completed');
+      assert.ok(completion.execution.completedAt);
+      assert.equal(completion.execution.steps[0]?.status, 'completed');
+      assert.equal(completion.execution.steps[0]?.evidenceNote, 'Health endpoint returned successful responses.');
+
+      const repeated = await h.post('/v1/runbooks/executions/step/complete', {
+        executionId: execution.id, stepId, confirmed: true,
+      }, { cookie: owner.cookie });
+      assert.equal(repeated.status, 200);
+      assert.equal(((await repeated.json()) as { changed: boolean }).changed, false);
+
+      const listed = await h.get('/v1/runbooks', { cookie: owner.cookie });
+      assert.equal(listed.status, 200);
+      assert.equal(((await listed.json()) as { runbooks: Array<{ id: string }> }).runbooks[0]?.id, runbook.id);
+      const executions = await h.get('/v1/runbooks/executions', { cookie: owner.cookie });
+      assert.equal(((await executions.json()) as { executions: Array<{ id: string; status: string }> }).executions[0]?.status, 'completed');
+
+      const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = await exported.json() as {
+        modules: { incidents: {
+          runbooks: Array<{ id: string }>;
+          runbookExecutions: Array<{ id: string }>;
+          runbookAuditEvents: Array<{ eventType: string }>;
+        } };
+      };
+      assert.deepEqual(bundle.modules.incidents.runbooks.map((item) => item.id), [runbook.id]);
+      assert.deepEqual(bundle.modules.incidents.runbookExecutions.map((item) => item.id), [execution.id]);
+      assert.deepEqual(bundle.modules.incidents.runbookAuditEvents.map((event) => event.eventType), [
+        'runbook.created', 'runbook.published', 'runbook.execution.started', 'runbook.execution.step_completed',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('rejects command-bearing step objects and invalid step counts', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'runbook-validation@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
+      const command = await h.post('/v1/runbooks', {
+        title: 'Unsafe command runbook',
+        steps: [{ title: 'Run command', instructions: 'Execute a command.', command: 'rm -rf /' }],
+      }, { cookie: owner.cookie });
+      assert.equal(command.status, 400);
+      assert.equal(await errorCode(command), 'runbook_invalid');
+      const empty = await h.post('/v1/runbooks', { title: 'Empty runbook', steps: [] }, { cookie: owner.cookie });
+      assert.equal(empty.status, 400);
+      assert.equal(await errorCode(empty), 'runbook_invalid');
+    } finally {
+      await h.close();
+    }
+  });
+});

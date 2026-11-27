@@ -1,5 +1,5 @@
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const boundedTake = (take: number): number => Math.max(1, Math.floor(take));
@@ -9,6 +9,9 @@ export class InMemoryIncidentStore implements IncidentStore {
   private readonly events = new Map<string, IncidentEventRecord>();
   private readonly actionItems = new Map<string, IncidentActionItemRecord>();
   private readonly learningLoops = new Map<string, IncidentLearningLoopRecord>();
+  private readonly runbooks = new Map<string, RunbookRecord>();
+  private readonly runbookExecutions = new Map<string, RunbookExecutionRecord>();
+  private readonly runbookAuditEvents = new Map<string, RunbookAuditEventRecord>();
 
   async createManual(incident: IncidentRecord, event: IncidentEventRecord): Promise<IncidentRecord> {
     if (this.incidents.has(incident.id) || this.events.has(event.id)) throw new Error('incident_id_conflict');
@@ -148,6 +151,116 @@ export class InMemoryIncidentStore implements IncidentStore {
     this.learningLoops.set(saved.id, copy(saved));
     this.events.set(event.id, copy(event));
     return { learningLoop: copy(saved), created: true };
+  }
+
+
+
+  async createRunbook(runbook: RunbookRecord, event: RunbookAuditEventRecord): Promise<RunbookRecord | null> {
+    if (event.ownerId !== runbook.ownerId || event.runbookId !== runbook.id || event.executionId !== null ||
+      event.eventType !== 'runbook.created' || event.actorId !== runbook.createdBy) {
+      throw new Error('runbook_creation_event_scope_mismatch');
+    }
+    if (runbook.sourceIncidentId !== null) {
+      const incident = this.incidents.get(runbook.sourceIncidentId);
+      if (!incident || incident.ownerId !== runbook.ownerId) return null;
+    }
+    if (runbook.sourceLearningLoopId !== null) {
+      const loop = this.learningLoops.get(runbook.sourceLearningLoopId);
+      if (!loop || loop.ownerId !== runbook.ownerId || loop.incidentId !== runbook.sourceIncidentId ||
+        !loop.runbookUpdates.some((update) => update.id === runbook.sourceLearningUpdateId)) return null;
+    }
+    if (this.runbooks.has(runbook.id) || this.runbookAuditEvents.has(event.id)) throw new Error('runbook_id_conflict');
+    this.runbooks.set(runbook.id, copy(runbook));
+    this.runbookAuditEvents.set(event.id, copy(event));
+    return copy(runbook);
+  }
+
+  async getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord | null> {
+    const runbook = this.runbooks.get(runbookId);
+    return runbook?.ownerId === ownerId ? copy(runbook) : null;
+  }
+
+  async listRunbooksByOwner(ownerId: string, take: number): Promise<RunbookRecord[]> {
+    return [...this.runbooks.values()]
+      .filter((item) => item.ownerId === ownerId)
+      .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+      .slice(0, boundedTake(take)).map(copy);
+  }
+
+  async publishRunbook(ownerId: string, runbookId: string, publishedAt: number, event: RunbookAuditEventRecord): Promise<RunbookMutationResult<RunbookRecord> | null> {
+    const current = this.runbooks.get(runbookId);
+    if (!current || current.ownerId !== ownerId) return null;
+    if (current.status === 'published') return { record: copy(current), changed: false };
+    if (event.ownerId !== ownerId || event.runbookId !== runbookId || event.executionId !== null ||
+      event.eventType !== 'runbook.published' || event.actorId !== ownerId) {
+      throw new Error('runbook_publish_event_scope_mismatch');
+    }
+    if (this.runbookAuditEvents.has(event.id)) throw new Error('runbook_audit_event_conflict');
+    const updated: RunbookRecord = { ...current, status: 'published', publishedAt, updatedAt: publishedAt };
+    this.runbooks.set(runbookId, copy(updated));
+    this.runbookAuditEvents.set(event.id, copy(event));
+    return { record: copy(updated), changed: true };
+  }
+
+  async startRunbookExecution(execution: RunbookExecutionRecord, event: RunbookAuditEventRecord): Promise<RunbookExecutionRecord | null> {
+    const runbook = this.runbooks.get(execution.runbookId);
+    if (!runbook || runbook.ownerId !== execution.ownerId || runbook.status !== 'published' ||
+      runbook.revision !== execution.runbookRevision) return null;
+    if (event.ownerId !== execution.ownerId || event.runbookId !== execution.runbookId ||
+      event.executionId !== execution.id || event.eventType !== 'runbook.execution.started' ||
+      event.actorId !== execution.startedBy) throw new Error('runbook_execution_event_scope_mismatch');
+    if (this.runbookExecutions.has(execution.id) || this.runbookAuditEvents.has(event.id)) throw new Error('runbook_execution_id_conflict');
+    this.runbookExecutions.set(execution.id, copy(execution));
+    this.runbookAuditEvents.set(event.id, copy(event));
+    return copy(execution);
+  }
+
+  async getRunbookExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord | null> {
+    const execution = this.runbookExecutions.get(executionId);
+    return execution?.ownerId === ownerId ? copy(execution) : null;
+  }
+
+  async listRunbookExecutionsByOwner(ownerId: string, take: number): Promise<RunbookExecutionRecord[]> {
+    return [...this.runbookExecutions.values()]
+      .filter((item) => item.ownerId === ownerId)
+      .sort((a, b) => b.startedAt - a.startedAt || a.id.localeCompare(b.id))
+      .slice(0, boundedTake(take)).map(copy);
+  }
+
+  async completeRunbookStep(ownerId: string, executionId: string, stepId: string, evidenceNote: string | null, event: RunbookAuditEventRecord): Promise<RunbookExecutionMutationResult | null> {
+    const current = this.runbookExecutions.get(executionId);
+    if (!current || current.ownerId !== ownerId) return null;
+    const step = current.steps.find((item) => item.id === stepId);
+    if (!step) return null;
+    if (current.status === 'completed' || step.status === 'completed') return { execution: copy(current), changed: false };
+    if (event.ownerId !== ownerId || event.runbookId !== current.runbookId || event.executionId !== executionId ||
+      event.eventType !== 'runbook.execution.step_completed' || event.actorId !== ownerId) {
+      throw new Error('runbook_step_event_scope_mismatch');
+    }
+    if (this.runbookAuditEvents.has(event.id)) throw new Error('runbook_audit_event_conflict');
+    const completedAt = Math.max(event.occurredAt, current.startedAt, current.updatedAt);
+    const steps = current.steps.map((item) => item.id === stepId
+      ? { ...item, status: 'completed' as const, completedBy: ownerId, completedAt, evidenceNote }
+      : item);
+    const finished = steps.every((item) => item.status === 'completed');
+    const updated: RunbookExecutionRecord = {
+      ...current, steps, status: finished ? 'completed' : 'in_progress',
+      updatedAt: completedAt, completedAt: finished ? completedAt : null,
+    };
+    const storedEvent: RunbookAuditEventRecord = {
+      ...event, occurredAt: completedAt,
+      payload: { ...event.payload, executionStatus: updated.status },
+    };
+    this.runbookExecutions.set(executionId, copy(updated));
+    this.runbookAuditEvents.set(event.id, copy(storedEvent));
+    return { execution: copy(updated), changed: true };
+  }
+
+  async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
+    return [...this.runbookAuditEvents.values()]
+      .filter((event) => event.ownerId === ownerId)
+      .sort((a, b) => a.occurredAt - b.occurredAt || a.id.localeCompare(b.id))
+      .slice(0, boundedTake(take)).map(copy);
   }
 
 

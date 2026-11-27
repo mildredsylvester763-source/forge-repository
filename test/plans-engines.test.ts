@@ -167,8 +167,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(isPlanId(42), false);
   });
 
-  it('pins every wired route to a catalog feature (308 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 310);
+  it('pins every wired route to a catalog feature (318 routes)', () => {
+    assert.equal(Object.keys(ROUTE_GATES).length, 318);
     assert.equal(ROUTE_GATES['/v1/incidents'], 'OB-041');
     assert.equal(ROUTE_GATES['/v1/incidents/get'], 'OB-041');
     assert.equal(ROUTE_GATES['/v1/incidents/automatic'], 'OB-041');
@@ -183,6 +183,15 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(ROUTE_GATES['/v1/incidents/learning-loop'], 'OB-058');
     assert.equal(ROUTE_GATES['/v1/incidents/learning-loop/get'], 'OB-058');
     assert.equal(gateForRoute('/v1/incidents/learning-loop')?.gate, 'pro');
+    assert.equal(ROUTE_GATES['/v1/runbooks'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/get'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/from-learning-loop'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/publish'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/executions'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/executions/start'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/executions/get'], 'OB-059');
+    assert.equal(ROUTE_GATES['/v1/runbooks/executions/step/complete'], 'OB-059');
+    assert.equal(gateForRoute('/v1/runbooks')?.gate, 'plus');
     assert.equal(ROUTE_GATES['/v1/status-pages'], 'OB-052');
     assert.equal(ROUTE_GATES['/v1/deployments/dependency-graph/plan'], 'DP-015');
     for (const [path, feature] of Object.entries(ROUTE_GATES)) {

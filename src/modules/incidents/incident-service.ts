@@ -2,9 +2,42 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { CreateIncidentActionItemInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord } from './types.ts';
+import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
+
+function runbookText(value: unknown, field: string, min: number, max: number): string {
+  if (typeof value !== 'string') throw new AppError(400, 'runbook_invalid', field + ' must be text.');
+  const cleaned = value.trim();
+  if (cleaned.length < min || cleaned.length > max) throw new AppError(400, 'runbook_invalid', field + ' must contain ' + min + ' to ' + max + ' characters.');
+  return cleaned;
+}
+function runbookIdentifier(value: unknown, field: string): string {
+  const cleaned = runbookText(value, field, 1, 128);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(cleaned)) throw new AppError(400, 'runbook_invalid', field + ' contains unsupported characters.');
+  return cleaned;
+}
+function runbookSteps(value: unknown): RunbookStepDefinition[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50) {
+    throw new AppError(400, 'runbook_invalid', 'steps must contain between 1 and 50 ordered steps.');
+  }
+  return value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new AppError(400, 'runbook_invalid', 'Each step must be an object.');
+    }
+    const step = candidate as Record<string, unknown>;
+    for (const key of Object.keys(step)) {
+      if (key !== 'title' && key !== 'instructions') throw new AppError(400, 'runbook_invalid', 'Unknown step field: ' + key);
+    }
+    return {
+      id: randomUUID(),
+      position: index + 1,
+      title: runbookText(step.title, 'step.title', 2, 160),
+      instructions: runbookText(step.instructions, 'step.instructions', 2, 2000),
+      confirmationRequired: true,
+    };
+  });
+}
 
 function cleanText(value: unknown, field: string, min: number, max: number): string {
   if (typeof value !== 'string') throw new AppError(400, 'incident_invalid', field + ' must be text.');
@@ -331,6 +364,167 @@ export class IncidentService {
     if (!learningLoop) throw new AppError(404, 'incident_learning_loop_not_found', 'No learning loop has been generated for this incident.');
     return learningLoop;
   }
+
+
+
+  async createRunbook(ownerId: string, input: CreateRunbookInput): Promise<RunbookRecord> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError(400, 'runbook_invalid', 'A runbook object is required.');
+    const fields = input as Record<string, unknown>;
+    for (const key of Object.keys(fields)) {
+      if (!['title', 'description', 'steps', 'sourceIncidentId'].includes(key)) throw new AppError(400, 'runbook_invalid', 'Unknown runbook field: ' + key);
+    }
+    return this.createRunbookRecord(ownerId, {
+      title: fields.title,
+      description: fields.description,
+      steps: fields.steps,
+      sourceIncidentId: fields.sourceIncidentId,
+    }, null, null);
+  }
+
+  async createRunbookFromLearningLoop(ownerId: string, input: CreateRunbookFromLearningLoopInput): Promise<RunbookRecord> {
+    const incidentId = runbookIdentifier(input.incidentId, 'incidentId');
+    const runbookUpdateId = runbookIdentifier(input.runbookUpdateId, 'runbookUpdateId');
+    const loop = await this.getLearningLoop(ownerId, incidentId);
+    const update = loop.runbookUpdates.find((item) => item.id === runbookUpdateId);
+    if (!update) throw new AppError(404, 'runbook_learning_update_not_found', 'The learning-loop runbook update was not found.');
+    const actionableItems = update.actionItems.filter((item) => item.status === 'open');
+    if (actionableItems.length === 0) {
+      throw new AppError(409, 'runbook_steps_required', 'The learning-loop draft has no open action items to turn into steps. Supply verified recovery steps in a new runbook instead.');
+    }
+    return this.createRunbookRecord(ownerId, {
+      title: update.title.replace(/^Runbook update draft:\s*/i, ''),
+      description: update.context,
+      sourceIncidentId: incidentId,
+      steps: actionableItems.map((item) => ({
+        title: item.title,
+        instructions: item.description.trim() || item.title,
+      })),
+    }, loop.id, update.id);
+  }
+
+  private async createRunbookRecord(
+    ownerId: string,
+    input: { title: unknown; description?: unknown; sourceIncidentId?: unknown; steps: unknown },
+    sourceLearningLoopId: string | null,
+    sourceLearningUpdateId: string | null,
+  ): Promise<RunbookRecord> {
+    const title = runbookText(input.title, 'title', 2, 160);
+    const description = input.description === undefined ? '' : runbookText(input.description, 'description', 0, 2000);
+    const steps = runbookSteps(input.steps);
+    const sourceIncidentId = input.sourceIncidentId === undefined ? null : runbookIdentifier(input.sourceIncidentId, 'sourceIncidentId');
+    if (sourceIncidentId !== null) await this.get(ownerId, sourceIncidentId);
+    if ((sourceLearningLoopId === null) !== (sourceLearningUpdateId === null) ||
+      (sourceLearningLoopId !== null && sourceIncidentId === null)) {
+      throw new AppError(400, 'runbook_invalid', 'Learning-loop provenance requires an incident and both source identifiers.');
+    }
+    const now = this.clock();
+    const runbook: RunbookRecord = {
+      id: randomUUID(), ownerId, title, description, status: 'draft', revision: 1, steps,
+      sourceIncidentId, sourceLearningLoopId, sourceLearningUpdateId,
+      createdBy: ownerId, createdAt: now, updatedAt: now, publishedAt: null,
+    };
+    const event: RunbookAuditEventRecord = {
+      id: randomUUID(), ownerId, runbookId: runbook.id, executionId: null,
+      eventType: 'runbook.created', actorId: ownerId,
+      payload: {
+        title, revision: runbook.revision, stepCount: steps.length,
+        sourceIncidentId, sourceLearningLoopId, sourceLearningUpdateId,
+      },
+      occurredAt: now,
+    };
+    const saved = await this.store.createRunbook(runbook, event);
+    if (!saved) throw new AppError(404, 'incident_not_found', 'The linked incident or learning-loop update was not found.');
+    return saved;
+  }
+
+  async listRunbooks(ownerId: string): Promise<RunbookRecord[]> {
+    return this.store.listRunbooksByOwner(ownerId, 100);
+  }
+
+  async getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord> {
+    const id = runbookIdentifier(runbookId, 'runbookId');
+    const runbook = await this.store.getRunbook(ownerId, id);
+    if (!runbook) throw new AppError(404, 'runbook_not_found', 'Runbook not found.');
+    return runbook;
+  }
+
+  async publishRunbook(ownerId: string, runbookId: string): Promise<{ runbook: RunbookRecord; changed: boolean }> {
+    const id = runbookIdentifier(runbookId, 'runbookId');
+    const current = await this.getRunbook(ownerId, id);
+    if (current.status === 'published') return { runbook: current, changed: false };
+    const now = this.clock();
+    const event: RunbookAuditEventRecord = {
+      id: randomUUID(), ownerId, runbookId: id, executionId: null,
+      eventType: 'runbook.published', actorId: ownerId,
+      payload: { title: current.title, revision: current.revision, stepCount: current.steps.length },
+      occurredAt: now,
+    };
+    const result = await this.store.publishRunbook(ownerId, id, now, event);
+    if (!result) throw new AppError(404, 'runbook_not_found', 'Runbook not found.');
+    return { runbook: result.record, changed: result.changed };
+  }
+
+  async startRunbookExecution(ownerId: string, runbookId: string): Promise<RunbookExecutionRecord> {
+    const runbook = await this.getRunbook(ownerId, runbookId);
+    if (runbook.status !== 'published') throw new AppError(409, 'runbook_not_published', 'Publish the runbook before starting an execution.');
+    const now = this.clock();
+    const execution: RunbookExecutionRecord = {
+      id: randomUUID(), ownerId, runbookId: runbook.id, runbookRevision: runbook.revision,
+      runbookTitle: runbook.title, status: 'in_progress',
+      steps: runbook.steps.map((step) => ({
+        ...step, status: 'pending', completedBy: null, completedAt: null, evidenceNote: null,
+      })),
+      startedBy: ownerId, startedAt: now, updatedAt: now, completedAt: null,
+    };
+    const event: RunbookAuditEventRecord = {
+      id: randomUUID(), ownerId, runbookId: runbook.id, executionId: execution.id,
+      eventType: 'runbook.execution.started', actorId: ownerId,
+      payload: { runbookRevision: runbook.revision, stepCount: execution.steps.length },
+      occurredAt: now,
+    };
+    const saved = await this.store.startRunbookExecution(execution, event);
+    if (!saved) throw new AppError(409, 'runbook_not_published', 'The runbook is no longer published at the requested revision.');
+    return saved;
+  }
+
+  async getRunbookExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord> {
+    const id = runbookIdentifier(executionId, 'executionId');
+    const execution = await this.store.getRunbookExecution(ownerId, id);
+    if (!execution) throw new AppError(404, 'runbook_execution_not_found', 'Runbook execution not found.');
+    return execution;
+  }
+
+  async listRunbookExecutions(ownerId: string): Promise<RunbookExecutionRecord[]> {
+    return this.store.listRunbookExecutionsByOwner(ownerId, 100);
+  }
+
+  async completeRunbookStep(ownerId: string, input: CompleteRunbookStepInput): Promise<RunbookExecutionMutationResult> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError(400, 'runbook_invalid', 'A runbook step confirmation object is required.');
+    const fields = input as Record<string, unknown>;
+    for (const key of Object.keys(fields)) {
+      if (!['executionId', 'stepId', 'confirmed', 'evidenceNote'].includes(key)) throw new AppError(400, 'runbook_invalid', 'Unknown runbook step field: ' + key);
+    }
+    const executionId = runbookIdentifier(input.executionId, 'executionId');
+    const stepId = runbookIdentifier(input.stepId, 'stepId');
+    if (input.confirmed !== true) throw new AppError(400, 'runbook_confirmation_required', 'Explicit operator confirmation is required to complete a runbook step.');
+    const evidence = input.evidenceNote === undefined ? '' : runbookText(input.evidenceNote, 'evidenceNote', 0, 2000);
+    const evidenceNote = evidence === '' ? null : evidence;
+    const current = await this.getRunbookExecution(ownerId, executionId);
+    const step = current.steps.find((item) => item.id === stepId);
+    if (!step) throw new AppError(404, 'runbook_step_not_found', 'Runbook step not found.');
+    if (current.status === 'completed' || step.status === 'completed') return { execution: current, changed: false };
+    const now = this.clock();
+    const event: RunbookAuditEventRecord = {
+      id: randomUUID(), ownerId, runbookId: current.runbookId, executionId,
+      eventType: 'runbook.execution.step_completed', actorId: ownerId,
+      payload: { stepId, stepTitle: step.title, evidenceNote },
+      occurredAt: now,
+    };
+    const result = await this.store.completeRunbookStep(ownerId, executionId, stepId, evidenceNote, event);
+    if (!result) throw new AppError(404, 'runbook_execution_not_found', 'Runbook execution or step not found.');
+    return result;
+  }
+
 
 
 }

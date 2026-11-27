@@ -1,6 +1,6 @@
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
@@ -44,6 +44,43 @@ const learningLoopRecord = (r: LearningLoopRow): IncidentLearningLoopRecord => (
   alerts: JSON.parse(r.alerts_json) as IncidentLearningLoopRecord['alerts'],
   runbookUpdates: JSON.parse(r.runbook_updates_json) as IncidentLearningLoopRecord['runbookUpdates'],
   generatedAt: Number(r.generated_at),
+});
+
+
+interface RunbookRow {
+  id: string; owner_id: string; title: string; description: string; status: 'draft' | 'published';
+  revision: number | string; steps_json: string; source_incident_id: string | null;
+  source_learning_loop_id: string | null; source_learning_update_id: string | null;
+  created_by: string; created_at: number | string; updated_at: number | string; published_at: number | string | null;
+}
+interface RunbookExecutionRow {
+  id: string; owner_id: string; runbook_id: string; runbook_revision: number | string; runbook_title: string;
+  status: 'in_progress' | 'completed'; steps_json: string; started_by: string;
+  started_at: number | string; updated_at: number | string; completed_at: number | string | null;
+}
+interface RunbookAuditEventRow {
+  id: string; owner_id: string; runbook_id: string; execution_id: string | null;
+  event_type: string; actor_id: string; payload_json: string; occurred_at: number | string;
+}
+const runbookRecord = (r: RunbookRow): RunbookRecord => ({
+  id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
+  revision: Number(r.revision), steps: JSON.parse(r.steps_json) as RunbookRecord['steps'],
+  sourceIncidentId: r.source_incident_id, sourceLearningLoopId: r.source_learning_loop_id,
+  sourceLearningUpdateId: r.source_learning_update_id, createdBy: r.created_by,
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  publishedAt: r.published_at === null ? null : Number(r.published_at),
+});
+const runbookExecutionRecord = (r: RunbookExecutionRow): RunbookExecutionRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, runbookRevision: Number(r.runbook_revision),
+  runbookTitle: r.runbook_title, status: r.status,
+  steps: JSON.parse(r.steps_json) as RunbookExecutionRecord['steps'],
+  startedBy: r.started_by, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
+  completedAt: r.completed_at === null ? null : Number(r.completed_at),
+});
+const runbookAuditEventRecord = (r: RunbookAuditEventRow): RunbookAuditEventRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, executionId: r.execution_id,
+  eventType: r.event_type, actorId: r.actor_id,
+  payload: JSON.parse(r.payload_json) as Record<string, unknown>, occurredAt: Number(r.occurred_at),
 });
 
 const takeLimit = (take: number): number => Math.max(1, Math.floor(take));
@@ -250,6 +287,180 @@ export class PostgresIncidentStore implements IncidentStore {
       await this.insertEvent(conn, event);
       return { learningLoop: learningLoopRecord(inserted.rows[0]), created: true };
     });
+  }
+
+
+
+interface RunbookRow {
+  id: string; owner_id: string; title: string; description: string; status: 'draft' | 'published';
+  revision: number | string; steps_json: string; source_incident_id: string | null;
+  source_learning_loop_id: string | null; source_learning_update_id: string | null;
+  created_by: string; created_at: number | string; updated_at: number | string; published_at: number | string | null;
+}
+interface RunbookExecutionRow {
+  id: string; owner_id: string; runbook_id: string; runbook_revision: number | string; runbook_title: string;
+  status: 'in_progress' | 'completed'; steps_json: string; started_by: string;
+  started_at: number | string; updated_at: number | string; completed_at: number | string | null;
+}
+interface RunbookAuditEventRow {
+  id: string; owner_id: string; runbook_id: string; execution_id: string | null;
+  event_type: string; actor_id: string; payload_json: string; occurred_at: number | string;
+}
+const runbookRecord = (r: RunbookRow): RunbookRecord => ({
+  id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
+  revision: Number(r.revision), steps: JSON.parse(r.steps_json) as RunbookRecord['steps'],
+  sourceIncidentId: r.source_incident_id, sourceLearningLoopId: r.source_learning_loop_id,
+  sourceLearningUpdateId: r.source_learning_update_id, createdBy: r.created_by,
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  publishedAt: r.published_at === null ? null : Number(r.published_at),
+});
+const runbookExecutionRecord = (r: RunbookExecutionRow): RunbookExecutionRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, runbookRevision: Number(r.runbook_revision),
+  runbookTitle: r.runbook_title, status: r.status,
+  steps: JSON.parse(r.steps_json) as RunbookExecutionRecord['steps'],
+  startedBy: r.started_by, startedAt: Number(r.started_at), updatedAt: Number(r.updated_at),
+  completedAt: r.completed_at === null ? null : Number(r.completed_at),
+});
+const runbookAuditEventRecord = (r: RunbookAuditEventRow): RunbookAuditEventRecord => ({
+  id: r.id, ownerId: r.owner_id, runbookId: r.runbook_id, executionId: r.execution_id,
+  eventType: r.event_type, actorId: r.actor_id,
+  payload: JSON.parse(r.payload_json) as Record<string, unknown>, occurredAt: Number(r.occurred_at),
+});
+
+
+  private async insertRunbookAuditEvent(
+    conn: { query<T = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<{ rows: T[]; rowCount: number }> },
+    event: RunbookAuditEventRecord,
+  ): Promise<void> {
+    await conn.query(`INSERT INTO runbook_audit_events
+      (id,owner_id,runbook_id,execution_id,event_type,actor_id,payload_json,occurred_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+      event.id, event.ownerId, event.runbookId, event.executionId, event.eventType,
+      event.actorId, JSON.stringify(event.payload), event.occurredAt,
+    ]);
+  }
+
+  async createRunbook(runbook: RunbookRecord, event: RunbookAuditEventRecord): Promise<RunbookRecord | null> {
+    return withTransaction(this.pool, async (conn) => {
+      if (event.ownerId !== runbook.ownerId || event.runbookId !== runbook.id || event.executionId !== null ||
+        event.eventType !== 'runbook.created' || event.actorId !== runbook.createdBy) {
+        throw new Error('runbook_creation_event_scope_mismatch');
+      }
+      if (runbook.sourceIncidentId !== null) {
+        const incident = await conn.query<{ id: string }>('SELECT id FROM incidents WHERE id = $1 AND owner_id = $2', [runbook.sourceIncidentId, runbook.ownerId]);
+        if (!incident.rows[0]) return null;
+      }
+      if (runbook.sourceLearningLoopId !== null) {
+        const loop = await conn.query<{ runbook_updates_json: string }>(
+          'SELECT runbook_updates_json FROM incident_learning_loops WHERE id = $1 AND owner_id = $2 AND incident_id = $3',
+          [runbook.sourceLearningLoopId, runbook.ownerId, runbook.sourceIncidentId],
+        );
+        if (!loop.rows[0] || !(JSON.parse(loop.rows[0].runbook_updates_json) as Array<{ id: string }>).some((update) => update.id === runbook.sourceLearningUpdateId)) return null;
+      }
+      await conn.query(`INSERT INTO runbooks
+        (id,owner_id,title,description,status,revision,steps_json,source_incident_id,source_learning_loop_id,source_learning_update_id,created_by,created_at,updated_at,published_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [
+        runbook.id, runbook.ownerId, runbook.title, runbook.description, runbook.status, runbook.revision,
+        JSON.stringify(runbook.steps), runbook.sourceIncidentId, runbook.sourceLearningLoopId,
+        runbook.sourceLearningUpdateId, runbook.createdBy, runbook.createdAt, runbook.updatedAt, runbook.publishedAt,
+      ]);
+      await this.insertRunbookAuditEvent(conn, event);
+      return runbook;
+    });
+  }
+
+  async getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord | null> {
+    const result = await this.pool.query<RunbookRow>('SELECT * FROM runbooks WHERE owner_id = $1 AND id = $2', [ownerId, runbookId]);
+    return result.rows[0] ? runbookRecord(result.rows[0]) : null;
+  }
+
+  async listRunbooksByOwner(ownerId: string, take: number): Promise<RunbookRecord[]> {
+    const result = await this.pool.query<RunbookRow>('SELECT * FROM runbooks WHERE owner_id = $1 ORDER BY updated_at DESC, id LIMIT $2', [ownerId, takeLimit(take)]);
+    return result.rows.map(runbookRecord);
+  }
+
+  async publishRunbook(ownerId: string, runbookId: string, publishedAt: number, event: RunbookAuditEventRecord): Promise<RunbookMutationResult<RunbookRecord> | null> {
+    return withTransaction(this.pool, async (conn) => {
+      const found = await conn.query<RunbookRow>('SELECT * FROM runbooks WHERE owner_id = $1 AND id = $2 FOR UPDATE', [ownerId, runbookId]);
+      if (!found.rows[0]) return null;
+      const current = runbookRecord(found.rows[0]);
+      if (current.status === 'published') return { record: current, changed: false };
+      if (event.ownerId !== ownerId || event.runbookId !== runbookId || event.executionId !== null ||
+        event.eventType !== 'runbook.published' || event.actorId !== ownerId) throw new Error('runbook_publish_event_scope_mismatch');
+      const updated = await conn.query<RunbookRow>(`UPDATE runbooks SET status = 'published', published_at = $1, updated_at = $1
+        WHERE owner_id = $2 AND id = $3 AND status = 'draft' RETURNING *`, [publishedAt, ownerId, runbookId]);
+      if (!updated.rows[0]) return null;
+      await this.insertRunbookAuditEvent(conn, event);
+      return { record: runbookRecord(updated.rows[0]), changed: true };
+    });
+  }
+
+  async startRunbookExecution(execution: RunbookExecutionRecord, event: RunbookAuditEventRecord): Promise<RunbookExecutionRecord | null> {
+    return withTransaction(this.pool, async (conn) => {
+      const found = await conn.query<RunbookRow>(`SELECT * FROM runbooks
+        WHERE owner_id = $1 AND id = $2 AND status = 'published' FOR UPDATE`, [execution.ownerId, execution.runbookId]);
+      if (!found.rows[0] || Number(found.rows[0].revision) !== execution.runbookRevision) return null;
+      if (event.ownerId !== execution.ownerId || event.runbookId !== execution.runbookId ||
+        event.executionId !== execution.id || event.eventType !== 'runbook.execution.started' ||
+        event.actorId !== execution.startedBy) throw new Error('runbook_execution_event_scope_mismatch');
+      const inserted = await conn.query<RunbookExecutionRow>(`INSERT INTO runbook_executions
+        (id,owner_id,runbook_id,runbook_revision,runbook_title,status,steps_json,started_by,started_at,updated_at,completed_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [
+        execution.id, execution.ownerId, execution.runbookId, execution.runbookRevision, execution.runbookTitle,
+        execution.status, JSON.stringify(execution.steps), execution.startedBy, execution.startedAt,
+        execution.updatedAt, execution.completedAt,
+      ]);
+      await this.insertRunbookAuditEvent(conn, event);
+      if (!inserted.rows[0]) throw new Error('runbook_execution_insert_failed');
+      return runbookExecutionRecord(inserted.rows[0]);
+    });
+  }
+
+  async getRunbookExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord | null> {
+    const result = await this.pool.query<RunbookExecutionRow>('SELECT * FROM runbook_executions WHERE owner_id = $1 AND id = $2', [ownerId, executionId]);
+    return result.rows[0] ? runbookExecutionRecord(result.rows[0]) : null;
+  }
+
+  async listRunbookExecutionsByOwner(ownerId: string, take: number): Promise<RunbookExecutionRecord[]> {
+    const result = await this.pool.query<RunbookExecutionRow>('SELECT * FROM runbook_executions WHERE owner_id = $1 ORDER BY started_at DESC, id LIMIT $2', [ownerId, takeLimit(take)]);
+    return result.rows.map(runbookExecutionRecord);
+  }
+
+  async completeRunbookStep(ownerId: string, executionId: string, stepId: string, evidenceNote: string | null, event: RunbookAuditEventRecord): Promise<RunbookExecutionMutationResult | null> {
+    return withTransaction(this.pool, async (conn) => {
+      const found = await conn.query<RunbookExecutionRow>(
+        'SELECT * FROM runbook_executions WHERE owner_id = $1 AND id = $2 FOR UPDATE', [ownerId, executionId],
+      );
+      if (!found.rows[0]) return null;
+      const current = runbookExecutionRecord(found.rows[0]);
+      const step = current.steps.find((item) => item.id === stepId);
+      if (!step) return null;
+      if (current.status === 'completed' || step.status === 'completed') return { execution: current, changed: false };
+      if (event.ownerId !== ownerId || event.runbookId !== current.runbookId || event.executionId !== executionId ||
+        event.eventType !== 'runbook.execution.step_completed' || event.actorId !== ownerId) throw new Error('runbook_step_event_scope_mismatch');
+      const completedAt = Math.max(event.occurredAt, current.startedAt, current.updatedAt);
+      const steps = current.steps.map((item) => item.id === stepId
+        ? { ...item, status: 'completed' as const, completedBy: ownerId, completedAt, evidenceNote }
+        : item);
+      const finished = steps.every((item) => item.status === 'completed');
+      const updated = await conn.query<RunbookExecutionRow>(`UPDATE runbook_executions
+        SET status = $1, steps_json = $2, updated_at = $3, completed_at = $4
+        WHERE owner_id = $5 AND id = $6 AND status = 'in_progress' RETURNING *`, [
+        finished ? 'completed' : 'in_progress', JSON.stringify(steps), completedAt,
+        finished ? completedAt : null, ownerId, executionId,
+      ]);
+      if (!updated.rows[0]) return null;
+      await this.insertRunbookAuditEvent(conn, {
+        ...event, occurredAt: completedAt,
+        payload: { ...event.payload, executionStatus: finished ? 'completed' : 'in_progress' },
+      });
+      return { execution: runbookExecutionRecord(updated.rows[0]), changed: true };
+    });
+  }
+
+  async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
+    const result = await this.pool.query<RunbookAuditEventRow>('SELECT * FROM runbook_audit_events WHERE owner_id = $1 ORDER BY occurred_at, id LIMIT $2', [ownerId, takeLimit(take)]);
+    return result.rows.map(runbookAuditEventRecord);
   }
 
 

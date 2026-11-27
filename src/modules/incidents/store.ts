@@ -1,4 +1,4 @@
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 export interface AutomaticIncidentResult {
   readonly incident: IncidentRecord;
@@ -23,4 +23,13 @@ export interface IncidentStore {
   getLearningLoop(ownerId: string, incidentId: string): Promise<IncidentLearningLoopRecord | null>;
   listLearningLoopsByOwner(ownerId: string, take: number): Promise<IncidentLearningLoopRecord[]>;
   createLearningLoop(loop: IncidentLearningLoopRecord, event: IncidentEventRecord): Promise<IncidentLearningLoopMutationResult | null>;
+  createRunbook(runbook: RunbookRecord, event: RunbookAuditEventRecord): Promise<RunbookRecord | null>;
+  getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord | null>;
+  listRunbooksByOwner(ownerId: string, take: number): Promise<RunbookRecord[]>;
+  publishRunbook(ownerId: string, runbookId: string, publishedAt: number, event: RunbookAuditEventRecord): Promise<RunbookMutationResult<RunbookRecord> | null>;
+  startRunbookExecution(execution: RunbookExecutionRecord, event: RunbookAuditEventRecord): Promise<RunbookExecutionRecord | null>;
+  getRunbookExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord | null>;
+  listRunbookExecutionsByOwner(ownerId: string, take: number): Promise<RunbookExecutionRecord[]>;
+  completeRunbookStep(ownerId: string, executionId: string, stepId: string, evidenceNote: string | null, event: RunbookAuditEventRecord): Promise<RunbookExecutionMutationResult | null>;
+  listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]>;
 }

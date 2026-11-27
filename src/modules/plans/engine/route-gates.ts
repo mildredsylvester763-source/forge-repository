@@ -319,6 +319,14 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/incidents/action-items/complete': 'OB-057',
   '/v1/incidents/learning-loop': 'OB-058',
   '/v1/incidents/learning-loop/get': 'OB-058',
+  '/v1/runbooks': 'OB-059',
+  '/v1/runbooks/get': 'OB-059',
+  '/v1/runbooks/from-learning-loop': 'OB-059',
+  '/v1/runbooks/publish': 'OB-059',
+  '/v1/runbooks/executions': 'OB-059',
+  '/v1/runbooks/executions/start': 'OB-059',
+  '/v1/runbooks/executions/get': 'OB-059',
+  '/v1/runbooks/executions/step/complete': 'OB-059',
 };
 
 /** The gate a wired route enforces, or null when the route has no catalog entry. */

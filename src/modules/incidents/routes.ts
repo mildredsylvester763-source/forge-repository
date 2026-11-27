@@ -3,6 +3,7 @@ import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.t
 import { parseFields } from '../../kernel/validate.ts';
 import { IdentityService, sessionCredential } from '../identity/index.ts';
 import type { IncidentService } from './incident-service.ts';
+import type { CompleteRunbookStepInput, CreateRunbookInput } from './types.ts';
 
 export function incidentRoutes(service: IncidentService, identity: IdentityService, cookie: { name: string }): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<string> => {
@@ -88,6 +89,61 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         const ownerId = await requireUser(ctx);
         const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
         return { status: 200, body: { learningLoop: await service.getLearningLoop(ownerId, body.incidentId) } };
+      },
+    },
+
+
+    '/v1/runbooks': {
+      GET: async (ctx): Promise<HttpResult> => ({ status: 200, body: { runbooks: await service.listRunbooks(await requireUser(ctx)) } }),
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = await ctx.json() as unknown as CreateRunbookInput;
+        return { status: 201, body: { runbook: await service.createRunbook(ownerId, body) } };
+      },
+    },
+    '/v1/runbooks/get': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { runbookId: { max: 128 } });
+        return { status: 200, body: { runbook: await service.getRunbook(ownerId, body.runbookId) } };
+      },
+    },
+    '/v1/runbooks/from-learning-loop': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 }, runbookUpdateId: { max: 128 } });
+        return { status: 201, body: { runbook: await service.createRunbookFromLearningLoop(ownerId, body) } };
+      },
+    },
+    '/v1/runbooks/publish': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { runbookId: { max: 128 } });
+        return { status: 200, body: await service.publishRunbook(ownerId, body.runbookId) };
+      },
+    },
+    '/v1/runbooks/executions': {
+      GET: async (ctx): Promise<HttpResult> => ({ status: 200, body: { executions: await service.listRunbookExecutions(await requireUser(ctx)) } }),
+    },
+    '/v1/runbooks/executions/start': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { runbookId: { max: 128 } });
+        return { status: 201, body: { execution: await service.startRunbookExecution(ownerId, body.runbookId) } };
+      },
+    },
+    '/v1/runbooks/executions/get': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { executionId: { max: 128 } });
+        return { status: 200, body: { execution: await service.getRunbookExecution(ownerId, body.executionId) } };
+      },
+    },
+    '/v1/runbooks/executions/step/complete': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = await ctx.json() as unknown as CompleteRunbookStepInput;
+        return { status: 200, body: await service.completeRunbookStep(ownerId, body) };
       },
     },
 

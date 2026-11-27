@@ -104,3 +104,66 @@ it('persists incident declarations, idempotent automatic signals and append-only
     await testPool.cleanup();
   }
 });
+
+
+it('persists published runbooks, execution snapshots and idempotent step completion in PostgreSQL', async (t) => {
+  const testPool = await makeTestPool();
+  try {
+    if (!testPool.real) {
+      t.skip('requires the CI PostgreSQL service');
+      return;
+    }
+    const now = 1_800_000_100_000;
+    const ownerId = randomUUID();
+    await testPool.pool.query(
+      'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+      [ownerId, 'runbook-pg-' + ownerId + '@forge.test', 'Postgres Runbook', 'test-hash', 'active', now, now, now, null, 1],
+    );
+    const store = new PostgresIncidentStore(testPool.pool);
+    const service = new IncidentService(store, () => now);
+    const runbook = await service.createRunbook(ownerId, {
+      title: 'Database recovery',
+      description: 'Operator-confirmed recovery procedure.',
+      steps: [{ title: 'Check replica health', instructions: 'Verify replica lag is within the approved operational range.' }],
+    });
+    assert.equal(runbook.status, 'draft');
+    const published = await service.publishRunbook(ownerId, runbook.id);
+    assert.equal(published.changed, true);
+    assert.equal(published.runbook.status, 'published');
+    const repeatedPublish = await service.publishRunbook(ownerId, runbook.id);
+    assert.equal(repeatedPublish.changed, false);
+
+    const execution = await service.startRunbookExecution(ownerId, runbook.id);
+    assert.equal(execution.status, 'in_progress');
+    const stepId = execution.steps[0]?.id;
+    assert.ok(stepId);
+    const concurrent = await Promise.all([
+      service.completeRunbookStep(ownerId, { executionId: execution.id, stepId, confirmed: true, evidenceNote: 'Replica health was checked.' }),
+      service.completeRunbookStep(ownerId, { executionId: execution.id, stepId, confirmed: true, evidenceNote: 'Duplicate operator confirmation.' }),
+    ]);
+    assert.equal(concurrent.filter((result) => result.changed).length, 1);
+    const completed = await store.getRunbookExecution(ownerId, execution.id);
+    assert.ok(completed);
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.steps[0]?.status, 'completed');
+    assert.ok(completed.steps[0]?.completedAt);
+    assert.equal(await store.getRunbookExecution(randomUUID(), execution.id), null);
+    assert.equal((await store.listRunbooksByOwner(ownerId, 10)).length, 1);
+    assert.equal((await store.listRunbookExecutionsByOwner(ownerId, 10)).length, 1);
+    const audit = await store.listRunbookAuditEventsByOwner(ownerId, 20);
+    assert.deepEqual(audit.map((event) => event.eventType), [
+      'runbook.created', 'runbook.published', 'runbook.execution.started', 'runbook.execution.step_completed',
+    ]);
+    await assert.rejects(
+      testPool.pool.query('UPDATE runbook_audit_events SET payload_json = $1 WHERE id = $2', ['{}', audit[0]!.id]),
+      /append-only/,
+    );
+    await assert.rejects(
+      testPool.pool.query('DELETE FROM runbook_audit_events WHERE id = $1', [audit[0]!.id]),
+      /append-only/,
+    );
+  } finally {
+    await testPool.pool.end();
+    await testPool.cleanup();
+  }
+});
