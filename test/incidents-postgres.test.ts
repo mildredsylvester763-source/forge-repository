@@ -58,8 +58,13 @@ it('persists incident declarations, idempotent automatic signals and append-only
     assert.equal(actionItem.status, 'open');
     assert.equal(actionItem.completedAt, null);
     now += 1;
-    const completedAction = await service.completeActionItem(ownerId, actionItem.id);
-    assert.equal(completedAction.changed, true);
+    const concurrentCompletions = await Promise.all([
+      service.completeActionItem(ownerId, actionItem.id),
+      service.completeActionItem(ownerId, actionItem.id),
+    ]);
+    assert.equal(concurrentCompletions.filter((result) => result.changed).length, 1);
+    const completedAction = concurrentCompletions.find((result) => result.changed);
+    assert.ok(completedAction);
     assert.equal(completedAction.actionItem.status, 'completed');
     assert.equal(completedAction.actionItem.completedBy, ownerId);
     const repeatedAction = await service.completeActionItem(ownerId, actionItem.id);
