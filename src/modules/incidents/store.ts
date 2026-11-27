@@ -1,4 +1,4 @@
-import type { IncidentEventRecord, IncidentRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentRecord } from './types.ts';
 
 export interface AutomaticIncidentResult {
   readonly incident: IncidentRecord;
@@ -15,4 +15,9 @@ export interface IncidentStore {
   listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]>;
   listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]>;
   listEventsByOwner(ownerId: string, take: number): Promise<IncidentEventRecord[]>;
+  createActionItem(item: IncidentActionItemRecord, event: IncidentEventRecord): Promise<IncidentActionItemRecord | null>;
+  getActionItem(ownerId: string, actionItemId: string): Promise<IncidentActionItemRecord | null>;
+  listActionItems(ownerId: string, incidentId: string, take: number): Promise<IncidentActionItemRecord[]>;
+  listActionItemsByOwner(ownerId: string, take: number): Promise<IncidentActionItemRecord[]>;
+  completeActionItem(ownerId: string, actionItemId: string, event: IncidentEventRecord): Promise<IncidentActionItemMutationResult | null>;
 }

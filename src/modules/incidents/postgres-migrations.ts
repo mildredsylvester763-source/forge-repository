@@ -50,4 +50,33 @@ export const pgIncidentMigrations: readonly Migration[] = [{
     CREATE TRIGGER incident_events_no_update BEFORE UPDATE ON incident_events
       FOR EACH ROW EXECUTE FUNCTION incident_events_block_update();
   `
+
+}, {
+  version: 2,
+  name: 'incident_action_items_tracked_to_completion',
+  sql: `
+    CREATE UNIQUE INDEX incidents_id_owner_unique ON incidents(id, owner_id);
+    CREATE TABLE incident_action_items (
+      id TEXT PRIMARY KEY,
+      incident_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 2 AND 160),
+      description TEXT NOT NULL CHECK (length(description) <= 2000),
+      status TEXT NOT NULL CHECK (status IN ('open','completed')),
+      created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at BIGINT NOT NULL CHECK (created_at >= 0),
+      updated_at BIGINT NOT NULL CHECK (updated_at >= created_at),
+      completed_by TEXT REFERENCES users(id) ON DELETE CASCADE,
+      completed_at BIGINT,
+      FOREIGN KEY (incident_id, owner_id) REFERENCES incidents(id, owner_id) ON DELETE CASCADE,
+      CHECK (
+        (status = 'open' AND completed_by IS NULL AND completed_at IS NULL) OR
+        (status = 'completed' AND completed_by IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= created_at)
+      )
+    );
+    CREATE INDEX incident_action_items_incident_created_idx
+      ON incident_action_items(owner_id, incident_id, created_at, id);
+    CREATE INDEX incident_action_items_owner_status_idx
+      ON incident_action_items(owner_id, status, created_at, id);
+  `
 }];

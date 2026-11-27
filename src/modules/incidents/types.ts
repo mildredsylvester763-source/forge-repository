@@ -82,3 +82,31 @@ export interface DeclareAutomaticIncidentInput {
   readonly title: string;
   readonly description?: string;
 }
+
+
+export type IncidentActionItemStatus = 'open' | 'completed';
+
+export interface IncidentActionItemRecord {
+  readonly id: string;
+  readonly incidentId: string;
+  readonly ownerId: string;
+  readonly title: string;
+  readonly description: string;
+  readonly status: IncidentActionItemStatus;
+  readonly createdBy: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly completedBy: string | null;
+  readonly completedAt: number | null;
+}
+
+export interface IncidentActionItemMutationResult {
+  readonly actionItem: IncidentActionItemRecord;
+  readonly changed: boolean;
+}
+
+export interface CreateIncidentActionItemInput {
+  readonly incidentId: string;
+  readonly title: string;
+  readonly description?: string;
+}

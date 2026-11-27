@@ -53,11 +53,24 @@ it('persists incident declarations, idempotent automatic signals and append-only
     assert.equal(postmortem.rootCause.text, null);
     assert.equal(postmortem.impact.text, null);
     assert.deepEqual(postmortem.evidenceEventIds, timeline.timeline.map((event) => event.id));
+    const actionItem = await service.createActionItem(ownerId, { incidentId: first.incident.id, title: 'Verify database recovery' });
+    assert.equal(actionItem.status, 'open');
+    assert.equal(actionItem.completedAt, null);
+    const completedAction = await service.completeActionItem(ownerId, actionItem.id);
+    assert.equal(completedAction.changed, true);
+    assert.equal(completedAction.actionItem.status, 'completed');
+    assert.equal(completedAction.actionItem.completedBy, ownerId);
+    const repeatedAction = await service.completeActionItem(ownerId, actionItem.id);
+    assert.equal(repeatedAction.changed, false);
+    assert.equal((await store.listActionItems(ownerId, first.incident.id, 10)).length, 1);
+    assert.equal((await store.listActionItemsByOwner(ownerId, 10))[0]?.status, 'completed');
     await assert.rejects(
       testPool.pool.query('UPDATE incident_events SET payload_json = $1 WHERE id = $2', ['{}', events[0]!.id]),
       /append-only/,
     );
     assert.equal(await store.get(randomUUID(), manual.id), null);
+    const actionEvents = await service.listEvents(ownerId, first.incident.id);
+    assert.deepEqual(actionEvents.slice(-2).map((event) => event.eventType), ['incident.action_item.created', 'incident.action_item.completed']);
   } finally {
     await testPool.pool.end();
     await testPool.cleanup();

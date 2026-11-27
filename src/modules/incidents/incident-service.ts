@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentAutoTrigger, IncidentEventRecord, IncidentPostmortemDraft, IncidentRecord } from './types.ts';
+import type { CreateIncidentActionItemInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentPostmortemDraft, IncidentRecord } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
 
@@ -136,4 +136,46 @@ export class IncidentService {
       reviewRequired: ['rootCause', 'impact'],
     };
   }
+
+  async createActionItem(ownerId: string, input: CreateIncidentActionItemInput): Promise<IncidentActionItemRecord> {
+    const incidentId = validIdentifier(input.incidentId, 'incidentId');
+    const incident = await this.get(ownerId, incidentId);
+    const title = cleanText(input.title, 'title', 2, 160);
+    const description = validDescription(input.description);
+    const now = this.clock();
+    const item: IncidentActionItemRecord = {
+      id: randomUUID(), incidentId: incident.id, ownerId, title, description,
+      status: 'open', createdBy: ownerId, createdAt: now, updatedAt: now,
+      completedBy: null, completedAt: null,
+    };
+    const event: IncidentEventRecord = {
+      id: randomUUID(), incidentId: incident.id, ownerId, eventType: 'incident.action_item.created',
+      actorKind: 'user', actorId: ownerId, source: null, externalEventId: null,
+      payload: { actionItemId: item.id, title, description }, occurredAt: now, createdAt: now,
+    };
+    const created = await this.store.createActionItem(item, event);
+    if (!created) throw new AppError(404, 'incident_not_found', 'Incident not found.');
+    return created;
+  }
+
+  async listActionItems(ownerId: string, incidentId: string): Promise<IncidentActionItemRecord[]> {
+    const incident = await this.get(ownerId, incidentId);
+    return this.store.listActionItems(ownerId, incident.id, 500);
+  }
+
+  async completeActionItem(ownerId: string, actionItemId: string): Promise<IncidentActionItemMutationResult> {
+    const id = validIdentifier(actionItemId, 'actionItemId');
+    const current = await this.store.getActionItem(ownerId, id);
+    if (!current) throw new AppError(404, 'incident_action_item_not_found', 'Action item not found.');
+    const now = this.clock();
+    const event: IncidentEventRecord = {
+      id: randomUUID(), incidentId: current.incidentId, ownerId, eventType: 'incident.action_item.completed',
+      actorKind: 'user', actorId: ownerId, source: null, externalEventId: null,
+      payload: { actionItemId: current.id, title: current.title }, occurredAt: now, createdAt: now,
+    };
+    const result = await this.store.completeActionItem(ownerId, id, event);
+    if (!result) throw new AppError(404, 'incident_action_item_not_found', 'Action item not found.');
+    return result;
+  }
+
 }

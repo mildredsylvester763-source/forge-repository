@@ -420,9 +420,10 @@ async function collectAccountModuleData(storage: Storage, userId: string, artifa
     storage.liveTesting.listPersonas(userId, null)
   ]);
 
-  const [incidentRecords, incidentEvents] = await Promise.all([
+  const [incidentRecords, incidentEvents, incidentActionItems] = await Promise.all([
     storage.incidents.listByOwner(userId, take),
-    storage.incidents.listEventsByOwner(userId, take)
+    storage.incidents.listEventsByOwner(userId, take),
+    storage.incidents.listActionItemsByOwner(userId, take)
   ]);
   const ownedStatusPages = await storage.statusPages.listPages(userId);
   const statusPages = await Promise.all(ownedStatusPages.map(async (page) => ({
@@ -453,7 +454,7 @@ async function collectAccountModuleData(storage: Storage, userId: string, artifa
       preferences: preferenceRecords, codeData: codeDataRecords, creativeWorks, tokenizers: tokenizerRecords
     },
     statusPages: { pages: statusPages },
-    incidents: { records: incidentRecords, events: incidentEvents },
+    incidents: { records: incidentRecords, events: incidentEvents, actionItems: incidentActionItems },
     accountArtifacts
   };
 }

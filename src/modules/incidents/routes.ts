@@ -51,5 +51,28 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: 200, body: await service.draftPostmortem(ownerId, body.incidentId) };
       },
     },
+    '/v1/incidents/action-items': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), {
+          incidentId: { max: 128 }, title: { max: 160 }, description: { max: 2000, optional: true },
+        });
+        return { status: 201, body: { actionItem: await service.createActionItem(ownerId, body) } };
+      },
+    },
+    '/v1/incidents/action-items/list': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { incidentId: { max: 128 } });
+        return { status: 200, body: { actionItems: await service.listActionItems(ownerId, body.incidentId) } };
+      },
+    },
+    '/v1/incidents/action-items/complete': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        const body = parseFields(await ctx.json(), { actionItemId: { max: 128 } });
+        return { status: 200, body: await service.completeActionItem(ownerId, body.actionItemId) };
+      },
+    },
   };
 }

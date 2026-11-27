@@ -1,6 +1,6 @@
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentEventRecord, IncidentRecord, IncidentStatus } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentRecord, IncidentStatus } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
@@ -12,6 +12,11 @@ interface EventRow {
   actor_id: string; source: string | null; external_event_id: string | null; payload_json: string;
   occurred_at: number | string; created_at: number | string;
 }
+interface ActionItemRow {
+  id: string; incident_id: string; owner_id: string; title: string; description: string;
+  status: 'open' | 'completed'; created_by: string; created_at: number | string; updated_at: number | string;
+  completed_by: string | null; completed_at: number | string | null;
+}
 const incidentRecord = (r: IncidentRow): IncidentRecord => ({
   id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, origin: r.origin,
   status: r.status, source: r.source, dedupeKey: r.dedupe_key, createdBy: r.created_by,
@@ -22,6 +27,11 @@ const eventRecord = (r: EventRow): IncidentEventRecord => ({
   actorKind: r.actor_kind, actorId: r.actor_id, source: r.source, externalEventId: r.external_event_id,
   payload: JSON.parse(r.payload_json) as Record<string, unknown>,
   occurredAt: Number(r.occurred_at), createdAt: Number(r.created_at),
+});
+const actionItemRecord = (r: ActionItemRow): IncidentActionItemRecord => ({
+  id: r.id, incidentId: r.incident_id, ownerId: r.owner_id, title: r.title, description: r.description,
+  status: r.status, createdBy: r.created_by, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  completedBy: r.completed_by, completedAt: r.completed_at === null ? null : Number(r.completed_at),
 });
 const takeLimit = (take: number): number => Math.max(1, Math.floor(take));
 
@@ -132,4 +142,59 @@ export class PostgresIncidentStore implements IncidentStore {
     const result = await this.pool.query<EventRow>('SELECT * FROM incident_events WHERE owner_id = $1 ORDER BY created_at, id LIMIT $2', [ownerId, takeLimit(take)]);
     return result.rows.map(eventRecord);
   }
+
+  async createActionItem(item: IncidentActionItemRecord, event: IncidentEventRecord): Promise<IncidentActionItemRecord | null> {
+    return withTransaction(this.pool, async (conn) => {
+      const inserted = await conn.query<ActionItemRow>(`INSERT INTO incident_action_items
+        (id,incident_id,owner_id,title,description,status,created_by,created_at,updated_at,completed_by,completed_at)
+        SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+        WHERE EXISTS (SELECT 1 FROM incidents WHERE id = $12 AND owner_id = $13)
+        RETURNING *`, [
+        item.id, item.incidentId, item.ownerId, item.title, item.description, item.status, item.createdBy,
+        item.createdAt, item.updatedAt, item.completedBy, item.completedAt, item.incidentId, item.ownerId,
+      ]);
+      if (!inserted.rows[0]) return null;
+      await this.insertEvent(conn, event);
+      return actionItemRecord(inserted.rows[0]);
+    });
+  }
+
+  async getActionItem(ownerId: string, actionItemId: string): Promise<IncidentActionItemRecord | null> {
+    const result = await this.pool.query<ActionItemRow>('SELECT * FROM incident_action_items WHERE owner_id = $1 AND id = $2', [ownerId, actionItemId]);
+    return result.rows[0] ? actionItemRecord(result.rows[0]) : null;
+  }
+
+  async listActionItems(ownerId: string, incidentId: string, take: number): Promise<IncidentActionItemRecord[]> {
+    const result = await this.pool.query<ActionItemRow>(`SELECT * FROM incident_action_items
+      WHERE owner_id = $1 AND incident_id = $2 ORDER BY created_at, id LIMIT $3`, [ownerId, incidentId, takeLimit(take)]);
+    return result.rows.map(actionItemRecord);
+  }
+
+  async listActionItemsByOwner(ownerId: string, take: number): Promise<IncidentActionItemRecord[]> {
+    const result = await this.pool.query<ActionItemRow>('SELECT * FROM incident_action_items WHERE owner_id = $1 ORDER BY created_at, id LIMIT $2', [ownerId, takeLimit(take)]);
+    return result.rows.map(actionItemRecord);
+  }
+
+  async completeActionItem(ownerId: string, actionItemId: string, event: IncidentEventRecord): Promise<IncidentActionItemMutationResult | null> {
+    return withTransaction(this.pool, async (conn) => {
+      const found = await conn.query<ActionItemRow>(
+        'SELECT * FROM incident_action_items WHERE owner_id = $1 AND id = $2 FOR UPDATE', [ownerId, actionItemId],
+      );
+      if (!found.rows[0]) return null;
+      const current = actionItemRecord(found.rows[0]);
+      if (current.status === 'completed') return { actionItem: current, changed: false };
+      const completedAt = Math.max(event.occurredAt, current.createdAt, current.updatedAt);
+      const updated = await conn.query<ActionItemRow>(`UPDATE incident_action_items
+        SET status = 'completed', completed_by = $1, completed_at = $2, updated_at = $2
+        WHERE owner_id = $3 AND id = $4 AND status = 'open' RETURNING *`,
+      [event.actorId, completedAt, ownerId, actionItemId]);
+      if (!updated.rows[0]) return null;
+      await this.insertEvent(conn, {
+        ...event, incidentId: current.incidentId, occurredAt: completedAt,
+        createdAt: Math.max(event.createdAt, completedAt),
+      });
+      return { actionItem: actionItemRecord(updated.rows[0]), changed: true };
+    });
+  }
+
 }

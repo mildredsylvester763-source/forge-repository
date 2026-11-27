@@ -293,3 +293,113 @@ describe('incident declaration (OB-041)', () => {
     }
   });
 });
+
+
+describe('incident action items (OB-057)', () => {
+  it('creates, lists and completes Plus-gated action items with owner isolation and idempotent completion', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'incident-actions-owner@forge.test');
+      const other = await signedIn(h, 'incident-actions-other@forge.test');
+      const free = await signedIn(h, 'incident-actions-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
+      await h.app.plans.setPlan(other.userId, 'plus');
+
+      const incidentResponse = await h.post('/v1/incidents', { title: 'Action item incident' }, { cookie: owner.cookie });
+      assert.equal(incidentResponse.status, 201);
+      const incident = (await incidentResponse.json() as { incident: { id: string } }).incident;
+
+      const unauthenticated = await h.post('/v1/incidents/action-items', { incidentId: incident.id, title: 'Check recovery' });
+      assert.equal(unauthenticated.status, 401);
+      const freeDenied = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Check recovery',
+      }, { cookie: free.cookie });
+      assert.equal(freeDenied.status, 402);
+      assert.equal(await errorCode(freeDenied), 'plan_required');
+
+      const created = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Verify service recovery', description: 'Confirm the API health check is stable.',
+      }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const actionItem = (await created.json() as { actionItem: {
+        id: string; incidentId: string; ownerId: string; title: string; status: string;
+        createdBy: string; completedBy: string | null; completedAt: number | null;
+      } }).actionItem;
+      assert.equal(actionItem.incidentId, incident.id);
+      assert.equal(actionItem.ownerId, owner.userId);
+      assert.equal(actionItem.createdBy, owner.userId);
+      assert.equal(actionItem.status, 'open');
+      assert.equal(actionItem.completedBy, null);
+      assert.equal(actionItem.completedAt, null);
+
+      const listed = await h.post('/v1/incidents/action-items/list', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(listed.status, 200);
+      assert.deepEqual(((await listed.json()) as { actionItems: Array<{ id: string }> }).actionItems.map((item) => item.id), [actionItem.id]);
+
+      const foreignList = await h.post('/v1/incidents/action-items/list', { incidentId: incident.id }, { cookie: other.cookie });
+      assert.equal(foreignList.status, 404);
+      const foreignComplete = await h.post('/v1/incidents/action-items/complete', { actionItemId: actionItem.id }, { cookie: other.cookie });
+      assert.equal(foreignComplete.status, 404);
+      assert.equal(await errorCode(foreignComplete), 'incident_action_item_not_found');
+
+      h.clock.now += 1000;
+      const completedResponse = await h.post('/v1/incidents/action-items/complete', {
+        actionItemId: actionItem.id,
+      }, { cookie: owner.cookie });
+      assert.equal(completedResponse.status, 200);
+      const completed = await completedResponse.json() as { actionItem: {
+        status: string; completedBy: string | null; completedAt: number | null;
+      }; changed: boolean };
+      assert.equal(completed.changed, true);
+      assert.equal(completed.actionItem.status, 'completed');
+      assert.equal(completed.actionItem.completedBy, owner.userId);
+      assert.equal(completed.actionItem.completedAt, h.clock.now);
+
+      const repeated = await h.post('/v1/incidents/action-items/complete', {
+        actionItemId: actionItem.id,
+      }, { cookie: owner.cookie });
+      assert.equal(repeated.status, 200);
+      assert.equal(((await repeated.json()) as { changed: boolean }).changed, false);
+      const events = await h.app.incidents.listEvents(owner.userId, incident.id);
+      assert.deepEqual(events.map((event) => event.eventType), [
+        'incident.declared', 'incident.action_item.created', 'incident.action_item.completed',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('persists action items in SQLite and includes them in the owner data export', async () => {
+    const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const owner = await signedIn(h, 'incident-actions-sqlite@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
+      const incidentResponse = await h.post('/v1/incidents', { title: 'SQLite action item incident' }, { cookie: owner.cookie });
+      assert.equal(incidentResponse.status, 201);
+      const incident = (await incidentResponse.json() as { incident: { id: string } }).incident;
+      const created = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Verify SQLite persistence',
+      }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const item = (await created.json() as { actionItem: { id: string } }).actionItem;
+      const completed = await h.post('/v1/incidents/action-items/complete', { actionItemId: item.id }, { cookie: owner.cookie });
+      assert.equal(completed.status, 200);
+
+      const listed = await h.post('/v1/incidents/action-items/list', { incidentId: incident.id }, { cookie: owner.cookie });
+      const items = ((await listed.json()) as { actionItems: Array<{ id: string; status: string }> }).actionItems;
+      assert.equal(items.length, 1);
+      assert.equal(items[0]?.status, 'completed');
+
+      const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = await exported.json() as {
+        modules: { incidents: { actionItems: Array<{ id: string; status: string }> } };
+      };
+      assert.equal(bundle.modules.incidents.actionItems.length, 1);
+      assert.equal(bundle.modules.incidents.actionItems[0]?.id, item.id);
+      assert.equal(bundle.modules.incidents.actionItems[0]?.status, 'completed');
+    } finally {
+      await h.close();
+    }
+  });
+});
