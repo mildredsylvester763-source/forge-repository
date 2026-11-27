@@ -167,9 +167,7 @@ export const pgIncidentMigrations: readonly Migration[] = [{
       FOREIGN KEY (execution_id, owner_id) REFERENCES runbook_executions(id, owner_id) ON DELETE CASCADE
     );
     CREATE INDEX runbook_audit_events_owner_time_idx ON runbook_audit_events(owner_id, occurred_at, id);
-    CREATE FUNCTION runbook_audit_events_block_mutation() RETURNS trigger LANGUAGE plpgsql AS $
-    BEGIN RAISE EXCEPTION 'runbook audit events are append-only'; END;
-    $;
+    CREATE FUNCTION runbook_audit_events_block_mutation() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''runbook audit events are append-only''; END;';
     CREATE TRIGGER runbook_audit_events_no_update BEFORE UPDATE ON runbook_audit_events
       FOR EACH ROW EXECUTE FUNCTION runbook_audit_events_block_mutation();
     CREATE TRIGGER runbook_audit_events_no_delete BEFORE DELETE ON runbook_audit_events
