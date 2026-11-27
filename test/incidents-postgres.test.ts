@@ -98,7 +98,7 @@ it('persists incident declarations, idempotent automatic signals and append-only
     );
     assert.equal(await store.get(randomUUID(), manual.id), null);
     const actionEvents = await service.listEvents(ownerId, first.incident.id);
-    assert.deepEqual(actionEvents.slice(-2).map((event) => event.eventType), ['incident.action_item.created', 'incident.action_item.completed']);
+    assert.deepEqual(actionEvents.filter((event) => event.eventType.startsWith('incident.action_item.')).map((event) => event.eventType), ['incident.action_item.created', 'incident.action_item.completed']);
   } finally {
     await testPool.pool.end();
     await testPool.cleanup();
