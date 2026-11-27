@@ -369,7 +369,7 @@ export class IncidentService {
 
   async createRunbook(ownerId: string, input: CreateRunbookInput): Promise<RunbookRecord> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError(400, 'runbook_invalid', 'A runbook object is required.');
-    const fields = input as Record<string, unknown>;
+    const fields = input as unknown as Record<string, unknown>;
     for (const key of Object.keys(fields)) {
       if (!['title', 'description', 'steps', 'sourceIncidentId'].includes(key)) throw new AppError(400, 'runbook_invalid', 'Unknown runbook field: ' + key);
     }
@@ -500,7 +500,7 @@ export class IncidentService {
 
   async completeRunbookStep(ownerId: string, input: CompleteRunbookStepInput): Promise<RunbookExecutionMutationResult> {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError(400, 'runbook_invalid', 'A runbook step confirmation object is required.');
-    const fields = input as Record<string, unknown>;
+    const fields = input as unknown as Record<string, unknown>;
     for (const key of Object.keys(fields)) {
       if (!['executionId', 'stepId', 'confirmed', 'evidenceNote'].includes(key)) throw new AppError(400, 'runbook_invalid', 'Unknown runbook step field: ' + key);
     }
