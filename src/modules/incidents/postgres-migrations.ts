@@ -110,4 +110,4 @@ export const pgIncidentMigrations: readonly Migration[] = [{
       FOR EACH ROW EXECUTE FUNCTION incident_learning_loops_block_update();
   `
 }
-}];
+];

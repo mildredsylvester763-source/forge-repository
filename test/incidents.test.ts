@@ -450,3 +450,140 @@ describe('incident learning loop persistence (OB-058)', () => {
     }
   });
 });
+
+
+describe('incident learning loop API (OB-058)', () => {
+  it('is Pro-gated, owner-scoped, evidence-linked and idempotent across evidence revisions', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'incident-learning-api-owner@forge.test');
+      const other = await signedIn(h, 'incident-learning-api-other@forge.test');
+      const free = await signedIn(h, 'incident-learning-api-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      await h.app.plans.setPlan(other.userId, 'pro');
+
+      const declared = await h.post('/v1/incidents', {
+        title: 'Learning loop incident', description: 'Requests failed during a production deploy.',
+      }, { cookie: owner.cookie });
+      assert.equal(declared.status, 201);
+      const incident = (await declared.json() as { incident: { id: string } }).incident;
+
+      assert.equal((await h.post('/v1/incidents/learning-loop', { incidentId: incident.id })).status, 401);
+      const denied = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: free.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const generated = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(generated.status, 201);
+      const first = await generated.json() as {
+        created: boolean;
+        learningLoop: {
+          id: string; revision: number; fingerprint: string; evidenceEventIds: string[];
+          tests: Array<{ status: string; requiresCodeBinding: boolean }>;
+          alerts: Array<{ status: string; enabled: boolean; threshold: null; match: string; requiresOwnerInput: string[] }>;
+          runbookUpdates: Array<{ status: string; published: boolean; requiresOwnerReview: boolean; actionItems: unknown[] }>;
+        };
+      };
+      assert.equal(first.created, true);
+      assert.equal(first.learningLoop.revision, 1);
+      assert.match(first.learningLoop.fingerprint, /^[0-9a-f]{64}$/);
+      assert.equal(first.learningLoop.evidenceEventIds.length, 1);
+      assert.equal(first.learningLoop.tests.length, 1);
+      assert.equal(first.learningLoop.tests[0]?.status, 'draft');
+      assert.equal(first.learningLoop.tests[0]?.requiresCodeBinding, true);
+      assert.equal(first.learningLoop.alerts.length, 1);
+      assert.equal(first.learningLoop.alerts[0]?.status, 'draft');
+      assert.equal(first.learningLoop.alerts[0]?.enabled, false);
+      assert.equal(first.learningLoop.alerts[0]?.threshold, null);
+      assert.equal(first.learningLoop.alerts[0]?.match, 'needs_owner_input');
+      assert.ok(first.learningLoop.alerts[0]?.requiresOwnerInput.includes('source'));
+      assert.equal(first.learningLoop.runbookUpdates.length, 1);
+      assert.equal(first.learningLoop.runbookUpdates[0]?.status, 'draft');
+      assert.equal(first.learningLoop.runbookUpdates[0]?.published, false);
+      assert.equal(first.learningLoop.runbookUpdates[0]?.requiresOwnerReview, true);
+      assert.deepEqual(first.learningLoop.runbookUpdates[0]?.actionItems, []);
+
+      const historyAfterFirst = await h.app.incidents.listEvents(owner.userId, incident.id);
+      const generatedEvent = historyAfterFirst.find((event) => event.eventType === 'incident.learning.generated');
+      assert.ok(generatedEvent);
+      assert.equal(first.learningLoop.evidenceEventIds.includes(generatedEvent.id), false);
+
+      const repeated = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(repeated.status, 200);
+      const repeatedBody = await repeated.json() as { created: boolean; learningLoop: { id: string } };
+      assert.equal(repeatedBody.created, false);
+      assert.equal(repeatedBody.learningLoop.id, first.learningLoop.id);
+      assert.equal((await h.app.incidents.listEvents(owner.userId, incident.id)).filter((event) => event.eventType === 'incident.learning.generated').length, 1);
+
+      const fetched = await h.post('/v1/incidents/learning-loop/get', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(fetched.status, 200);
+      assert.equal(((await fetched.json()) as { learningLoop: { id: string } }).learningLoop.id, first.learningLoop.id);
+      const foreign = await h.post('/v1/incidents/learning-loop/get', { incidentId: incident.id }, { cookie: other.cookie });
+      assert.equal(foreign.status, 404);
+      assert.equal(await errorCode(foreign), 'incident_not_found');
+
+      const action = await h.post('/v1/incidents/action-items', {
+        incidentId: incident.id, title: 'Verify recovery procedure', description: 'Confirm the service remains healthy.',
+      }, { cookie: owner.cookie });
+      assert.equal(action.status, 201);
+      const actionItem = (await action.json() as { actionItem: { id: string } }).actionItem;
+      h.clock.now += 1;
+      const completed = await h.post('/v1/incidents/action-items/complete', { actionItemId: actionItem.id }, { cookie: owner.cookie });
+      assert.equal(completed.status, 200);
+
+      const regenerated = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(regenerated.status, 201);
+      const second = await regenerated.json() as {
+        created: boolean;
+        learningLoop: {
+          revision: number;
+          tests: Array<{ title: string }>;
+          runbookUpdates: Array<{ actionItems: Array<{ id: string; status: string }> }>;
+        };
+      };
+      assert.equal(second.created, true);
+      assert.equal(second.learningLoop.revision, 2);
+      assert.ok(second.learningLoop.tests.some((candidate) => candidate.title.includes('action-item completion')));
+      assert.deepEqual(second.learningLoop.runbookUpdates[0]?.actionItems.map((item) => [item.id, item.status]), [[actionItem.id, 'completed']]);
+
+      const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = await exported.json() as {
+        modules: { incidents: { learningLoops: Array<{ id: string; revision: number }> } };
+      };
+      assert.deepEqual(bundle.modules.incidents.learningLoops.map((loop) => loop.revision), [1, 2]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('proposes only exact observed source/signal alert matches and never activates them', async () => {
+    const h: Harness = await startHarness({
+      FORGE_INCIDENT_AUTO_TRIGGERS: JSON.stringify([{ source: 'monitor', signal: 'service_unavailable' }]),
+    });
+    try {
+      const owner = await signedIn(h, 'incident-learning-api-alert@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      const declared = await h.post('/v1/incidents/automatic', {
+        source: 'monitor', signal: 'service_unavailable', eventId: 'learning-alert-event-1',
+        dedupeKey: 'learning-alert-api', title: 'API unavailable',
+      }, { cookie: owner.cookie });
+      assert.equal(declared.status, 201);
+      const incident = (await declared.json() as { incident: { id: string } }).incident;
+      const generated = await h.post('/v1/incidents/learning-loop', { incidentId: incident.id }, { cookie: owner.cookie });
+      assert.equal(generated.status, 201);
+      const body = await generated.json() as {
+        learningLoop: { alerts: Array<{ source: string | null; signal: string | null; match: string; enabled: boolean; threshold: null; requiresOwnerInput: string[] }> };
+      };
+      const alert = body.learningLoop.alerts[0];
+      assert.equal(alert?.source, 'monitor');
+      assert.equal(alert?.signal, 'service_unavailable');
+      assert.equal(alert?.match, 'exact_source_signal');
+      assert.equal(alert?.enabled, false);
+      assert.equal(alert?.threshold, null);
+      assert.deepEqual(alert?.requiresOwnerInput, ['threshold', 'notification_routing']);
+    } finally {
+      await h.close();
+    }
+  });
+});

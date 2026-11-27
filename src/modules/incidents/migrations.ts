@@ -104,4 +104,4 @@ export const incidentMigrations: readonly Migration[] = [{
       BEGIN SELECT RAISE(ABORT, 'incident learning loops are append-only'); END;
   `
 }
-}];
+];
