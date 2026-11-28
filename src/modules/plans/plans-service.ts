@@ -19,6 +19,7 @@ import { signPaymentPayload } from './payment-provider.ts';
 import { signAccessSnapshot } from './access-snapshot-signature.ts';
 import type { BillingStore } from './billing-store.ts';
 import type { PlanStore } from './plans-store.ts';
+import type { WorkspaceStore } from '../workspaces/store.ts';
 import { PLANS_EVENT_VERSION, PlansEvents } from './events.ts';
 
 const FREE_ENGINE_MONTHLY_COST_CAP_USD_MICROS = 200_000;
@@ -73,6 +74,8 @@ export interface PlansDeps {
   readonly rateLimits: { readonly user: RateLimitRule | null; readonly device: RateLimitRule | null };
   /** CO-093: the shared-store limiter the gateway drains when one is wired (multi-replica honest). Optional: without it the in-process buckets stay. */
   readonly rateLimitStore?: SharedRateLimiter;
+  /** Catalogue seat minimum for Team-only feature families. */
+  readonly workspaceStore?: WorkspaceStore;
   /** Hook 9: how many hours a signed access snapshot stays valid. */
   readonly accessSnapshotTtlHours: number;
   /** Hook 9: server HMAC and domain-separated Ed25519 signing secret for access snapshots. */
@@ -107,6 +110,7 @@ export class PlansService {
   private readonly countryCatalog: readonly CountryRow[];
   private readonly rateLimits: { readonly user: RateLimitRule | null; readonly device: RateLimitRule | null };
   private readonly rateLimitStore: SharedRateLimiter | null;
+  private readonly workspaceStore: WorkspaceStore | null;
   private readonly accessSnapshotTtlHours: number;
   private readonly accessSecret: Buffer;
   private readonly allowTestPlanWrites: boolean;
@@ -126,6 +130,7 @@ export class PlansService {
     this.countryCatalog = deps.countryCatalog;
     this.rateLimits = deps.rateLimits;
     this.rateLimitStore = deps.rateLimitStore ?? null;
+    this.workspaceStore = deps.workspaceStore ?? null;
     this.accessSnapshotTtlHours = deps.accessSnapshotTtlHours;
     this.accessSecret = deps.accessSecret;
     this.allowTestPlanWrites = deps.allowTestPlanWrites ?? false;
@@ -210,12 +215,19 @@ export class PlansService {
       }
     }
     const items = userId === null ? [] : await this.billing.listItems(userId);
-    return decideUse({
-      items,
-      feature,
-      config: this.access,
-      now: this.clock(),
-    });
+    const decision = decideUse({ items, feature, config: this.access, now: this.clock() });
+    if (!decision.allowed || decision.reason !== 'unlocked' || decision.plan !== 'team' || !['OB-064', 'OB-065', 'OB-066'].includes(feature)) return decision;
+    if (!this.workspaceStore) throw new AppError(503, 'team_seat_check_unavailable', 'Team seat verification is unavailable.');
+    try {
+      const ownedWorkspaces = await this.workspaceStore.findByOwner(userId!);
+      for (const workspace of ownedWorkspaces) {
+        const members = await this.workspaceStore.listMembers(workspace.id);
+        if (new Set(members.map((member) => member.userId)).size >= 3) return decision;
+      }
+    } catch {
+      throw new AppError(503, 'team_seat_check_unavailable', 'Team seat verification is unavailable.');
+    }
+    return { ...decision, allowed: false, reason: 'team_seats_required' };
   }
 
   /** The effective state is derived exclusively from live subscription items (Hook 1). */

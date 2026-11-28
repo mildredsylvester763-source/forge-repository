@@ -551,6 +551,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     accessSecret: config.plans.accessSecret,
     allowTestPlanWrites: config.env === 'test',
     rateLimitStore: storage.rateLimitStore,
+    workspaceStore: storage.workspaces,
     accountDataExport: (userId) => collectAccountModuleData(storage, userId, overrides.accountArtifactExport),
   });
   const offlineSync = new OfflineSyncService({ store: storage.offlineSync, clock });
@@ -580,7 +581,6 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...config.cookie,
     deviceName: config.env === 'production' ? '__Host-forge_device' : 'forge_device',
     deviceSecret: config.plans.accessSecret,
-    workspaceStore: storage.workspaces,
   });
 
   const handler = createHttpHandler({

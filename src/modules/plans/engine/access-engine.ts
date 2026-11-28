@@ -51,7 +51,7 @@ export interface AccessDecision {
   readonly engineLevels: Readonly<Record<string, AccessLevel>> | null;
   /** Overall feature level: paid only when every engine named by the feature is paid. */
   readonly level: AccessLevel | null;
-  readonly reason: 'unlocked' | 'plan_too_low' | 'engine_paid' | 'engine_free_level' | 'internal' | 'feature_off' | 'gates_disabled';
+  readonly reason: 'unlocked' | 'plan_too_low' | 'engine_paid' | 'engine_free_level' | 'internal' | 'feature_off' | 'gates_disabled' | 'team_seats_required';
   /** The free-level numbers, present only when the free-engine fallback applied. */
   readonly limits: FreeEngineLimits | null;
 }

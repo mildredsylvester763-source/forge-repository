@@ -1117,6 +1117,9 @@ describe('incident drills and game days (OB-064)', () => {
       await h.app.workspaces.addMember(workspaceId, other.userId, 'member');
       const belowMinimum = await h.post('/v1/incidents/drills', payload, { cookie: owner.cookie });
       assert.equal(belowMinimum.status, 402); assert.equal(await errorCode(belowMinimum), 'team_seats_required');
+      const planCheck = await h.post('/v1/plans/check', { featureId: 'OB-064' }, { cookie: owner.cookie });
+      const planDecision = (await planCheck.json()) as { decision: { allowed: boolean; reason: string } };
+      assert.equal(planCheck.status, 200); assert.equal(planDecision.decision.allowed, false); assert.equal(planDecision.decision.reason, 'team_seats_required');
       await h.app.workspaces.addMember(workspaceId, free.userId, 'member');
       await addThreeSeatWorkspace(h, other.userId, [owner.userId, free.userId]);
       const created = await h.post('/v1/incidents/drills', payload, { cookie: owner.cookie });

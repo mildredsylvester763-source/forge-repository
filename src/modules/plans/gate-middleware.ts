@@ -4,7 +4,6 @@ import { serializeCookie, type HttpResult, type Method, type RouteHandler, type 
 import { IdentityService } from '../identity/index.ts';
 import { gateForRoute } from './engine/route-gates.ts';
 import type { PlansService } from './plans-service.ts';
-import type { WorkspaceStore } from '../workspaces/store.ts';
 
 /**
  * Wraps the merged route table with the PLAN GATE LAW through the ONE access check (Hook 2):
@@ -53,7 +52,7 @@ export function applyRouteGates(
   routes: RouteTable,
   plans: PlansService,
   identity: IdentityService,
-  cookie: { name: string; secure: boolean; deviceName: string; deviceSecret: Buffer; workspaceStore?: WorkspaceStore },
+  cookie: { name: string; secure: boolean; deviceName: string; deviceSecret: Buffer },
 ): RouteTable {
   const wrapped: RouteTable = {};
   for (const [path, entry] of Object.entries(routes)) {
@@ -76,7 +75,8 @@ export function applyRouteGates(
                 details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
               });
             }
-            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`, {
+            if (verdict.reason === 'team_seats_required') throw new AppError(402, 'team_seats_required', 'This Team feature requires at least three workspace seats.', { details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, minimumSeats: 3 } });
+            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`,
               details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
             });
           }
@@ -120,27 +120,10 @@ export function applyRouteGates(
                 details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
               });
             }
-            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`, {
+            if (verdict.reason === 'team_seats_required') throw new AppError(402, 'team_seats_required', 'This Team feature requires at least three workspace seats.', { details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, minimumSeats: 3 } });
+            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`,
               details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
             });
-          }
-          if (decision.feature === 'OB-064' || decision.feature === 'OB-065' || decision.feature === 'OB-066') {
-            if (verdict.plan === 'team') {
-              if (!cookie.workspaceStore) throw new AppError(503, 'team_seat_check_unavailable', 'Team seat verification is unavailable.');
-              let hasMinimumSeats = false;
-              try {
-                const ownedWorkspaces = await cookie.workspaceStore.findByOwner(auth.user.id);
-                for (const workspace of ownedWorkspaces) {
-                  const members = await cookie.workspaceStore.listMembers(workspace.id);
-                  if (new Set(members.map((member) => member.userId)).size >= 3) { hasMinimumSeats = true; break; }
-                }
-              } catch {
-                throw new AppError(503, 'team_seat_check_unavailable', 'Team seat verification is unavailable.');
-              }
-              if (!hasMinimumSeats) throw new AppError(402, 'team_seats_required', 'This Team feature requires at least three workspace seats. Studio and higher plans are not subject to this Team seat minimum.', {
-                details: { feature: decision.feature, gate: 'team', plan: verdict.plan, minimumSeats: 3 },
-              });
-            }
           }
           const result = await handler(ctx);
           return deviceCookie === null ? result : appendDeviceCookie(result, deviceCookie);
