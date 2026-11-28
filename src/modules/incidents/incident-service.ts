@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
+import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
 
@@ -50,6 +50,12 @@ function validIdentifier(value: unknown, field: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(cleaned)) throw new AppError(400, 'incident_invalid', field + ' contains unsupported characters.');
   return cleaned;
 }
+function incidentSearchTerms(incident: IncidentRecord): Set<string> {
+  const text = [incident.title, incident.description, incident.source ?? ''].join(' ')
+    .normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+  return new Set(text.match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+}
+
 function validDescription(value: unknown): string {
   if (value === undefined) return '';
   if (typeof value !== 'string' || value.trim().length > 2000) throw new AppError(400, 'incident_invalid', 'description must not exceed 2000 characters.');
@@ -112,6 +118,39 @@ export class IncidentService {
 
   async list(ownerId: string): Promise<IncidentRecord[]> {
     return this.store.listByOwner(ownerId, 100);
+  }
+
+  async searchSimilarPastIncidents(ownerId: string, incidentId: string): Promise<SimilarPastIncidentSearchResult> {
+    const source = await this.get(ownerId, incidentId);
+    const candidates = await this.store.listBefore(ownerId, source.createdAt, 1001);
+    const searched = candidates.slice(0, 1000);
+    const sourceTerms = incidentSearchTerms(source);
+    const matches: SimilarPastIncidentMatch[] = [];
+    for (const candidate of searched) {
+      const candidateTerms = incidentSearchTerms(candidate);
+      const matchingTerms = [...sourceTerms].filter((term) => candidateTerms.has(term)).sort();
+      if (matchingTerms.length === 0) continue;
+      const unionSize = new Set([...sourceTerms, ...candidateTerms]).size;
+      if (unionSize === 0) continue;
+      matches.push({
+        id: candidate.id,
+        title: candidate.title,
+        description: candidate.description,
+        origin: candidate.origin,
+        source: candidate.source,
+        createdAt: candidate.createdAt,
+        similarityScore: Number((matchingTerms.length / unionSize).toFixed(4)),
+        matchingTerms,
+      });
+    }
+    matches.sort((a, b) => b.similarityScore - a.similarityScore || b.createdAt - a.createdAt || a.id.localeCompare(b.id));
+    return {
+      sourceIncidentId: source.id,
+      method: 'token-jaccard-v1',
+      searchedIncidentCount: searched.length,
+      historyTruncated: candidates.length > 1000,
+      matches: matches.slice(0, 20),
+    };
   }
 
   async get(ownerId: string, incidentId: string): Promise<IncidentRecord> {

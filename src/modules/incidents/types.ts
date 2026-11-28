@@ -16,6 +16,25 @@ export interface IncidentRecord {
   readonly updatedAt: number;
 }
 
+export interface SimilarPastIncidentMatch {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly origin: IncidentOrigin;
+  readonly source: string | null;
+  readonly createdAt: number;
+  readonly similarityScore: number;
+  readonly matchingTerms: readonly string[];
+}
+
+export interface SimilarPastIncidentSearchResult {
+  readonly sourceIncidentId: string;
+  readonly method: 'token-jaccard-v1';
+  readonly searchedIncidentCount: number;
+  readonly historyTruncated: boolean;
+  readonly matches: readonly SimilarPastIncidentMatch[];
+}
+
 export interface IncidentEventRecord {
   readonly id: string;
   readonly incidentId: string;

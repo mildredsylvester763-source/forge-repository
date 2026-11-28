@@ -182,6 +182,11 @@ export class PostgresIncidentStore implements IncidentStore {
     return result.rows.map(incidentRecord);
   }
 
+  async listBefore(ownerId: string, createdBeforeExclusive: number, take: number): Promise<IncidentRecord[]> {
+    const result = await this.pool.query<IncidentRow>('SELECT * FROM incidents WHERE owner_id = $1 AND created_at < $2 ORDER BY created_at DESC, id LIMIT $3', [ownerId, createdBeforeExclusive, takeLimit(take)]);
+    return result.rows.map(incidentRecord);
+  }
+
   async listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]> {
     const result = await this.pool.query<EventRow>(`SELECT * FROM incident_events WHERE owner_id = $1 AND incident_id = $2
       ORDER BY occurred_at, created_at, id LIMIT $3`, [ownerId, incidentId, takeLimit(take)]);

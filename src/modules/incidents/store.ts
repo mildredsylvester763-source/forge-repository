@@ -13,6 +13,7 @@ export interface IncidentStore {
   declareAutomatic(incident: IncidentRecord, event: IncidentEventRecord): Promise<AutomaticIncidentResult>;
   get(ownerId: string, incidentId: string): Promise<IncidentRecord | null>;
   listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]>;
+  listBefore(ownerId: string, createdBeforeExclusive: number, take: number): Promise<IncidentRecord[]>;
   listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]>;
   listEventsByOwner(ownerId: string, take: number): Promise<IncidentEventRecord[]>;
   createActionItem(item: IncidentActionItemRecord, event: IncidentEventRecord): Promise<IncidentActionItemRecord | null>;

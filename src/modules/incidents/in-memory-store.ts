@@ -55,6 +55,13 @@ export class InMemoryIncidentStore implements IncidentStore {
       .slice(0, boundedTake(take)).map(copy);
   }
 
+  async listBefore(ownerId: string, createdBeforeExclusive: number, take: number): Promise<IncidentRecord[]> {
+    return [...this.incidents.values()]
+      .filter((item) => item.ownerId === ownerId && item.createdAt < createdBeforeExclusive)
+      .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+      .slice(0, boundedTake(take)).map(copy);
+  }
+
   async listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]> {
     return [...this.events.values()]
       .filter((item) => item.ownerId === ownerId && item.incidentId === incidentId)

@@ -174,6 +174,12 @@ export class SqliteIncidentStore implements IncidentStore {
     return rows.map(incidentRecord);
   }
 
+  async listBefore(ownerId: string, createdBeforeExclusive: number, take: number): Promise<IncidentRecord[]> {
+    const rows = this.db.prepare('SELECT * FROM incidents WHERE owner_id = ? AND created_at < ? ORDER BY created_at DESC, id LIMIT ?')
+      .all(ownerId, createdBeforeExclusive, takeLimit(take)) as unknown as IncidentRow[];
+    return rows.map(incidentRecord);
+  }
+
   async listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]> {
     const rows = this.db.prepare(`SELECT * FROM incident_events WHERE owner_id = ? AND incident_id = ?
       ORDER BY occurred_at, created_at, id LIMIT ?`).all(ownerId, incidentId, takeLimit(take)) as unknown as EventRow[];

@@ -313,6 +313,7 @@ export const ROUTE_GATES: Readonly<Record<string, string>> = {
   '/v1/incidents/get': 'OB-041',
   '/v1/incidents/automatic': 'OB-041',
   '/v1/incidents/timeline': 'OB-055',
+  '/v1/incidents/similar': 'OB-060',
   '/v1/incidents/postmortem/draft': 'OB-056',
   '/v1/incidents/action-items': 'OB-057',
   '/v1/incidents/action-items/list': 'OB-057',

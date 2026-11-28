@@ -168,3 +168,50 @@ it('persists published runbooks, execution snapshots and idempotent step complet
     await testPool.cleanup();
   }
 });
+
+
+
+it('searches similar prior incidents within the owner-scoped PostgreSQL history', async (t) => {
+  const testPool = await makeTestPool();
+  try {
+    if (!testPool.real) {
+      t.skip('requires the CI PostgreSQL service');
+      return;
+    }
+    let now = 1_800_000_200_000;
+    const ownerId = randomUUID();
+    const otherId = randomUUID();
+    for (const [id, label] of [[ownerId, 'owner'], [otherId, 'other']] as const) {
+      await testPool.pool.query(
+        'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+        [id, 'incident-similar-' + label + '-' + id + '@forge.test', 'Similar Incident ' + label, 'test-hash', 'active', now, now, now, null, 1],
+      );
+    }
+    const service = new IncidentService(new PostgresIncidentStore(testPool.pool), () => now);
+    const older = await service.declareManual(ownerId, {
+      title: 'Database connection pool saturation',
+      description: 'API requests timed out when the database pool reached capacity.',
+    });
+    await service.declareManual(otherId, {
+      title: 'Database pool exhausted during API traffic',
+      description: 'API requests fail after database connections reach capacity.',
+    });
+    now += 1000;
+    const source = await service.declareManual(ownerId, {
+      title: 'Database pool exhausted during API traffic',
+      description: 'API requests fail after database connections reach capacity.',
+    });
+    now += 1000;
+    await service.declareManual(ownerId, {
+      title: 'Database pool exhausted during API traffic',
+      description: 'API requests fail after database connections reach capacity.',
+    });
+    const result = await service.searchSimilarPastIncidents(ownerId, source.id);
+    assert.equal(result.searchedIncidentCount, 1);
+    assert.equal(result.historyTruncated, false);
+    assert.deepEqual(result.matches.map((match) => match.id), [older.id]);
+  } finally {
+    await testPool.pool.end();
+    await testPool.cleanup();
+  }
+});

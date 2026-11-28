@@ -779,3 +779,109 @@ describe('runbook library and execution (OB-059)', () => {
   });
 
 });
+
+
+
+describe('similar past incident search (OB-060)', () => {
+  it('is Pro-gated and returns transparent matches from only the owner’s earlier incident history', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'similar-owner@forge.test');
+      const other = await signedIn(h, 'similar-other@forge.test');
+      const plus = await signedIn(h, 'similar-plus@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      await h.app.plans.setPlan(other.userId, 'pro');
+      await h.app.plans.setPlan(plus.userId, 'plus');
+
+      assert.equal((await h.post('/v1/incidents/similar', { incidentId: 'missing' })).status, 401);
+      const plusAccess = await h.post('/v1/plans/check', { featureId: 'OB-060' }, { cookie: plus.cookie });
+      assert.equal(((await plusAccess.json()) as { decision: { gate: string; allowed: boolean } }).decision.gate, 'pro');
+      const denied = await h.post('/v1/incidents/similar', { incidentId: 'missing' }, { cookie: plus.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const olderSimilarResponse = await h.post('/v1/incidents', {
+        title: 'Database connection pool saturation',
+        description: 'API requests timed out when the database pool reached capacity.',
+      }, { cookie: owner.cookie });
+      assert.equal(olderSimilarResponse.status, 201);
+      const olderSimilar = (await olderSimilarResponse.json() as { incident: { id: string } }).incident;
+
+      const unrelatedResponse = await h.post('/v1/incidents', {
+        title: 'Image renderer memory leak',
+        description: 'GPU workers stalled while rendering animated exports.',
+      }, { cookie: owner.cookie });
+      assert.equal(unrelatedResponse.status, 201);
+
+      const foreignResponse = await h.post('/v1/incidents', {
+        title: 'Database pool exhausted during API traffic',
+        description: 'API requests fail after database connections reach capacity.',
+      }, { cookie: other.cookie });
+      assert.equal(foreignResponse.status, 201);
+      const foreignIncident = (await foreignResponse.json() as { incident: { id: string } }).incident;
+
+      h.clock.now += 1000;
+      const sourceResponse = await h.post('/v1/incidents', {
+        title: 'Database pool exhausted during API traffic',
+        description: 'API requests fail after database connections reach capacity.',
+      }, { cookie: owner.cookie });
+      assert.equal(sourceResponse.status, 201);
+      const source = (await sourceResponse.json() as { incident: { id: string } }).incident;
+
+      h.clock.now += 1000;
+      const futureResponse = await h.post('/v1/incidents', {
+        title: 'Database pool exhausted during API traffic',
+        description: 'API requests fail after database connections reach capacity.',
+      }, { cookie: owner.cookie });
+      assert.equal(futureResponse.status, 201);
+      const futureIncident = (await futureResponse.json() as { incident: { id: string } }).incident;
+
+      const response = await h.post('/v1/incidents/similar', { incidentId: source.id }, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const result = await response.json() as {
+        sourceIncidentId: string; method: string; searchedIncidentCount: number; historyTruncated: boolean;
+        matches: Array<{ id: string; similarityScore: number; matchingTerms: string[] }>;
+      };
+      assert.equal(result.sourceIncidentId, source.id);
+      assert.equal(result.method, 'token-jaccard-v1');
+      assert.equal(result.searchedIncidentCount, 2);
+      assert.equal(result.historyTruncated, false);
+      assert.deepEqual(result.matches.map((match) => match.id), [olderSimilar.id]);
+      assert.ok((result.matches[0]?.similarityScore ?? 0) > 0);
+      assert.ok(result.matches[0]?.matchingTerms.includes('database'));
+      assert.ok(result.matches[0]?.matchingTerms.includes('pool'));
+      assert.ok(result.matches[0]?.matchingTerms.includes('requests'));
+      assert.equal(result.matches.some((match) => match.id === futureIncident.id), false);
+
+      const foreignSource = await h.post('/v1/incidents/similar', { incidentId: foreignIncident.id }, { cookie: owner.cookie });
+      assert.equal(foreignSource.status, 404);
+      assert.equal(await errorCode(foreignSource), 'incident_not_found');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('uses the same earlier-incident boundary and owner scope in SQLite', async () => {
+    const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const owner = await signedIn(h, 'similar-sqlite-owner@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      const older = await h.post('/v1/incidents', {
+        title: 'Database pool saturation', description: 'API requests failed at database capacity.',
+      }, { cookie: owner.cookie });
+      assert.equal(older.status, 201);
+      const olderIncident = (await older.json() as { incident: { id: string } }).incident;
+      h.clock.now += 1;
+      const source = await h.post('/v1/incidents', {
+        title: 'Database connection pool exhausted', description: 'API requests failed when database capacity was reached.',
+      }, { cookie: owner.cookie });
+      assert.equal(source.status, 201);
+      const sourceIncident = (await source.json() as { incident: { id: string } }).incident;
+      const result = await h.post('/v1/incidents/similar', { incidentId: sourceIncident.id }, { cookie: owner.cookie });
+      assert.equal(result.status, 200);
+      assert.deepEqual(((await result.json()) as { matches: Array<{ id: string }> }).matches.map((match) => match.id), [olderIncident.id]);
+    } finally {
+      await h.close();
+    }
+  });
+});
