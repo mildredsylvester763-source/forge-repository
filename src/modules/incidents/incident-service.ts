@@ -544,6 +544,7 @@ export class IncidentService {
     if (new Set(objectives.map((x) => x.toLowerCase())).size !== objectives.length) throw new AppError(400, 'incident_drill_invalid', 'objectives must be unique.');
     const description = 'FORGE_DRILL_V1:' + JSON.stringify({ version: 1, mode: fields.mode, scenario, objectives });
     if (description.length > 1900) throw new AppError(400, 'incident_drill_invalid', 'Drill scenario and objectives exceed the supported metadata size.');
+    if (typeof fields.description === 'string' && fields.description.startsWith('FORGE_DRILL_V1:')) throw new AppError(400, 'runbook_invalid', 'The drill metadata namespace is reserved. Use the incident drill API.');
     const draft = await this.createRunbookRecord(ownerId, { title, description, steps: fields.steps }, null, null);
     const publishedAt = Math.max(this.clock(), draft.updatedAt);
     const event: RunbookAuditEventRecord = { id: randomUUID(), ownerId, runbookId: draft.id, executionId: null, eventType: 'runbook.published', actorId: ownerId, payload: { title: draft.title, revision: draft.revision, stepCount: draft.steps.length, drillMode: fields.mode }, occurredAt: publishedAt };

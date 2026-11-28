@@ -11,6 +11,14 @@ async function signedIn(h: Harness, email: string): Promise<{ cookie: string; us
   return { cookie: sessionCookie(signIn), userId };
 }
 
+async function addThreeSeatWorkspace(h: Harness, ownerId: string, memberIds: readonly string[]): Promise<void> {
+  const workspaceId = 'team-workspace-' + ownerId;
+  await h.app.workspaces.create({ id: workspaceId, slug: workspaceId, name: 'Team workspace', description: null, createdAt: h.clock.now, updatedAt: h.clock.now, ownerId });
+  for (const userId of memberIds) {
+    if (userId !== ownerId) await h.app.workspaces.addMember(workspaceId, userId, 'member');
+  }
+}
+
 async function errorCode(response: Response): Promise<string> {
   return ((await response.json()) as { error: { code: string } }).error.code;
 }
@@ -1047,6 +1055,7 @@ describe('incident lifecycle and analytics (OB-065)', () => {
       const other = await signedIn(h, 'incident-analytics-other@forge.test');
       const free = await signedIn(h, 'incident-analytics-free@forge.test');
       await h.app.plans.setPlan(owner.userId, 'team');
+      await addThreeSeatWorkspace(h, owner.userId, [other.userId, free.userId]);
       const denied = await h.post('/v1/incidents/analytics', {}, { cookie: free.cookie });
       assert.equal(denied.status, 402); assert.equal(await errorCode(denied), 'plan_required');
       const created = await h.post('/v1/incidents', { title: 'Payments API unavailable', description: 'Synthetic incident for lifecycle test.' }, { cookie: owner.cookie });
@@ -1065,6 +1074,7 @@ describe('incident lifecycle and analytics (OB-065)', () => {
       const invalid = await h.post('/v1/incidents/acknowledge', { incidentId }, { cookie: owner.cookie });
       assert.equal(invalid.status, 409); assert.equal(await errorCode(invalid), 'incident_transition_conflict');
       await h.app.plans.setPlan(other.userId, 'team');
+      await addThreeSeatWorkspace(h, other.userId, [owner.userId, free.userId]);
       const foreign = await h.post('/v1/incidents/resolve', { incidentId }, { cookie: other.cookie });
       assert.equal(foreign.status, 404);
       const report = await h.post('/v1/incidents/analytics', {}, { cookie: owner.cookie });
@@ -1100,6 +1110,13 @@ describe('incident drills and game days (OB-064)', () => {
       assert.equal((await h.post('/v1/incidents/drills', payload, { cookie: free.cookie })).status, 402);
       await h.app.plans.setPlan(owner.userId, 'team');
       await h.app.plans.setPlan(other.userId, 'team');
+      const workspaceId = 'team-workspace-' + owner.userId;
+      await h.app.workspaces.create({ id: workspaceId, slug: workspaceId, name: 'Team workspace', description: null, createdAt: h.clock.now, updatedAt: h.clock.now, ownerId: owner.userId });
+      await h.app.workspaces.addMember(workspaceId, other.userId, 'member');
+      const belowMinimum = await h.post('/v1/incidents/drills', payload, { cookie: owner.cookie });
+      assert.equal(belowMinimum.status, 402); assert.equal(await errorCode(belowMinimum), 'team_seats_required');
+      await h.app.workspaces.addMember(workspaceId, free.userId, 'member');
+      await addThreeSeatWorkspace(h, other.userId, [owner.userId, free.userId]);
       const created = await h.post('/v1/incidents/drills', payload, { cookie: owner.cookie });
       assert.equal(created.status, 201);
       const drill = (await created.json() as { drill: { id:string; mode:string; status:string; scenario:string; objectives:string[]; steps:Array<{id:string;confirmationRequired:boolean}> } }).drill;

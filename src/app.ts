@@ -187,6 +187,7 @@ export interface ForgeApp {
   trainingData: TrainingDataService;
   statusPages: StatusPageService;
   incidents: IncidentService;
+  workspaces: WorkspaceStore;
   plans: PlansService;
   logger: Logger;
   /** The SQLite handle, or null (in-memory and PostgreSQL storage). */
@@ -579,6 +580,7 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     ...config.cookie,
     deviceName: config.env === 'production' ? '__Host-forge_device' : 'forge_device',
     deviceSecret: config.plans.accessSecret,
+    workspaceStore: storage.workspaces,
   });
 
   const handler = createHttpHandler({
@@ -595,6 +597,6 @@ export function buildApp(config: ForgeConfig, overrides: AppOverrides = {}): For
     await storage.pool?.end();
   };
 
-  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, incidents, plans, logger, db: storage.db, outbox: storage.outbox, close };
+  return { handler, events, identity, offlineSync, tasks, orchestrator, testQuality, testGeneration, liveTesting, webSearch, workspaceRetrieval, searchIntegrity, aiTraining, trainingData, statusPages, incidents, workspaces: storage.workspaces, plans, logger, db: storage.db, outbox: storage.outbox, close };
 }
 
