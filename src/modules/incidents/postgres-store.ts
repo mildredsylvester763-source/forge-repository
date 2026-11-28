@@ -1,10 +1,10 @@
 import { withTransaction, type SqlPool } from '../../kernel/sql.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, IncidentLifecycleMutationResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
-  status: IncidentStatus; source: string | null; dedupe_key: string | null; created_by: string;
+  status: 'open'; lifecycle_status?: IncidentStatus; source: string | null; dedupe_key: string | null; created_by: string;
   created_at: number | string; updated_at: number | string;
 }
 interface EventRow {
@@ -19,7 +19,7 @@ interface ActionItemRow {
 }
 const incidentRecord = (r: IncidentRow): IncidentRecord => ({
   id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, origin: r.origin,
-  status: r.status, source: r.source, dedupeKey: r.dedupe_key, createdBy: r.created_by,
+  status: r.lifecycle_status ?? r.status, source: r.source, dedupeKey: r.dedupe_key, createdBy: r.created_by,
   createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
 });
 const eventRecord = (r: EventRow): IncidentEventRecord => ({
@@ -113,7 +113,7 @@ export class PostgresIncidentStore implements IncidentStore {
       let target: IncidentRecord | undefined;
       if (incident.dedupeKey !== null) {
         const existing = await conn.query<IncidentRow>(`SELECT * FROM incidents
-          WHERE owner_id = $1 AND origin = 'automatic' AND status = 'open' AND source = $2 AND dedupe_key = $3
+          WHERE owner_id = $1 AND origin = 'automatic' AND lifecycle_status != 'resolved' AND source = $2 AND dedupe_key = $3
           LIMIT 1 FOR UPDATE`, [incident.ownerId, incident.source, incident.dedupeKey]);
         if (existing.rows[0]) target = incidentRecord(existing.rows[0]);
       }
@@ -177,6 +177,17 @@ export class PostgresIncidentStore implements IncidentStore {
     return result.rows[0] ? incidentRecord(result.rows[0]) : null;
   }
 
+  async transition(ownerId: string, incidentId: string, status: IncidentStatus, event: IncidentEventRecord): Promise<IncidentLifecycleMutationResult | null> {
+    return withTransaction(this.pool,async(conn)=>{
+      const found=await conn.query<IncidentRow>('SELECT * FROM incidents WHERE owner_id = $1 AND id = $2 FOR UPDATE',[ownerId,incidentId]);
+      if(!found.rows[0])return null;const current=incidentRecord(found.rows[0]);if(current.status===status)return {incident:current,changed:false};
+      if(current.status==='resolved'||event.ownerId!==ownerId||event.incidentId!==incidentId||event.actorKind!=='user')return null;
+      const updatedAt=Math.max(current.updatedAt,event.occurredAt);
+      const upd=await conn.query<IncidentRow>('UPDATE incidents SET lifecycle_status = $1, updated_at = $2 WHERE owner_id = $3 AND id = $4 AND lifecycle_status = $5 RETURNING *',[status,updatedAt,ownerId,incidentId,current.status]);
+      if(!upd.rows[0])return null;await this.insertEvent(conn,{...event,occurredAt:updatedAt,createdAt:Math.max(event.createdAt,updatedAt)});
+      return {incident:incidentRecord(upd.rows[0]),changed:true};
+    });
+  }
   async listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]> {
     const result = await this.pool.query<IncidentRow>('SELECT * FROM incidents WHERE owner_id = $1 ORDER BY created_at DESC, id LIMIT $2', [ownerId, takeLimit(take)]);
     return result.rows.map(incidentRecord);

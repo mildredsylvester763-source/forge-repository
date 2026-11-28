@@ -1,5 +1,5 @@
 export type IncidentOrigin = 'manual' | 'automatic';
-export type IncidentStatus = 'open';
+export type IncidentStatus = 'open' | 'acknowledged' | 'resolved';
 export type IncidentActorKind = 'user' | 'system';
 
 export interface IncidentRecord {
@@ -16,6 +16,9 @@ export interface IncidentRecord {
   readonly updatedAt: number;
 }
 
+export interface IncidentLifecycleMutationResult { readonly incident: IncidentRecord; readonly changed: boolean; }
+export interface IncidentMetric { readonly incidentId:string; readonly title:string; readonly status:IncidentStatus; readonly createdAt:number; readonly acknowledgedAt:number|null; readonly resolvedAt:number|null; readonly timeToDetectMs:null; readonly timeToDetectUnavailableReason:'source_outage_start_time_not_recorded'; readonly timeToAcknowledgeMs:number|null; readonly timeToResolveMs:number|null; readonly recurrenceCount:number; }
+export interface IncidentAnalyticsResult { readonly generatedAt:number; readonly coverage:{readonly incidentLimit:number;readonly incidentsTruncated:boolean;readonly eventLimit:number;readonly eventsTruncated:boolean}; readonly incidentCount:number; readonly acknowledgedCount:number; readonly resolvedCount:number; readonly recurrentIncidentCount:number; readonly averageTimeToAcknowledgeMs:number|null; readonly averageTimeToResolveMs:number|null; readonly incidents:readonly IncidentMetric[]; }
 export interface SimilarPastIncidentMatch {
   readonly id: string;
   readonly title: string;

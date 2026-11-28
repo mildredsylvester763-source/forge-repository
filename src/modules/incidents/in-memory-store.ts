@@ -1,5 +1,5 @@
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, IncidentLifecycleMutationResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const boundedTake = (take: number): number => Math.max(1, Math.floor(take));
@@ -30,7 +30,7 @@ export class InMemoryIncidentStore implements IncidentStore {
     }
 
     const existing = incident.dedupeKey === null ? undefined : [...this.incidents.values()].find((item) =>
-      item.ownerId === incident.ownerId && item.origin === 'automatic' && item.status === 'open' &&
+      item.ownerId === incident.ownerId && item.origin === 'automatic' && item.status !== 'resolved' &&
       item.source === incident.source && item.dedupeKey === incident.dedupeKey);
     const target = existing ?? incident;
     const storedEvent: IncidentEventRecord = {
@@ -48,6 +48,14 @@ export class InMemoryIncidentStore implements IncidentStore {
     return incident?.ownerId === ownerId ? copy(incident) : null;
   }
 
+  async transition(ownerId: string, incidentId: string, status: IncidentStatus, event: IncidentEventRecord): Promise<IncidentLifecycleMutationResult | null> {
+    const current=this.incidents.get(incidentId); if(!current||current.ownerId!==ownerId)return null;
+    if(current.status===status)return {incident:copy(current),changed:false};
+    if(current.status==='resolved'||event.ownerId!==ownerId||event.incidentId!==incidentId||event.actorKind!=='user'||this.events.has(event.id))return null;
+    const updatedAt=Math.max(current.updatedAt,event.occurredAt);const updated:IncidentRecord={...current,status,updatedAt};
+    const stored:IncidentEventRecord={...event,occurredAt:updatedAt,createdAt:Math.max(event.createdAt,updatedAt)};
+    this.incidents.set(incidentId,copy(updated));this.events.set(event.id,copy(stored));return {incident:copy(updated),changed:true};
+  }
   async listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]> {
     return [...this.incidents.values()]
       .filter((item) => item.ownerId === ownerId)

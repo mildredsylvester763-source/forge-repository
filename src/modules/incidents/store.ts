@@ -1,4 +1,4 @@
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLifecycleMutationResult, IncidentRecord, IncidentStatus, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 export interface AutomaticIncidentResult {
   readonly incident: IncidentRecord;
@@ -12,6 +12,7 @@ export interface IncidentStore {
   createManual(incident: IncidentRecord, event: IncidentEventRecord): Promise<IncidentRecord>;
   declareAutomatic(incident: IncidentRecord, event: IncidentEventRecord): Promise<AutomaticIncidentResult>;
   get(ownerId: string, incidentId: string): Promise<IncidentRecord | null>;
+  transition(ownerId: string, incidentId: string, status: IncidentStatus, event: IncidentEventRecord): Promise<IncidentLifecycleMutationResult | null>;
   listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]>;
   listBefore(ownerId: string, createdBeforeExclusive: number, take: number): Promise<IncidentRecord[]>;
   listEvents(ownerId: string, incidentId: string, take: number): Promise<IncidentEventRecord[]>;

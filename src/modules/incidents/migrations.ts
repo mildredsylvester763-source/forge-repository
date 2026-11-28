@@ -198,4 +198,5 @@ export const incidentMigrations: readonly Migration[] = [{
         BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
     `
   }
+  ,{version:6,name:'incident_lifecycle_state_for_acknowledgement_and_resolution',sql:`ALTER TABLE incidents ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'open' CHECK (lifecycle_status IN ('open','acknowledged','resolved')); CREATE INDEX incidents_owner_lifecycle_created_idx ON incidents(owner_id,lifecycle_status,created_at DESC,id);`}
 ];

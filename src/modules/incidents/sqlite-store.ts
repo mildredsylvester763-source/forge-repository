@@ -1,10 +1,10 @@
 import { transaction, type Database } from '../../kernel/sqlite.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
+import type { IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentEventRecord, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentRecord, IncidentStatus, IncidentLifecycleMutationResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookMutationResult, RunbookRecord } from './types.ts';
 
 interface IncidentRow {
   id: string; owner_id: string; title: string; description: string; origin: 'manual' | 'automatic';
-  status: IncidentStatus; source: string | null; dedupe_key: string | null; created_by: string;
+  status: 'open'; lifecycle_status?: IncidentStatus; source: string | null; dedupe_key: string | null; created_by: string;
   created_at: number; updated_at: number;
 }
 interface EventRow {
@@ -19,7 +19,7 @@ interface ActionItemRow {
 }
 const incidentRecord = (r: IncidentRow): IncidentRecord => ({
   id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, origin: r.origin,
-  status: r.status, source: r.source, dedupeKey: r.dedupe_key, createdBy: r.created_by,
+  status: r.lifecycle_status ?? r.status, source: r.source, dedupeKey: r.dedupe_key, createdBy: r.created_by,
   createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
 });
 const eventRecord = (r: EventRow): IncidentEventRecord => ({
@@ -113,7 +113,7 @@ export class SqliteIncidentStore implements IncidentStore {
       let target: IncidentRecord | undefined;
       if (incident.dedupeKey !== null) {
         const existing = this.db.prepare(`SELECT * FROM incidents
-          WHERE owner_id = ? AND origin = 'automatic' AND status = 'open' AND source = ? AND dedupe_key = ?
+          WHERE owner_id = ? AND origin = 'automatic' AND lifecycle_status != 'resolved' AND source = ? AND dedupe_key = ?
           LIMIT 1`).get(incident.ownerId, incident.source, incident.dedupeKey) as IncidentRow | undefined;
         if (existing) target = incidentRecord(existing);
       }
@@ -168,6 +168,17 @@ export class SqliteIncidentStore implements IncidentStore {
     return row ? incidentRecord(row) : null;
   }
 
+  async transition(ownerId: string, incidentId: string, status: IncidentStatus, event: IncidentEventRecord): Promise<IncidentLifecycleMutationResult | null> {
+    return transaction(this.db,()=>{
+      const row=this.db.prepare('SELECT * FROM incidents WHERE owner_id = ? AND id = ?').get(ownerId,incidentId) as IncidentRow|undefined;
+      if(!row)return null;const current=incidentRecord(row);if(current.status===status)return {incident:current,changed:false};
+      if(current.status==='resolved'||event.ownerId!==ownerId||event.incidentId!==incidentId||event.actorKind!=='user')return null;
+      const updatedAt=Math.max(current.updatedAt,event.occurredAt);
+      const upd=this.db.prepare('UPDATE incidents SET lifecycle_status = ?, updated_at = ? WHERE owner_id = ? AND id = ? AND lifecycle_status = ?').run(status,updatedAt,ownerId,incidentId,current.status);
+      if(upd.changes!==1)return null;this.insertEvent({...event,occurredAt:updatedAt,createdAt:Math.max(event.createdAt,updatedAt)});
+      return {incident:{...current,status,updatedAt},changed:true};
+    });
+  }
   async listByOwner(ownerId: string, take: number): Promise<IncidentRecord[]> {
     const rows = this.db.prepare('SELECT * FROM incidents WHERE owner_id = ? ORDER BY created_at DESC, id LIMIT ?')
       .all(ownerId, takeLimit(take)) as unknown as IncidentRow[];
