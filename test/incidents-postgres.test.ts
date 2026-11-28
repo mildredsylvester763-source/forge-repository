@@ -256,3 +256,27 @@ it('computes an owner-scoped incident blast radius using PostgreSQL-backed incid
     await testPool.cleanup();
   }
 });
+
+
+it('persists incident acknowledgement and resolution transitions atomically in PostgreSQL', async (t) => {
+  const testPool = await makeTestPool();
+  try {
+    if (!testPool.real) { t.skip('requires the CI PostgreSQL service'); return; }
+    const now = 1_800_000_400_000, ownerId = randomUUID();
+    await testPool.pool.query('INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+      [ownerId, 'incident-lifecycle-' + ownerId + '@forge.test', 'Incident Lifecycle', 'test-hash', 'active', now, now, now, null, 1]);
+    let clock = now;
+    const store = new PostgresIncidentStore(testPool.pool), service = new IncidentService(store, () => clock);
+    const incident = await service.declareManual(ownerId, { title: 'Lifecycle persistence test' });
+    clock += 1000;
+    const acks = await Promise.all([service.transition(ownerId, incident.id, 'acknowledged'), service.transition(ownerId, incident.id, 'acknowledged')]);
+    assert.equal(acks.filter(x => x.changed).length, 1);
+    assert.equal((await service.get(ownerId, incident.id)).status, 'acknowledged');
+    clock += 2000;
+    assert.equal((await service.transition(ownerId, incident.id, 'resolved')).changed, true);
+    assert.equal((await service.get(ownerId, incident.id)).status, 'resolved');
+    assert.deepEqual((await service.listEvents(ownerId, incident.id)).map(e => e.eventType), ['incident.declared','incident.acknowledged','incident.resolved']);
+    assert.equal((await service.analytics(ownerId)).averageTimeToAcknowledgeMs, 1000);
+    assert.equal((await service.analytics(ownerId)).averageTimeToResolveMs, 3000);
+  } finally { await testPool.pool.end(); await testPool.cleanup(); }
+});

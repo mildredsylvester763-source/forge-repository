@@ -3,7 +3,7 @@ import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
 import { calculateIncidentBlastRadius, estimateIncidentCustomerImpact, parseIncidentBlastRadiusInput, type IncidentBlastRadiusResult, type IncidentCustomerImpactEstimate } from './blast-radius.ts';
-import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
+import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentLifecycleMutationResult, IncidentAnalyticsResult, IncidentMetric, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
 
@@ -117,6 +117,35 @@ export class IncidentService {
     return this.store.declareAutomatic(incident, event);
   }
 
+  async transition(ownerId: string, incidentId: string, status: 'acknowledged' | 'resolved'): Promise<IncidentLifecycleMutationResult> {
+    const current = await this.get(ownerId, incidentId);
+    if (current.status === status) return { incident: current, changed: false };
+    if (current.status === 'resolved' || (status === 'acknowledged' && current.status !== 'open')) throw new AppError(409, 'incident_transition_conflict', 'A resolved incident cannot be acknowledged or changed again.');
+    const now = Math.max(this.clock(), current.updatedAt, current.createdAt);
+    const event: IncidentEventRecord = { id: randomUUID(), incidentId: current.id, ownerId, eventType: status === 'acknowledged' ? 'incident.acknowledged' : 'incident.resolved', actorKind: 'user', actorId: ownerId, source: null, externalEventId: null, payload: { previousStatus: current.status, status }, occurredAt: now, createdAt: now };
+    const result = await this.store.transition(ownerId, current.id, status, event);
+    if (result) return result;
+    const latest = await this.get(ownerId, current.id);
+    if (latest.status === status) return { incident: latest, changed: false };
+    throw new AppError(409, 'incident_transition_conflict', 'The incident changed concurrently; refresh its current state and retry.');
+  }
+  async analytics(ownerId: string): Promise<IncidentAnalyticsResult> {
+    const [incidentRows, events] = await Promise.all([this.store.listByOwner(ownerId, 1001), this.store.listEventsByOwner(ownerId, 5001)]);
+    const incidents = incidentRows.slice(0, 1000);
+    const eventRowsByIncident = new Map<string, IncidentEventRecord[]>();
+    for (const e of events) { const rows = eventRowsByIncident.get(e.incidentId) ?? []; rows.push(e); eventRowsByIncident.set(e.incidentId, rows); }
+    const fingerprintFor = (i: IncidentRecord): string => { const title = i.title.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); return i.source && i.dedupeKey ? 'source:' + i.source + ':' + i.dedupeKey : 'title:' + title; };
+    const counts = new Map<string, number>();
+    for (const i of incidents) { const k=fingerprintFor(i); counts.set(k,(counts.get(k)??0)+1); }
+    const metrics: IncidentMetric[] = incidents.map((i) => {
+      const rows=(eventRowsByIncident.get(i.id)??[]).sort((a,b)=>a.occurredAt-b.occurredAt||a.createdAt-b.createdAt);
+      const ack=rows.find(e=>e.eventType==='incident.acknowledged')?.occurredAt??null;
+      const resolved=rows.find(e=>e.eventType==='incident.resolved')?.occurredAt??null;
+      return {incidentId:i.id,title:i.title,status:i.status,createdAt:i.createdAt,acknowledgedAt:ack,resolvedAt:resolved,timeToDetectMs:null,timeToDetectUnavailableReason:'source_outage_start_time_not_recorded',timeToAcknowledgeMs:ack===null?null:Math.max(0,ack-i.createdAt),timeToResolveMs:resolved===null?null:Math.max(0,resolved-i.createdAt),recurrenceCount:counts.get(fingerprintFor(i))??1};
+    });
+    const avg=(values:readonly(number|null)[]):number|null=>{const v=values.filter((x):x is number=>x!==null);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;};
+    return {generatedAt:this.clock(),coverage:{incidentLimit:1000,incidentsTruncated:incidentRows.length>1000,eventLimit:5000,eventsTruncated:events.length>5000},incidentCount:metrics.length,acknowledgedCount:metrics.filter(x=>x.acknowledgedAt!==null).length,resolvedCount:metrics.filter(x=>x.resolvedAt!==null).length,recurrentIncidentCount:metrics.filter(x=>x.recurrenceCount>1).length,averageTimeToAcknowledgeMs:avg(metrics.map(x=>x.timeToAcknowledgeMs)),averageTimeToResolveMs:avg(metrics.map(x=>x.timeToResolveMs)),incidents:metrics};
+  }
   async list(ownerId: string): Promise<IncidentRecord[]> {
     return this.store.listByOwner(ownerId, 100);
   }

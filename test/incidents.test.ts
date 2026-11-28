@@ -1037,3 +1037,51 @@ describe('customer impact estimate (OB-062)', () => {
     }
   });
 });
+
+
+describe('incident lifecycle and analytics (OB-065)', () => {
+  it('records owner-scoped acknowledgement and resolution and reports measured analytics under Team access', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'incident-analytics-owner@forge.test');
+      const other = await signedIn(h, 'incident-analytics-other@forge.test');
+      const free = await signedIn(h, 'incident-analytics-free@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'team');
+      const denied = await h.post('/v1/incidents/analytics', {}, { cookie: free.cookie });
+      assert.equal(denied.status, 402); assert.equal(await errorCode(denied), 'plan_required');
+      const created = await h.post('/v1/incidents', { title: 'Payments API unavailable', description: 'Synthetic incident for lifecycle test.' }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const incidentId = ((await created.json()) as { incident: { id: string } }).incident.id;
+      h.clock.now += 2500;
+      const ack = await h.post('/v1/incidents/acknowledge', { incidentId }, { cookie: owner.cookie });
+      assert.equal(ack.status, 200);
+      assert.equal(((await ack.json()) as { incident: { status: string } }).incident.status, 'acknowledged');
+      const repeated = await h.post('/v1/incidents/acknowledge', { incidentId }, { cookie: owner.cookie });
+      assert.equal(((await repeated.json()) as { changed: boolean }).changed, false);
+      h.clock.now += 3500;
+      const resolution = await h.post('/v1/incidents/resolve', { incidentId }, { cookie: owner.cookie });
+      assert.equal(resolution.status, 200);
+      assert.equal(((await resolution.json()) as { incident: { status: string } }).incident.status, 'resolved');
+      const invalid = await h.post('/v1/incidents/acknowledge', { incidentId }, { cookie: owner.cookie });
+      assert.equal(invalid.status, 409); assert.equal(await errorCode(invalid), 'incident_transition_conflict');
+      const foreign = await h.post('/v1/incidents/resolve', { incidentId }, { cookie: other.cookie });
+      assert.equal(foreign.status, 404);
+      const report = await h.post('/v1/incidents/analytics', {}, { cookie: owner.cookie });
+      assert.equal(report.status, 200);
+      const body = await report.json() as { incidentCount:number; acknowledgedCount:number; resolvedCount:number; averageTimeToAcknowledgeMs:number; averageTimeToResolveMs:number; incidents:Array<{incidentId:string;timeToDetectMs:number|null;timeToAcknowledgeMs:number|null;timeToResolveMs:number|null;recurrenceCount:number}> };
+      assert.equal(body.incidentCount,1); assert.equal(body.acknowledgedCount,1); assert.equal(body.resolvedCount,1);
+      assert.equal(body.averageTimeToAcknowledgeMs,2500); assert.equal(body.averageTimeToResolveMs,6000);
+      assert.equal(body.incidents[0]?.incidentId,incidentId); assert.equal(body.incidents[0]?.timeToDetectMs,null);
+      assert.equal(body.incidents[0]?.timeToAcknowledgeMs,2500); assert.equal(body.incidents[0]?.timeToResolveMs,6000);
+      assert.equal(body.incidents[0]?.recurrenceCount,1);
+    } finally { await h.close(); }
+  });
+  it('keeps Studio eligible for the Team-gated incident analytics route', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const studio = await signedIn(h, 'incident-analytics-studio@forge.test');
+      await h.app.plans.setPlan(studio.userId, 'studio');
+      assert.equal((await h.post('/v1/incidents/analytics', {}, { cookie: studio.cookie })).status, 200);
+    } finally { await h.close(); }
+  });
+});

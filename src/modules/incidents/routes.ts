@@ -38,6 +38,9 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: result.created ? 201 : 200, body: result };
       },
     },
+    '/v1/incidents/acknowledge': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = parseFields(await ctx.json(), { incidentId: { max: 128 } }); return { status: 200, body: await service.transition(ownerId, body.incidentId, 'acknowledged') }; } },
+    '/v1/incidents/resolve': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = parseFields(await ctx.json(), { incidentId: { max: 128 } }); return { status: 200, body: await service.transition(ownerId, body.incidentId, 'resolved') }; } },
+    '/v1/incidents/analytics': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); return { status: 200, body: await service.analytics(ownerId) }; } },
     '/v1/incidents/similar': {
       POST: async (ctx): Promise<HttpResult> => {
         const ownerId = await requireUser(ctx);
