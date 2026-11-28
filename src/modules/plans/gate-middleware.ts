@@ -76,7 +76,7 @@ export function applyRouteGates(
               });
             }
             if (verdict.reason === 'team_seats_required') throw new AppError(402, 'team_seats_required', 'This Team feature requires at least three workspace seats.', { details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, minimumSeats: 3 } });
-            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`,
+            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`, {
               details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
             });
           }
@@ -121,7 +121,7 @@ export function applyRouteGates(
               });
             }
             if (verdict.reason === 'team_seats_required') throw new AppError(402, 'team_seats_required', 'This Team feature requires at least three workspace seats.', { details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, minimumSeats: 3 } });
-            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`,
+            throw new AppError(402, 'plan_required', `The ${verdict.feature} feature is not part of the ${verdict.plan} plan.`, {
               details: { feature: verdict.feature, gate: verdict.gate, plan: verdict.plan, reason: verdict.reason },
             });
           }
