@@ -31,7 +31,7 @@ describe('incident declaration (OB-041)', () => {
         title: 'Production API unavailable',
         description: 'Requests to the public API are failing.',
       }, { cookie: owner.cookie });
-      assert.equal(created.status, 201);
+      assert.equal(created.status, 201, JSON.stringify(await created.clone().json()));
       const incident = ((await created.json()) as { incident: { id: string; ownerId: string; origin: string; status: string } }).incident;
       assert.equal(incident.ownerId, owner.userId);
       assert.equal(incident.origin, 'manual');
@@ -1132,7 +1132,7 @@ describe('incident drills and game days (OB-064)', () => {
       await h.app.plans.setPlan(owner.userId, 'studio');
       const payload = { title:'Cache degradation game day', mode:'game_day', scenario:'A cache cluster becomes unavailable and requests fall back to the database.', objectives:['Validate operator response'], steps:[{title:'Review runbook',instructions:'Operator checks the prepared recovery instructions.'}] };
       const response = await h.post('/v1/incidents/drills', payload, {cookie:owner.cookie});
-      assert.equal(response.status, 201);
+      assert.equal(response.status, 201, JSON.stringify(await response.clone().json()));
       assert.equal(((await response.json()) as {drill:{mode:string}}).drill.mode, 'game_day');
       const invalid = await h.post('/v1/incidents/drills', {...payload, mode:'chaos_monkey'}, {cookie:owner.cookie});
       assert.equal(invalid.status, 400);
