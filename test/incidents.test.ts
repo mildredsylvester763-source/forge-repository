@@ -1086,3 +1086,56 @@ describe('incident lifecycle and analytics (OB-065)', () => {
     } finally { await h.close(); }
   });
 });
+
+
+describe('incident drills and game days (OB-064)', () => {
+  it('creates a Team-gated tabletop drill, keeps it owner-scoped and records operator-confirmed execution steps', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'incident-drill-owner@forge.test');
+      const other = await signedIn(h, 'incident-drill-other@forge.test');
+      const free = await signedIn(h, 'incident-drill-free@forge.test');
+      const payload = { title: 'Payments outage tabletop', mode: 'tabletop', scenario: 'A payment provider becomes unavailable during peak checkout traffic.', objectives: ['Establish incident command', 'Identify fallback and recovery communication'], steps: [{ title: 'Declare the incident', instructions: 'Operator confirms the incident lead and severity.' }, { title: 'Validate fallback', instructions: 'Operator records the approved fallback decision.' }] };
+      assert.equal((await h.post('/v1/incidents/drills', payload)).status, 401);
+      assert.equal((await h.post('/v1/incidents/drills', payload, { cookie: free.cookie })).status, 402);
+      await h.app.plans.setPlan(owner.userId, 'team');
+      await h.app.plans.setPlan(other.userId, 'team');
+      const created = await h.post('/v1/incidents/drills', payload, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const drill = (await created.json() as { drill: { id:string; mode:string; status:string; scenario:string; objectives:string[]; steps:Array<{id:string;confirmationRequired:boolean}> } }).drill;
+      assert.equal(drill.mode, 'tabletop'); assert.equal(drill.status, 'published');
+      assert.match(drill.scenario, /payment provider/); assert.equal(drill.objectives.length, 2);
+      assert.equal(drill.steps.every(step => step.confirmationRequired), true);
+      assert.equal((await h.post('/v1/incidents/drills/get', { drillId: drill.id }, { cookie: other.cookie })).status, 404);
+      const started = await h.post('/v1/incidents/drills/start', { drillId: drill.id }, { cookie: owner.cookie });
+      assert.equal(started.status, 201);
+      const execution = (await started.json() as { execution: {id:string;status:string;steps:Array<{id:string;status:string}>} }).execution;
+      assert.equal(execution.status, 'in_progress');
+      const refused = await h.post('/v1/incidents/drills/executions/step/complete', { executionId:execution.id, stepId:execution.steps[0]!.id, confirmed:false }, { cookie:owner.cookie });
+      assert.equal(refused.status, 400);
+      const first = await h.post('/v1/incidents/drills/executions/step/complete', { executionId:execution.id, stepId:execution.steps[0]!.id, confirmed:true, evidenceNote:'Incident commander assigned.' }, { cookie:owner.cookie });
+      assert.equal(first.status, 200);
+      assert.equal(((await first.json()) as {execution:{status:string}}).execution.status, 'in_progress');
+      const second = await h.post('/v1/incidents/drills/executions/step/complete', { executionId:execution.id, stepId:execution.steps[1]!.id, confirmed:true }, { cookie:owner.cookie });
+      assert.equal(((await second.json()) as {execution:{status:string}}).execution.status, 'completed');
+      assert.equal((await h.get('/v1/incidents/drills/executions', {cookie:owner.cookie})).status, 200);
+      assert.equal((await h.post('/v1/incidents/drills/executions/get', {executionId:execution.id}, {cookie:owner.cookie})).status, 200);
+      const listed = await h.get('/v1/incidents/drills', {cookie:owner.cookie});
+      assert.equal(((await listed.json()) as {drills:Array<{id:string}>}).drills[0]?.id, drill.id);
+    } finally { await h.close(); }
+  });
+
+  it('supports a separately labelled game-day drill and rejects invalid drill policy fields', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'incident-game-day-owner@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'studio');
+      const payload = { title:'Cache degradation game day', mode:'game_day', scenario:'A cache cluster becomes unavailable and requests fall back to the database.', objectives:['Validate operator response'], steps:[{title:'Review runbook',instructions:'Operator checks the prepared recovery instructions.'}] };
+      const response = await h.post('/v1/incidents/drills', payload, {cookie:owner.cookie});
+      assert.equal(response.status, 201);
+      assert.equal(((await response.json()) as {drill:{mode:string}}).drill.mode, 'game_day');
+      const invalid = await h.post('/v1/incidents/drills', {...payload, mode:'chaos_monkey'}, {cookie:owner.cookie});
+      assert.equal(invalid.status, 400);
+    } finally { await h.close(); }
+  });
+});

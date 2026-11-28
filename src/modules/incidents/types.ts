@@ -262,6 +262,15 @@ export interface RunbookExecutionMutationResult {
   readonly changed: boolean;
 }
 
+export type IncidentDrillMode = 'tabletop' | 'game_day';
+export interface CreateIncidentDrillInput { readonly title: unknown; readonly mode: unknown; readonly scenario: unknown; readonly objectives: unknown; readonly steps: unknown; }
+export interface IncidentDrillRecord {
+  readonly id: string; readonly runbookId: string; readonly ownerId: string; readonly title: string;
+  readonly mode: IncidentDrillMode; readonly scenario: string; readonly objectives: readonly string[];
+  readonly status: RunbookStatus; readonly revision: number; readonly steps: readonly RunbookStepDefinition[];
+  readonly createdAt: number; readonly updatedAt: number; readonly publishedAt: number | null;
+}
+
 export interface CreateRunbookInput {
   readonly title: unknown;
   readonly description?: unknown;

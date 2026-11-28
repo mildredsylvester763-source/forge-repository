@@ -3,7 +3,7 @@ import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
 import { calculateIncidentBlastRadius, estimateIncidentCustomerImpact, parseIncidentBlastRadiusInput, type IncidentBlastRadiusResult, type IncidentCustomerImpactEstimate } from './blast-radius.ts';
-import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentLifecycleMutationResult, IncidentAnalyticsResult, IncidentMetric, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
+import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentLifecycleMutationResult, IncidentAnalyticsResult, IncidentMetric, IncidentPostmortemDraft, IncidentDrillMode, IncidentDrillRecord, CreateIncidentDrillInput, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
 
@@ -518,15 +518,85 @@ export class IncidentService {
     return saved;
   }
 
+  private incidentDrillMetadata(description: string): { mode: IncidentDrillMode; scenario: string; objectives: string[] } | null {
+    const prefix = 'FORGE_DRILL_V1:';
+    if (!description.startsWith(prefix)) return null;
+    try {
+      const parsed = JSON.parse(description.slice(prefix.length)) as Record<string, unknown>;
+      if (parsed.version !== 1 || (parsed.mode !== 'tabletop' && parsed.mode !== 'game_day') || typeof parsed.scenario !== 'string' || !Array.isArray(parsed.objectives) || !parsed.objectives.every((x) => typeof x === 'string')) return null;
+      return { mode: parsed.mode, scenario: parsed.scenario, objectives: parsed.objectives as string[] };
+    } catch { return null; }
+  }
+  private toIncidentDrill(runbook: RunbookRecord): IncidentDrillRecord {
+    const metadata = this.incidentDrillMetadata(runbook.description);
+    if (!metadata) throw new AppError(404, 'incident_drill_not_found', 'Incident drill not found.');
+    return { id: runbook.id, runbookId: runbook.id, ownerId: runbook.ownerId, title: runbook.title, ...metadata, status: runbook.status, revision: runbook.revision, steps: runbook.steps, createdAt: runbook.createdAt, updatedAt: runbook.updatedAt, publishedAt: runbook.publishedAt };
+  }
+  async createDrill(ownerId: string, input: CreateIncidentDrillInput): Promise<IncidentDrillRecord> {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError(400, 'incident_drill_invalid', 'A drill object is required.');
+    const fields = input as unknown as Record<string, unknown>;
+    for (const key of Object.keys(fields)) if (!['title','mode','scenario','objectives','steps'].includes(key)) throw new AppError(400, 'incident_drill_invalid', 'Unknown drill field: ' + key);
+    const title = runbookText(fields.title, 'title', 4, 160);
+    if (fields.mode !== 'tabletop' && fields.mode !== 'game_day') throw new AppError(400, 'incident_drill_invalid', 'mode must be tabletop or game_day.');
+    const scenario = runbookText(fields.scenario, 'scenario', 20, 500);
+    if (!Array.isArray(fields.objectives) || fields.objectives.length < 1 || fields.objectives.length > 10) throw new AppError(400, 'incident_drill_invalid', 'objectives must contain 1 to 10 entries.');
+    const objectives = fields.objectives.map((item, index) => runbookText(item, 'objectives[' + index + ']', 3, 100));
+    if (new Set(objectives.map((x) => x.toLowerCase())).size !== objectives.length) throw new AppError(400, 'incident_drill_invalid', 'objectives must be unique.');
+    const steps = runbookSteps(fields.steps);
+    const description = 'FORGE_DRILL_V1:' + JSON.stringify({ version: 1, mode: fields.mode, scenario, objectives });
+    if (description.length > 1900) throw new AppError(400, 'incident_drill_invalid', 'Drill scenario and objectives exceed the supported metadata size.');
+    const draft = await this.createRunbookRecord(ownerId, { title, description, steps }, null, null);
+    const publishedAt = Math.max(this.clock(), draft.updatedAt);
+    const event: RunbookAuditEventRecord = { id: randomUUID(), ownerId, runbookId: draft.id, executionId: null, eventType: 'runbook.published', actorId: ownerId, payload: { title: draft.title, revision: draft.revision, stepCount: draft.steps.length, drillMode: fields.mode }, occurredAt: publishedAt };
+    const published = await this.store.publishRunbook(ownerId, draft.id, publishedAt, event);
+    if (!published) throw new AppError(409, 'incident_drill_publish_conflict', 'The drill could not be published.');
+    return this.toIncidentDrill(published.record);
+  }
+  async listDrills(ownerId: string): Promise<IncidentDrillRecord[]> {
+    const rows = await this.store.listRunbooksByOwner(ownerId, 1000);
+    return rows.filter((row) => this.incidentDrillMetadata(row.description) !== null).map((row) => this.toIncidentDrill(row));
+  }
+  async getDrill(ownerId: string, drillId: string): Promise<IncidentDrillRecord> {
+    const id = runbookIdentifier(drillId, 'drillId');
+    const row = await this.store.getRunbook(ownerId, id);
+    if (!row || !this.incidentDrillMetadata(row.description)) throw new AppError(404, 'incident_drill_not_found', 'Incident drill not found.');
+    return this.toIncidentDrill(row);
+  }
+  async startDrill(ownerId: string, drillId: string): Promise<RunbookExecutionRecord> {
+    const drill = await this.getDrill(ownerId, drillId);
+    if (drill.status !== 'published') throw new AppError(409, 'incident_drill_not_published', 'Publish the drill before starting it.');
+    return this.startRunbookExecution(ownerId, drill.runbookId);
+  }
+  async listDrillExecutions(ownerId: string): Promise<RunbookExecutionRecord[]> {
+    const [executions, runbooks] = await Promise.all([this.store.listRunbookExecutionsByOwner(ownerId, 1000), this.store.listRunbooksByOwner(ownerId, 1000)]);
+    const drillIds = new Set(runbooks.filter((row) => this.incidentDrillMetadata(row.description) !== null).map((row) => row.id));
+    return executions.filter((execution) => drillIds.has(execution.runbookId));
+  }
+  async getDrillExecution(ownerId: string, executionId: string): Promise<RunbookExecutionRecord> {
+    const id = runbookIdentifier(executionId, 'executionId');
+    const execution = await this.store.getRunbookExecution(ownerId, id);
+    if (!execution) throw new AppError(404, 'incident_drill_execution_not_found', 'Drill execution not found.');
+    const runbook = await this.store.getRunbook(ownerId, execution.runbookId);
+    if (!runbook || !this.incidentDrillMetadata(runbook.description)) throw new AppError(404, 'incident_drill_execution_not_found', 'Drill execution not found.');
+    return execution;
+  }
+  async completeDrillStep(ownerId: string, input: CompleteRunbookStepInput): Promise<RunbookExecutionMutationResult> {
+    await this.getDrillExecution(ownerId, String(input?.executionId ?? ''));
+    return this.completeRunbookStep(ownerId, input);
+  }
+  private presentRunbook(runbook: RunbookRecord): RunbookRecord {
+    const metadata = this.incidentDrillMetadata(runbook.description);
+    return metadata ? { ...runbook, description: metadata.scenario + '\\n\\nMode: ' + metadata.mode + '\\nObjectives: ' + metadata.objectives.join('; ') } : runbook;
+  }
   async listRunbooks(ownerId: string): Promise<RunbookRecord[]> {
-    return this.store.listRunbooksByOwner(ownerId, 100);
+    return (await this.store.listRunbooksByOwner(ownerId, 100)).map((row) => this.presentRunbook(row));
   }
 
   async getRunbook(ownerId: string, runbookId: string): Promise<RunbookRecord> {
     const id = runbookIdentifier(runbookId, 'runbookId');
     const runbook = await this.store.getRunbook(ownerId, id);
     if (!runbook) throw new AppError(404, 'runbook_not_found', 'Runbook not found.');
-    return runbook;
+    return this.presentRunbook(runbook);
   }
 
   async publishRunbook(ownerId: string, runbookId: string): Promise<{ runbook: RunbookRecord; changed: boolean }> {

@@ -167,8 +167,15 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(isPlanId(42), false);
   });
 
-  it('pins every wired route to a catalog feature (324 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 324);
+  it('pins every wired route to a catalog feature (330 routes)', () => {
+    assert.equal(Object.keys(ROUTE_GATES).length, 330);
+    assert.equal(ROUTE_GATES['/v1/incidents/drills'], 'OB-064');
+    assert.equal(ROUTE_GATES['/v1/incidents/drills/get'], 'OB-064');
+    assert.equal(ROUTE_GATES['/v1/incidents/drills/start'], 'OB-064');
+    assert.equal(ROUTE_GATES['/v1/incidents/drills/executions'], 'OB-064');
+    assert.equal(ROUTE_GATES['/v1/incidents/drills/executions/get'], 'OB-064');
+    assert.equal(ROUTE_GATES['/v1/incidents/drills/executions/step/complete'], 'OB-064');
+    assert.equal(gateForRoute('/v1/incidents/drills')?.gate, 'team');
     assert.equal(ROUTE_GATES['/v1/incidents/acknowledge'], 'OB-065');
     assert.equal(ROUTE_GATES['/v1/incidents/resolve'], 'OB-065');
     assert.equal(ROUTE_GATES['/v1/incidents/analytics'], 'OB-065');

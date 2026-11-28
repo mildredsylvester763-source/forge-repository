@@ -3,7 +3,7 @@ import type { HttpResult, RequestContext, RouteTable } from '../../kernel/http.t
 import { parseFields } from '../../kernel/validate.ts';
 import { IdentityService, sessionCredential } from '../identity/index.ts';
 import type { IncidentService } from './incident-service.ts';
-import type { CompleteRunbookStepInput, CreateRunbookInput } from './types.ts';
+import type { CompleteRunbookStepInput, CreateRunbookInput, CreateIncidentDrillInput } from './types.ts';
 
 export function incidentRoutes(service: IncidentService, identity: IdentityService, cookie: { name: string }): RouteTable {
   const requireUser = async (ctx: RequestContext): Promise<string> => {
@@ -115,6 +115,15 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
     },
 
 
+    '/v1/incidents/drills': {
+      GET: async (ctx): Promise<HttpResult> => ({ status: 200, body: { drills: await service.listDrills(await requireUser(ctx)) } }),
+      POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = await ctx.json() as unknown as CreateIncidentDrillInput; return { status: 201, body: { drill: await service.createDrill(ownerId, body) } }; },
+    },
+    '/v1/incidents/drills/get': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = parseFields(await ctx.json(), { drillId: { max: 128 } }); return { status: 200, body: { drill: await service.getDrill(ownerId, body.drillId) } }; } },
+    '/v1/incidents/drills/start': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = parseFields(await ctx.json(), { drillId: { max: 128 } }); return { status: 201, body: { execution: await service.startDrill(ownerId, body.drillId) } }; } },
+    '/v1/incidents/drills/executions': { GET: async (ctx): Promise<HttpResult> => ({ status: 200, body: { executions: await service.listDrillExecutions(await requireUser(ctx)) } }) },
+    '/v1/incidents/drills/executions/get': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = parseFields(await ctx.json(), { executionId: { max: 128 } }); return { status: 200, body: { execution: await service.getDrillExecution(ownerId, body.executionId) } }; } },
+    '/v1/incidents/drills/executions/step/complete': { POST: async (ctx): Promise<HttpResult> => { const ownerId = await requireUser(ctx); const body = await ctx.json() as unknown as CompleteRunbookStepInput; return { status: 200, body: await service.completeDrillStep(ownerId, body) }; } },
     '/v1/runbooks': {
       GET: async (ctx): Promise<HttpResult> => ({ status: 200, body: { runbooks: await service.listRunbooks(await requireUser(ctx)) } }),
       POST: async (ctx): Promise<HttpResult> => {
