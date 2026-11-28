@@ -215,3 +215,40 @@ it('searches similar prior incidents within the owner-scoped PostgreSQL history'
     await testPool.cleanup();
   }
 });
+
+
+it('computes an owner-scoped incident blast radius using PostgreSQL-backed incident ownership', async (t) => {
+  const testPool = await makeTestPool();
+  try {
+    if (!testPool.real) {
+      t.skip('requires the CI PostgreSQL service');
+      return;
+    }
+    const now = 1_800_000_300_000;
+    const ownerId = randomUUID();
+    const otherId = randomUUID();
+    for (const [id, label] of [[ownerId, 'owner'], [otherId, 'other']] as const) {
+      await testPool.pool.query(
+        'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+        [id, 'incident-blast-' + label + '-' + id + '@forge.test', 'Blast Radius ' + label, 'test-hash', 'active', now, now, now, null, 1],
+      );
+    }
+    const service = new IncidentService(new PostgresIncidentStore(testPool.pool), () => now);
+    const incident = await service.declareManual(ownerId, { title: 'Database outage' });
+    const input = {
+      incidentId: incident.id,
+      services: [{ id: 'db' }, { id: 'api', dependsOn: ['db'] }],
+      affectedServiceIds: ['db'],
+      customerServiceMappings: [{ customerId: 'customer-1', serviceIds: ['api'] }],
+      serviceRegions: [{ serviceId: 'db', regionId: 'region-1' }],
+    };
+    const result = await service.blastRadius(ownerId, input);
+    assert.deepEqual(result.affectedServiceIds, ['api', 'db']);
+    assert.deepEqual(result.affectedCustomerIds, ['customer-1']);
+    assert.deepEqual(result.affectedRegionIds, ['region-1']);
+    await assert.rejects(service.blastRadius(otherId, input), /Incident not found/);
+  } finally {
+    await testPool.pool.end();
+    await testPool.cleanup();
+  }
+});

@@ -45,6 +45,12 @@ export function incidentRoutes(service: IncidentService, identity: IdentityServi
         return { status: 200, body: await service.searchSimilarPastIncidents(ownerId, body.incidentId) };
       },
     },
+    '/v1/incidents/blast-radius': {
+      POST: async (ctx): Promise<HttpResult> => {
+        const ownerId = await requireUser(ctx);
+        return { status: 200, body: await service.blastRadius(ownerId, await ctx.json()) };
+      },
+    },
     '/v1/incidents/timeline': {
       POST: async (ctx): Promise<HttpResult> => {
         const ownerId = await requireUser(ctx);

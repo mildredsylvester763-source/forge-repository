@@ -885,3 +885,98 @@ describe('similar past incident search (OB-060)', () => {
     }
   });
 });
+
+
+describe('incident blast-radius view (OB-061)', () => {
+  it('is Pro-gated, owner-scoped and computes downstream services, customers and regions from explicit inventory', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const owner = await signedIn(h, 'blast-owner@forge.test');
+      const other = await signedIn(h, 'blast-other@forge.test');
+      const plus = await signedIn(h, 'blast-plus@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'pro');
+      await h.app.plans.setPlan(other.userId, 'pro');
+      await h.app.plans.setPlan(plus.userId, 'plus');
+
+      const input = {
+        incidentId: 'not-yet-created',
+        services: [
+          { id: 'database' },
+          { id: 'api', dependsOn: ['database'] },
+          { id: 'web', dependsOn: ['api'] },
+          { id: 'cache' },
+        ],
+        affectedServiceIds: ['database'],
+        customerServiceMappings: [
+          { customerId: 'customer-a', serviceIds: ['web'] },
+          { customerId: 'customer-b', serviceIds: ['cache'] },
+        ],
+        serviceRegions: [
+          { serviceId: 'database', regionId: 'eu-west' },
+          { serviceId: 'web', regionId: 'us-east' },
+        ],
+      };
+
+      assert.equal((await h.post('/v1/incidents/blast-radius', input)).status, 401);
+      const denied = await h.post('/v1/incidents/blast-radius', input, { cookie: plus.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const created = await h.post('/v1/incidents', {
+        title: 'Database outage', description: 'Primary database is unavailable.',
+      }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const incident = (await created.json() as { incident: { id: string } }).incident;
+      const foreignCreated = await h.post('/v1/incidents', {
+        title: 'Foreign database outage', description: 'Another owner database is unavailable.',
+      }, { cookie: other.cookie });
+      assert.equal(foreignCreated.status, 201);
+      const foreign = (await foreignCreated.json() as { incident: { id: string } }).incident;
+
+      const response = await h.post('/v1/incidents/blast-radius', {
+        ...input, incidentId: incident.id,
+      }, { cookie: owner.cookie });
+      assert.equal(response.status, 200);
+      const result = await response.json() as {
+        incidentId: string; method: string; inventorySource: string; computedAt: number;
+        directAffectedServiceIds: string[]; downstreamAffectedServiceIds: string[];
+        affectedServiceIds: string[]; affectedCustomerIds: string[]; affectedRegionIds: string[];
+        coverage: { customerUnmappedServiceIds: string[]; regionUnmappedServiceIds: string[] };
+      };
+      assert.equal(result.incidentId, incident.id);
+      assert.equal(result.method, 'dependency-reverse-closure-v1');
+      assert.equal(result.inventorySource, 'request-supplied');
+      assert.equal(result.computedAt, h.clock.now);
+      assert.deepEqual(result.directAffectedServiceIds, ['database']);
+      assert.deepEqual(result.downstreamAffectedServiceIds, ['api', 'web']);
+      assert.deepEqual(result.affectedServiceIds, ['api', 'database', 'web']);
+      assert.deepEqual(result.affectedCustomerIds, ['customer-a']);
+      assert.deepEqual(result.affectedRegionIds, ['eu-west', 'us-east']);
+      assert.deepEqual(result.coverage.customerUnmappedServiceIds, ['api', 'database']);
+      assert.deepEqual(result.coverage.regionUnmappedServiceIds, ['api']);
+
+      const foreignRead = await h.post('/v1/incidents/blast-radius', {
+        ...input, incidentId: foreign.id,
+      }, { cookie: owner.cookie });
+      assert.equal(foreignRead.status, 404);
+      assert.equal(await errorCode(foreignRead), 'incident_not_found');
+
+      const cyclic = await h.post('/v1/incidents/blast-radius', {
+        ...input, incidentId: incident.id,
+        services: [{ id: 'a', dependsOn: ['b'] }, { id: 'b', dependsOn: ['a'] }],
+        affectedServiceIds: ['a'],
+      }, { cookie: owner.cookie });
+      assert.equal(cyclic.status, 400);
+      assert.equal(await errorCode(cyclic), 'incident_blast_radius_invalid');
+
+      const unknownCustomerService = await h.post('/v1/incidents/blast-radius', {
+        ...input, incidentId: incident.id,
+        customerServiceMappings: [{ customerId: 'customer-a', serviceIds: ['missing'] }],
+      }, { cookie: owner.cookie });
+      assert.equal(unknownCustomerService.status, 400);
+      assert.equal(await errorCode(unknownCustomerService), 'incident_blast_radius_invalid');
+    } finally {
+      await h.close();
+    }
+  });
+});

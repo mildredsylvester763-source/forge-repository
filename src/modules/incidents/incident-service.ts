@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
+import { calculateIncidentBlastRadius, parseIncidentBlastRadiusInput, type IncidentBlastRadiusResult } from './blast-radius.ts';
 import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
@@ -151,6 +152,12 @@ export class IncidentService {
       historyTruncated: candidates.length > 1000,
       matches: matches.slice(0, 20),
     };
+  }
+
+  async blastRadius(ownerId: string, value: unknown): Promise<IncidentBlastRadiusResult> {
+    const input = parseIncidentBlastRadiusInput(value);
+    await this.get(ownerId, input.incidentId);
+    return calculateIncidentBlastRadius(input, this.clock());
   }
 
   async get(ownerId: string, incidentId: string): Promise<IncidentRecord> {
