@@ -246,6 +246,10 @@ it('computes an owner-scoped incident blast radius using PostgreSQL-backed incid
     assert.deepEqual(result.affectedServiceIds, ['api', 'db']);
     assert.deepEqual(result.affectedCustomerIds, ['customer-1']);
     assert.deepEqual(result.affectedRegionIds, ['region-1']);
+    const estimate = await service.estimateCustomerImpact(ownerId, input);
+    assert.equal(estimate.lowerBoundAffectedCustomerCount, 1);
+    assert.equal(estimate.upperBoundAffectedCustomerCount, null);
+    assert.deepEqual(estimate.knownAffectedCustomerIds, ['customer-1']);
     await assert.rejects(service.blastRadius(otherId, input), /Incident not found/);
   } finally {
     await testPool.pool.end();

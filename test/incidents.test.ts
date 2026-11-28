@@ -980,3 +980,60 @@ describe('incident blast-radius view (OB-061)', () => {
     }
   });
 });
+
+
+describe('customer impact estimate (OB-062)', () => {
+  it('is Enterprise-gated and returns only a mapped-customer lower bound', async () => {
+    const h: Harness = await startHarness();
+    try {
+      const enterprise = await signedIn(h, 'impact-enterprise@forge.test');
+      const pro = await signedIn(h, 'impact-pro@forge.test');
+      await h.app.plans.setPlan(enterprise.userId, 'enterprise');
+      await h.app.plans.setPlan(pro.userId, 'pro');
+
+      const created = await h.post('/v1/incidents', {
+        title: 'Database outage', description: 'Primary database is unavailable.',
+      }, { cookie: enterprise.cookie });
+      assert.equal(created.status, 201);
+      const incident = (await created.json() as { incident: { id: string } }).incident;
+      const input = {
+        incidentId: incident.id,
+        services: [
+          { id: 'database' },
+          { id: 'api', dependsOn: ['database'] },
+          { id: 'web', dependsOn: ['api'] },
+          { id: 'cache' },
+        ],
+        affectedServiceIds: ['database'],
+        customerServiceMappings: [
+          { customerId: 'customer-a', serviceIds: ['api', 'web'] },
+          { customerId: 'customer-b', serviceIds: ['cache'] },
+        ],
+        serviceRegions: [{ serviceId: 'database', regionId: 'eu-west' }],
+      };
+
+      const denied = await h.post('/v1/incidents/customer-impact/estimate', input, { cookie: pro.cookie });
+      assert.equal(denied.status, 402);
+      assert.equal(await errorCode(denied), 'plan_required');
+
+      const response = await h.post('/v1/incidents/customer-impact/estimate', input, { cookie: enterprise.cookie });
+      assert.equal(response.status, 200);
+      const result = await response.json() as {
+        method: string; status: string; lowerBoundAffectedCustomerCount: number;
+        upperBoundAffectedCustomerCount: number | null; knownAffectedCustomerIds: string[];
+        coverage: { customerMappedServiceIds: string[]; customerUnmappedServiceIds: string[] };
+        limitation: string;
+      };
+      assert.equal(result.method, 'mapped-customer-lower-bound-v1');
+      assert.equal(result.status, 'lower_bound_only');
+      assert.equal(result.lowerBoundAffectedCustomerCount, 1);
+      assert.equal(result.upperBoundAffectedCustomerCount, null);
+      assert.deepEqual(result.knownAffectedCustomerIds, ['customer-a']);
+      assert.deepEqual(result.coverage.customerMappedServiceIds, ['api', 'web']);
+      assert.deepEqual(result.coverage.customerUnmappedServiceIds, ['database']);
+      assert.match(result.limitation, /upper bound are unknown/);
+    } finally {
+      await h.close();
+    }
+  });
+});

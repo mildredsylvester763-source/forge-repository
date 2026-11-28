@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { AppError } from '../../kernel/errors.ts';
 import type { Clock } from '../../kernel/clock.ts';
 import type { AutomaticIncidentResult, IncidentStore } from './store.ts';
-import { calculateIncidentBlastRadius, parseIncidentBlastRadiusInput, type IncidentBlastRadiusResult } from './blast-radius.ts';
+import { calculateIncidentBlastRadius, estimateIncidentCustomerImpact, parseIncidentBlastRadiusInput, type IncidentBlastRadiusResult, type IncidentCustomerImpactEstimate } from './blast-radius.ts';
 import type { CompleteRunbookStepInput, CreateIncidentActionItemInput, CreateRunbookInput, CreateRunbookFromLearningLoopInput, DeclareAutomaticIncidentInput, DeclareManualIncidentInput, IncidentActionItemMutationResult, IncidentActionItemRecord, IncidentAutoTrigger, IncidentEventRecord, IncidentLearningAlertCandidate, IncidentLearningLoopMutationResult, IncidentLearningLoopRecord, IncidentLearningTestCandidate, IncidentPostmortemDraft, IncidentRecord, SimilarPastIncidentMatch, SimilarPastIncidentSearchResult, RunbookAuditEventRecord, RunbookExecutionMutationResult, RunbookExecutionRecord, RunbookRecord, RunbookStepDefinition } from './types.ts';
 
 export type IncidentServiceResult = AutomaticIncidentResult;
@@ -158,6 +158,12 @@ export class IncidentService {
     const input = parseIncidentBlastRadiusInput(value);
     await this.get(ownerId, input.incidentId);
     return calculateIncidentBlastRadius(input, this.clock());
+  }
+
+  async estimateCustomerImpact(ownerId: string, value: unknown): Promise<IncidentCustomerImpactEstimate> {
+    const input = parseIncidentBlastRadiusInput(value);
+    await this.get(ownerId, input.incidentId);
+    return estimateIncidentCustomerImpact(input, this.clock());
   }
 
   async get(ownerId: string, incidentId: string): Promise<IncidentRecord> {

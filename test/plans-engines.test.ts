@@ -167,8 +167,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(isPlanId(42), false);
   });
 
-  it('pins every wired route to a catalog feature (320 routes)', () => {
-    assert.equal(Object.keys(ROUTE_GATES).length, 320);
+  it('pins every wired route to a catalog feature (321 routes)', () => {
+    assert.equal(Object.keys(ROUTE_GATES).length, 321);
     assert.equal(ROUTE_GATES['/v1/incidents'], 'OB-041');
     assert.equal(ROUTE_GATES['/v1/incidents/get'], 'OB-041');
     assert.equal(ROUTE_GATES['/v1/incidents/automatic'], 'OB-041');
@@ -178,6 +178,8 @@ describe('plans engine (PLAN GATE LAW)', () => {
     assert.equal(gateForRoute('/v1/incidents/similar')?.gate, 'pro');
     assert.equal(ROUTE_GATES['/v1/incidents/blast-radius'], 'OB-061');
     assert.equal(gateForRoute('/v1/incidents/blast-radius')?.gate, 'pro');
+    assert.equal(ROUTE_GATES['/v1/incidents/customer-impact/estimate'], 'OB-062');
+    assert.equal(gateForRoute('/v1/incidents/customer-impact/estimate')?.gate, 'enterprise');
     assert.equal(ROUTE_GATES['/v1/incidents/postmortem/draft'], 'OB-056');
     assert.equal(gateForRoute('/v1/incidents/postmortem/draft')?.gate, 'pro');
     assert.equal(ROUTE_GATES['/v1/incidents/action-items'], 'OB-057');

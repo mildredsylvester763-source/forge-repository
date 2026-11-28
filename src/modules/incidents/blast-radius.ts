@@ -197,3 +197,47 @@ export function calculateIncidentBlastRadius(
     },
   };
 }
+
+
+export interface IncidentCustomerImpactEstimate {
+  readonly incidentId: string;
+  readonly method: 'mapped-customer-lower-bound-v1';
+  readonly inventorySource: 'request-supplied';
+  readonly computedAt: number;
+  readonly status: 'lower_bound_only';
+  readonly lowerBoundAffectedCustomerCount: number;
+  readonly upperBoundAffectedCustomerCount: null;
+  readonly knownAffectedCustomerIds: readonly string[];
+  readonly coverage: {
+    readonly customerMappedServiceIds: readonly string[];
+    readonly customerUnmappedServiceIds: readonly string[];
+  };
+  readonly limitation: string;
+}
+
+/**
+ * Count distinct mapped customers whose services fall inside the blast radius.
+ * This is a lower bound, not a total-population estimate: no canonical customer
+ * registry or customer exposure metrics are present in this repository.
+ */
+export function estimateIncidentCustomerImpact(
+  input: IncidentBlastRadiusInput,
+  computedAt: number,
+): IncidentCustomerImpactEstimate {
+  const blast = calculateIncidentBlastRadius(input, computedAt);
+  return {
+    incidentId: blast.incidentId,
+    method: 'mapped-customer-lower-bound-v1',
+    inventorySource: 'request-supplied',
+    computedAt,
+    status: 'lower_bound_only',
+    lowerBoundAffectedCustomerCount: blast.affectedCustomerIds.length,
+    upperBoundAffectedCustomerCount: null,
+    knownAffectedCustomerIds: blast.affectedCustomerIds,
+    coverage: {
+      customerMappedServiceIds: blast.coverage.customerMappedServiceIds,
+      customerUnmappedServiceIds: blast.coverage.customerUnmappedServiceIds,
+    },
+    limitation: 'Only customers present in the supplied service mappings are counted; the total customer population and upper bound are unknown.',
+  };
+}
