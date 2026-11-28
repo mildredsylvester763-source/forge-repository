@@ -1064,6 +1064,7 @@ describe('incident lifecycle and analytics (OB-065)', () => {
       assert.equal(((await resolution.json()) as { incident: { status: string } }).incident.status, 'resolved');
       const invalid = await h.post('/v1/incidents/acknowledge', { incidentId }, { cookie: owner.cookie });
       assert.equal(invalid.status, 409); assert.equal(await errorCode(invalid), 'incident_transition_conflict');
+      await h.app.plans.setPlan(other.userId, 'team');
       const foreign = await h.post('/v1/incidents/resolve', { incidentId }, { cookie: other.cookie });
       assert.equal(foreign.status, 404);
       const report = await h.post('/v1/incidents/analytics', {}, { cookie: owner.cookie });
