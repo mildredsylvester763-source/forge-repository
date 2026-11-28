@@ -246,3 +246,8 @@ A feature row may name several engines. A single pass must not mark the whole ro
 ### Hook 16 export — incident learning records (2026-11-27)
 
 The owner-scoped account export now includes incident learning-loop revisions alongside incident declarations, immutable events and action items. Learning-loop records contain evidence-event references and reviewable test, alert and runbook drafts; they do not activate alerts, publish runbooks or execute tests. The drafts remain in the owner's export so generated operational knowledge can be downloaded with the rest of the account data. This is an additive export surface; jurisdiction-approved hard deletion remains disabled pending owner verification.
+
+
+### Hook 16 export — incident runbooks and execution history (2026-11-28)
+
+The owner-scoped account export now includes runbook definitions, execution snapshots and append-only runbook audit events. Publishing a runbook and completing an executable step remain explicit owner/operator actions; learning-loop drafts are not automatically published and no arbitrary shell or remote command is executed by the runbook service.

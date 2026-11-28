@@ -173,6 +173,17 @@ export const pgIncidentMigrations: readonly Migration[] = [{
     CREATE TRIGGER runbook_audit_events_no_delete BEFORE DELETE ON runbook_audit_events
       FOR EACH ROW EXECUTE FUNCTION runbook_audit_events_block_mutation();
   `
-}
-
+},
+  {
+    version: 5,
+    name: 'runbook_audit_event_append_order',
+    sql: `
+      ALTER TABLE runbook_audit_events
+        ADD COLUMN event_sequence BIGINT GENERATED ALWAYS AS IDENTITY;
+      CREATE UNIQUE INDEX runbook_audit_events_event_sequence_unique
+        ON runbook_audit_events(event_sequence);
+      CREATE INDEX runbook_audit_events_owner_sequence_idx
+        ON runbook_audit_events(owner_id, event_sequence);
+    `
+  }
 ];

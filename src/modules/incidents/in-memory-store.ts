@@ -259,7 +259,6 @@ export class InMemoryIncidentStore implements IncidentStore {
   async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
     return [...this.runbookAuditEvents.values()]
       .filter((event) => event.ownerId === ownerId)
-      .sort((a, b) => a.occurredAt - b.occurredAt || a.id.localeCompare(b.id))
       .slice(0, boundedTake(take)).map(copy);
   }
 

@@ -60,7 +60,7 @@ interface RunbookExecutionRow {
 }
 interface RunbookAuditEventRow {
   id: string; owner_id: string; runbook_id: string; execution_id: string | null;
-  event_type: string; actor_id: string; payload_json: string; occurred_at: number | string;
+  event_type: string; actor_id: string; payload_json: string; occurred_at: number | string; event_sequence: number | string;
 }
 const runbookRecord = (r: RunbookRow): RunbookRecord => ({
   id: r.id, ownerId: r.owner_id, title: r.title, description: r.description, status: r.status,
@@ -422,7 +422,7 @@ export class PostgresIncidentStore implements IncidentStore {
   }
 
   async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
-    const result = await this.pool.query<RunbookAuditEventRow>('SELECT * FROM runbook_audit_events WHERE owner_id = $1 ORDER BY occurred_at, id LIMIT $2', [ownerId, takeLimit(take)]);
+    const result = await this.pool.query<RunbookAuditEventRow>('SELECT * FROM runbook_audit_events WHERE owner_id = $1 ORDER BY event_sequence LIMIT $2', [ownerId, takeLimit(take)]);
     return result.rows.map(runbookAuditEventRecord);
   }
 

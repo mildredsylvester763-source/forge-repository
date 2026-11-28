@@ -652,14 +652,12 @@ describe('runbook library and execution (OB-059)', () => {
       assert.equal(draftStart.status, 409);
       assert.equal(await errorCode(draftStart), 'runbook_not_published');
 
-      h.clock.now += 1;
       const published = await h.post('/v1/runbooks/publish', { runbookId: runbook.id }, { cookie: owner.cookie });
       assert.equal(published.status, 200);
       const publishedBody = await published.json() as { runbook: { status: string }; changed: boolean };
       assert.equal(publishedBody.runbook.status, 'published');
       assert.equal(publishedBody.changed, true);
 
-      h.clock.now += 1;
       const executionResponse = await h.post('/v1/runbooks/executions/start', { runbookId: runbook.id }, { cookie: owner.cookie });
       assert.equal(executionResponse.status, 201);
       const execution = (await executionResponse.json() as {
@@ -681,7 +679,6 @@ describe('runbook library and execution (OB-059)', () => {
       assert.equal(unconfirmed.status, 400);
       assert.equal(await errorCode(unconfirmed), 'runbook_confirmation_required');
 
-      h.clock.now += 1;
       const completed = await h.post('/v1/runbooks/executions/step/complete', {
         executionId: execution.id, stepId, confirmed: true, evidenceNote: 'Health endpoint returned successful responses.',
       }, { cookie: owner.cookie });
@@ -744,4 +741,41 @@ describe('runbook library and execution (OB-059)', () => {
       await h.close();
     }
   });
+  it('preserves runbook audit append order when SQLite event timestamps are equal', async () => {
+    const h: Harness = await startHarness({ FORGE_DATABASE_PATH: ':memory:' });
+    try {
+      const owner = await signedIn(h, 'runbook-sqlite-order@forge.test');
+      await h.app.plans.setPlan(owner.userId, 'plus');
+      const created = await h.post('/v1/runbooks', {
+        title: 'SQLite recovery runbook',
+        steps: [{ title: 'Verify service health', instructions: 'Confirm the health endpoint returns successful responses.' }],
+      }, { cookie: owner.cookie });
+      assert.equal(created.status, 201);
+      const runbook = (await created.json() as { runbook: { id: string } }).runbook;
+      const published = await h.post('/v1/runbooks/publish', { runbookId: runbook.id }, { cookie: owner.cookie });
+      assert.equal(published.status, 200);
+      const started = await h.post('/v1/runbooks/executions/start', { runbookId: runbook.id }, { cookie: owner.cookie });
+      assert.equal(started.status, 201);
+      const execution = (await started.json() as { execution: { id: string; steps: Array<{ id: string }> } }).execution;
+      const stepId = execution.steps[0]?.id;
+      assert.ok(stepId);
+      const completed = await h.post('/v1/runbooks/executions/step/complete', {
+        executionId: execution.id, stepId, confirmed: true, evidenceNote: 'The health endpoint was checked.',
+      }, { cookie: owner.cookie });
+      assert.equal(completed.status, 200);
+      const exported = await h.post('/v1/account/export', {}, { cookie: owner.cookie });
+      assert.equal(exported.status, 200);
+      const bundle = await exported.json() as {
+        modules: { incidents: { runbookAuditEvents: Array<{ eventType: string; occurredAt: number }> } };
+      };
+      const audit = bundle.modules.incidents.runbookAuditEvents;
+      assert.deepEqual(audit.map((event) => event.eventType), [
+        'runbook.created', 'runbook.published', 'runbook.execution.started', 'runbook.execution.step_completed',
+      ]);
+      assert.ok(audit.every((event) => event.occurredAt === h.clock.now));
+    } finally {
+      await h.close();
+    }
+  });
+
 });

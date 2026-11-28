@@ -433,7 +433,7 @@ export class SqliteIncidentStore implements IncidentStore {
   }
 
   async listRunbookAuditEventsByOwner(ownerId: string, take: number): Promise<RunbookAuditEventRecord[]> {
-    const rows = this.db.prepare('SELECT * FROM runbook_audit_events WHERE owner_id = ? ORDER BY occurred_at, id LIMIT ?')
+    const rows = this.db.prepare('SELECT * FROM runbook_audit_events WHERE owner_id = ? ORDER BY event_sequence LIMIT ?')
       .all(ownerId, takeLimit(take)) as unknown as RunbookAuditEventRow[];
     return rows.map(runbookAuditEventRecord);
   }

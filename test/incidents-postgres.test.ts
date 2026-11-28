@@ -151,6 +151,7 @@ it('persists published runbooks, execution snapshots and idempotent step complet
     assert.equal((await store.listRunbooksByOwner(ownerId, 10)).length, 1);
     assert.equal((await store.listRunbookExecutionsByOwner(ownerId, 10)).length, 1);
     const audit = await store.listRunbookAuditEventsByOwner(ownerId, 20);
+    assert.ok(audit.every((event) => event.occurredAt === now));
     assert.deepEqual(audit.map((event) => event.eventType), [
       'runbook.created', 'runbook.published', 'runbook.execution.started', 'runbook.execution.step_completed',
     ]);

@@ -166,6 +166,36 @@ export const incidentMigrations: readonly Migration[] = [{
     CREATE TRIGGER runbook_audit_events_block_delete BEFORE DELETE ON runbook_audit_events
       BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
   `
-}
-
+},
+  {
+    version: 5,
+    name: 'runbook_audit_event_append_order',
+    sql: `
+      ALTER TABLE runbook_audit_events RENAME TO runbook_audit_events_v4;
+      CREATE TABLE runbook_audit_events (
+        event_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        runbook_id TEXT NOT NULL,
+        execution_id TEXT,
+        event_type TEXT NOT NULL,
+        actor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        payload_json TEXT NOT NULL,
+        occurred_at INTEGER NOT NULL CHECK (occurred_at >= 0),
+        FOREIGN KEY (runbook_id, owner_id) REFERENCES runbooks(id, owner_id) ON DELETE CASCADE,
+        FOREIGN KEY (execution_id, owner_id) REFERENCES runbook_executions(id, owner_id) ON DELETE CASCADE
+      ) STRICT;
+      INSERT INTO runbook_audit_events
+        (id,owner_id,runbook_id,execution_id,event_type,actor_id,payload_json,occurred_at)
+      SELECT id,owner_id,runbook_id,execution_id,event_type,actor_id,payload_json,occurred_at
+      FROM runbook_audit_events_v4 ORDER BY occurred_at, id;
+      DROP TABLE runbook_audit_events_v4;
+      CREATE INDEX runbook_audit_events_owner_sequence_idx ON runbook_audit_events(owner_id, event_sequence);
+      CREATE INDEX runbook_audit_events_owner_time_idx ON runbook_audit_events(owner_id, occurred_at, event_sequence);
+      CREATE TRIGGER runbook_audit_events_block_update BEFORE UPDATE ON runbook_audit_events
+        BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
+      CREATE TRIGGER runbook_audit_events_block_delete BEFORE DELETE ON runbook_audit_events
+        BEGIN SELECT RAISE(ABORT, 'runbook audit events are append-only'); END;
+    `
+  }
 ];
