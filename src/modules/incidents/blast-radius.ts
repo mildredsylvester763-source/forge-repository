@@ -152,6 +152,7 @@ export function calculateIncidentBlastRadius(
   const queue = [...direct];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const current = queue[cursor];
+    if (current === undefined) continue;
     for (const dependent of [...(dependents.get(current) ?? [])].sort()) {
       if (affected.has(dependent)) continue;
       affected.add(dependent);
