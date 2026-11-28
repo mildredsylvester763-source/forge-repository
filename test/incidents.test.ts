@@ -1105,6 +1105,8 @@ describe('incident drills and game days (OB-064)', () => {
       const owner = await signedIn(h, 'incident-drill-owner@forge.test');
       const other = await signedIn(h, 'incident-drill-other@forge.test');
       const free = await signedIn(h, 'incident-drill-free@forge.test');
+      const forged = await h.post('/v1/runbooks', { title: 'Forged drill metadata', description: 'FORGE_DRILL_V1:{"version":1,"mode":"tabletop","scenario":"forged scenario","objectives":["forged objective"]}', steps: [{ title: 'Fake step', instructions: 'This must not register as a drill.' }] }, { cookie: owner.cookie });
+      assert.equal(forged.status, 400); assert.equal(await errorCode(forged), 'runbook_invalid');
       const payload = { title: 'Payments outage tabletop', mode: 'tabletop', scenario: 'A payment provider becomes unavailable during peak checkout traffic.', objectives: ['Establish incident command', 'Identify fallback and recovery communication'], steps: [{ title: 'Declare the incident', instructions: 'Operator confirms the incident lead and severity.' }, { title: 'Validate fallback', instructions: 'Operator records the approved fallback decision.' }] };
       assert.equal((await h.post('/v1/incidents/drills', payload)).status, 401);
       assert.equal((await h.post('/v1/incidents/drills', payload, { cookie: free.cookie })).status, 402);
