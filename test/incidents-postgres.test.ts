@@ -280,3 +280,53 @@ it('persists incident acknowledgement and resolution transitions atomically in P
     assert.equal((await service.analytics(ownerId)).averageTimeToResolveMs, 3000);
   } finally { await testPool.pool.end(); await testPool.cleanup(); }
 });
+
+
+it('persists incident tabletop and game-day drill definitions, executions and audit trail in PostgreSQL', async (t) => {
+  const testPool = await makeTestPool();
+  try {
+    if (!testPool.real) { t.skip('requires the CI PostgreSQL service'); return; }
+    const now = 1_800_000_500_000;
+    const ownerId = randomUUID();
+    await testPool.pool.query(
+      'INSERT INTO users (id,email,display_name,password_hash,status,created_at,updated_at,password_changed_at,password_compromised_at,version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+      [ownerId, 'incident-drill-pg-' + ownerId + '@forge.test', 'Incident Drill PG', 'test-hash', 'active', now, now, now, null, 1],
+    );
+    const store = new PostgresIncidentStore(testPool.pool);
+    const service = new IncidentService(store, () => now);
+    const drill = await service.createDrill(ownerId, {
+      title: 'Database failover game day',
+      mode: 'game_day',
+      scenario: 'The primary database becomes unavailable during a production release.',
+      objectives: ['Validate failover communications', 'Record operator recovery evidence'],
+      steps: [
+        { title: 'Confirm incident command', instructions: 'The operator confirms the incident lead and communication channel.' },
+        { title: 'Validate failover plan', instructions: 'The operator confirms the approved failover procedure and records the result.' },
+      ],
+    });
+    assert.equal(drill.mode, 'game_day');
+    assert.equal(drill.status, 'published');
+    const reloaded = await service.getDrill(ownerId, drill.id);
+    assert.deepEqual(reloaded.objectives, drill.objectives);
+    const execution = await service.startDrill(ownerId, drill.id);
+    assert.equal(execution.status, 'in_progress');
+    const first = await service.completeDrillStep(ownerId, {
+      executionId: execution.id, stepId: execution.steps[0]!.id, confirmed: true, evidenceNote: 'Failover lead acknowledged.',
+    });
+    assert.equal(first.execution.status, 'in_progress');
+    const second = await service.completeDrillStep(ownerId, {
+      executionId: execution.id, stepId: execution.steps[1]!.id, confirmed: true, evidenceNote: 'Approved plan reviewed.',
+    });
+    assert.equal(second.execution.status, 'completed');
+    assert.equal((await service.getDrillExecution(ownerId, execution.id)).status, 'completed');
+    assert.equal((await service.listDrillExecutions(ownerId)).length, 1);
+    const audit = await store.listRunbookAuditEventsByOwner(ownerId, 20);
+    assert.deepEqual(audit.map((event) => event.eventType), [
+      'runbook.created', 'runbook.published', 'runbook.execution.started',
+      'runbook.execution.step_completed', 'runbook.execution.step_completed',
+    ]);
+  } finally {
+    await testPool.pool.end();
+    await testPool.cleanup();
+  }
+});
