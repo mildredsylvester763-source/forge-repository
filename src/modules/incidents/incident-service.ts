@@ -542,10 +542,9 @@ export class IncidentService {
     if (!Array.isArray(fields.objectives) || fields.objectives.length < 1 || fields.objectives.length > 10) throw new AppError(400, 'incident_drill_invalid', 'objectives must contain 1 to 10 entries.');
     const objectives = fields.objectives.map((item, index) => runbookText(item, 'objectives[' + index + ']', 3, 100));
     if (new Set(objectives.map((x) => x.toLowerCase())).size !== objectives.length) throw new AppError(400, 'incident_drill_invalid', 'objectives must be unique.');
-    const steps = runbookSteps(fields.steps);
     const description = 'FORGE_DRILL_V1:' + JSON.stringify({ version: 1, mode: fields.mode, scenario, objectives });
     if (description.length > 1900) throw new AppError(400, 'incident_drill_invalid', 'Drill scenario and objectives exceed the supported metadata size.');
-    const draft = await this.createRunbookRecord(ownerId, { title, description, steps }, null, null);
+    const draft = await this.createRunbookRecord(ownerId, { title, description, steps: fields.steps }, null, null);
     const publishedAt = Math.max(this.clock(), draft.updatedAt);
     const event: RunbookAuditEventRecord = { id: randomUUID(), ownerId, runbookId: draft.id, executionId: null, eventType: 'runbook.published', actorId: ownerId, payload: { title: draft.title, revision: draft.revision, stepCount: draft.steps.length, drillMode: fields.mode }, occurredAt: publishedAt };
     const published = await this.store.publishRunbook(ownerId, draft.id, publishedAt, event);
